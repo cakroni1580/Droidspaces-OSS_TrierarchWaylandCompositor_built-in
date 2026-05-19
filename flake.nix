@@ -62,55 +62,99 @@
         meta.mainProgram = "droidspaces";
       };
 
-    mkDroidspacesAndroidApp = pkgs: androidSdk:
-      pkgs.stdenv.mkDerivation (finalAttrs: {
+    mkDroidspacesAndroidApp = pkgs: androidSdk: baseOverrides: let
+      muslBuilds = self.legacyPackages.${pkgs.stdenv.hostPlatform.system}.muslBuilds;
+
+      baseApp =
+        (pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
+          pname = "droidspaces-app-base";
+          inherit version;
+          src = ./Android;
+
+          nativeBuildInputs = [
+            pkgs.jdk17
+            pkgs.gradle_8
+            androidSdk
+          ];
+
+          ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+          ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
+          JAVA_HOME = pkgs.jdk17.home;
+
+          mitmCache = pkgs.gradle.fetchDeps {
+            pkg = finalAttrs.finalPackage;
+            data = builtins.fromJSON (builtins.readFile "${artifacts}/android-gradle-lockfile.json");
+          };
+
+          __darwinAllowLocalNetworking = true;
+
+          gradleFlags = [
+            "-Dfile.encoding=utf-8"
+            "-Pandroid.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/34.0.0/aapt2"
+            "-Dkotlin.compiler.execution.strategy=in-process"
+          ];
+
+          gradleBuildTask = "assembleRelease";
+          gradleUpdateTask = "assembleRelease";
+
+          preBuild = ''
+            cat <<EOF >> app/build.gradle.kts
+
+            android {
+                lint {
+                    checkReleaseBuilds = false
+                    abortOnError = false
+                }
+            }
+            EOF
+          '';
+
+          installPhase = ''
+            find app/build/outputs/apk -name "*.apk" -exec install -Dm644 {} $out/droidspaces.apk \;
+          '';
+        })).overrideAttrs
+        baseOverrides;
+
+      app = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
         pname = "droidspaces-app";
-        inherit version;
-        src = ./Android;
+        version = baseApp.version;
+
+        passthru.baseApp = baseApp;
 
         nativeBuildInputs = [
+          pkgs.zip
           pkgs.jdk17
-          pkgs.gradle_8
-          androidSdk
         ];
 
-        # Environment variables for Android build
-        ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
-        ANDROID_HOME = "${androidSdk}/libexec/android-sdk";
-        JAVA_HOME = pkgs.jdk17.home;
+        dontUnpack = true;
 
-        mitmCache = pkgs.gradle.fetchDeps {
-          pkg = finalAttrs.finalPackage;
-          data = builtins.fromJSON (builtins.readFile "${artifacts}/android-gradle-lockfile.json");
-        };
+        buildPhase = ''
+          mkdir -p assets/binaries
+          cp ${muslBuilds.aarch64}/bin/droidspaces assets/binaries/droidspaces-aarch64
+          cp ${muslBuilds.armhf}/bin/droidspaces assets/binaries/droidspaces-armhf
+          cp ${muslBuilds.x86_64}/bin/droidspaces assets/binaries/droidspaces-x86_64
+          cp ${muslBuilds.x86}/bin/droidspaces assets/binaries/droidspaces-x86
 
-        __darwinAllowLocalNetworking = true;
+          find ${baseApp} -name "*.apk" -exec cp {} droidspaces-base.apk \;
+          chmod +w droidspaces-base.apk
 
-        gradleFlags = [
-          "-Dfile.encoding=utf-8"
-          "-Pandroid.aapt2FromMavenOverride=${androidSdk}/libexec/android-sdk/build-tools/34.0.0/aapt2"
-          "-Dkotlin.compiler.execution.strategy=in-process"
-        ];
+          zip -ur droidspaces-base.apk assets/
 
-        gradleBuildTask = "assembleRelease";
-        gradleUpdateTask = "assembleRelease";
+          ${androidSdk}/libexec/android-sdk/build-tools/*/zipalign -p -f 4 droidspaces-base.apk droidspaces.apk
 
-        preBuild = ''
-          cat <<EOF >> app/build.gradle.kts
+          keytool -genkeypair -v -keystore temp.keystore -alias droidspaces -keyalg RSA \
+            -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Nix Build, O=Droidspaces"
 
-          android {
-              lint {
-                  checkReleaseBuilds = false
-                  abortOnError = false
-              }
-          }
-          EOF
+          ${androidSdk}/libexec/android-sdk/build-tools/34.0.0/apksigner sign --ks \
+            temp.keystore --ks-pass pass:android --key-pass pass:android droidspaces.apk
         '';
 
         installPhase = ''
-          find app/build/outputs/apk -name "*.apk" -exec install -Dm644 {} $out/droidspaces.apk \;
+          install -Dm644 droidspaces.apk $out/droidspaces.apk
         '';
       });
+    in
+      app;
   in
     flake-utils.lib.eachSystem systems (system: let
       pkgs = import nixpkgs {
@@ -219,8 +263,8 @@
         };
 
         androidApp = {
-          release = mkDroidspacesAndroidApp pkgs androidSdk;
-          debug = (mkDroidspacesAndroidApp pkgs androidSdk).overrideAttrs {
+          release = mkDroidspacesAndroidApp pkgs androidSdk {};
+          debug = mkDroidspacesAndroidApp pkgs androidSdk {
             gradleBuildTask = "assembleDebug";
             gradleUpdateTask = "assembleDebug";
           };
