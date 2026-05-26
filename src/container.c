@@ -1691,8 +1691,9 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
      * setns() and are NOT children of init, so they inherit nothing. */
     ds_log_silent = 1;
     ds_seccomp_apply_minimal(cfg->hw_access, cfg->privileged_mask);
-    android_seccomp_setup(0, cfg->block_nested_ns &&
-                                 !(cfg->privileged_mask & DS_PRIV_NOSEC));
+    android_seccomp_setup(
+        0, cfg->block_nested_ns && !(cfg->privileged_mask & DS_PRIV_NOSEC),
+        cfg->privileged_mask);
     ds_apply_capability_hardening(cfg->hw_access, cfg->privileged_mask);
     ds_log_silent = 0;
 
@@ -1882,8 +1883,9 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
      * Same reasoning: run processes are not children of container PID 1. */
     ds_log_silent = 1;
     ds_seccomp_apply_minimal(cfg->hw_access, cfg->privileged_mask);
-    android_seccomp_setup(0, cfg->block_nested_ns &&
-                                 !(cfg->privileged_mask & DS_PRIV_NOSEC));
+    android_seccomp_setup(
+        0, cfg->block_nested_ns && !(cfg->privileged_mask & DS_PRIV_NOSEC),
+        cfg->privileged_mask);
     ds_apply_capability_hardening(cfg->hw_access, cfg->privileged_mask);
     ds_log_silent = 0;
 

@@ -519,7 +519,8 @@ int internal_boot(struct ds_config *cfg) {
   ds_seccomp_apply_minimal(cfg->hw_access, cfg->privileged_mask);
   android_seccomp_setup(is_systemd,
                         cfg->block_nested_ns &&
-                            !(cfg->privileged_mask & DS_PRIV_NOSEC));
+                            !(cfg->privileged_mask & DS_PRIV_NOSEC),
+                        cfg->privileged_mask);
 
   ds_apply_capability_hardening(cfg->hw_access, cfg->privileged_mask);
 

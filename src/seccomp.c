@@ -31,6 +31,10 @@
  * Applied unconditionally to all kernels and all modes.
  */
 int ds_seccomp_apply_minimal(int hw_access, int privileged_mask) {
+  /* noseccomp: skip everything, 32-bit binaries must work */
+  if (privileged_mask & DS_PRIV_NOSEC)
+    return 0;
+
   static struct sock_filter filter[84];
   int curr = 0;
 
@@ -262,8 +266,11 @@ int ds_seccomp_apply_minimal(int hw_access, int privileged_mask) {
  * 2. Deadlock Shield (EPERM): Blocks namespace creation (unshare/clone).
  *    Applied ONLY if block_nested_ns is true (manual override).
  */
-int android_seccomp_setup(int is_systemd, int block_nested_ns) {
+int android_seccomp_setup(int is_systemd, int block_nested_ns,
+                          int privileged_mask) {
   (void)is_systemd;
+  if (privileged_mask & DS_PRIV_NOSEC)
+    return 0;
   int major = 0, minor = 0;
   get_kernel_version(&major, &minor);
 
@@ -271,9 +278,8 @@ int android_seccomp_setup(int is_systemd, int block_nested_ns) {
    *                 CLONE_NEWUSER|CLONE_NEWPID|CLONE_NEWNET */
   const uint32_t ns_mask = 0x7E020000;
 
-  if (!block_nested_ns && major >= 5) {
+  if (!block_nested_ns && major >= 5)
     return 0;
-  }
 
   /* Define base filter (arch check + load nr) */
   struct sock_filter filter_base[] = {
