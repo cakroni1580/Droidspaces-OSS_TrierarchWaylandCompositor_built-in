@@ -94,7 +94,6 @@ fun ContainerCard(
                 ) {
                     // Re-read cache whenever iconCacheVersion changes (bumped after prefetch)
                     val cacheVersion by ContainerOSInfoManager.iconCacheVersion
-                    val context = LocalContext.current
                     val cachedOsInfo = remember(container.name, cacheVersion) {
                         ContainerOSInfoManager.getCachedOSInfo(container.name, context)
                     }
