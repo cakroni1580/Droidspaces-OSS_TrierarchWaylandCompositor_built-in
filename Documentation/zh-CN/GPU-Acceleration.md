@@ -28,7 +28,7 @@ keywords: gpu, acceleration, droidspaces, termux, virgl, turnip, adreno, contain
 
 > [!TIP]
 >
-> 如果你想享受开箱即用的 XFCE 桌面环境体验，可以从官方的 [Droidspaces Rootfs Builder Releases](https://github.com/Droidspaces/Droidspaces-rootfs-builder/releases) 下载我们预配置的 XFCE 压缩包。
+> 如果你想享受开箱即用的 XFCE 桌面环境体验，可以从[Rootfs repository](Usage-Android-App.md#rootfs-repository) 或从官方的 [Droidspaces Rootfs Builder Releases](https://github.com/Droidspaces/Droidspaces-rootfs-builder/releases) 下载我们预配置的 XFCE 压缩包。
 
 <a id="termux-x11"></a>
 
