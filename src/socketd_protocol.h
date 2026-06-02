@@ -72,6 +72,9 @@ enum ds_socketd_capability {
 #define DS_SOCKETD_RECORD_NAME_MAX 256
 #define DS_SOCKETD_RECORD_PATH_MAX 1024
 #define DS_SOCKETD_RECORD_PORTS_MAX 16
+#define DS_SOCKETD_INSPECT_ENV_MAX 32
+#define DS_SOCKETD_INSPECT_BINDS_MAX 32
+#define DS_SOCKETD_INSPECT_STRING_MAX 1024
 
 /*
  * CONCERN(socketd-wire):
@@ -117,6 +120,78 @@ struct DS_SOCKETD_PACKED ds_socketd_container_record {
  * CONCERN(socketd-wire):
  * started_at_be is a 64-bit network-order value. Later bridge/client code must
  * use explicit 64-bit byte-order helpers here, not htonl()/ntohl().
+ */
+
+struct DS_SOCKETD_PACKED ds_socketd_inspect_container_req {
+  /* Container name, UUID, or UUID prefix. Empty is invalid. */
+  char target[DS_SOCKETD_RECORD_NAME_MAX];
+};
+
+struct DS_SOCKETD_PACKED ds_socketd_env_record {
+  char key[DS_SOCKETD_RECORD_NAME_MAX];
+  char value[DS_SOCKETD_INSPECT_STRING_MAX];
+};
+
+struct DS_SOCKETD_PACKED ds_socketd_bind_record {
+  char source[DS_SOCKETD_RECORD_PATH_MAX];
+  char destination[DS_SOCKETD_RECORD_PATH_MAX];
+  uint8_t read_only;
+  uint8_t _pad[3];
+};
+
+struct DS_SOCKETD_PACKED ds_socketd_inspect_container_record_v1 {
+  uint16_t record_version_be; /* currently 1 */
+  uint16_t _header_pad;
+  uint32_t record_size_be;    /* sizeof(ds_socketd_inspect_container_record_v1) */
+
+  char name[DS_SOCKETD_RECORD_NAME_MAX];
+  char uuid[DS_UUID_LEN + 1];
+  char rootfs_path[DS_SOCKETD_RECORD_PATH_MAX];
+  char image_ref[DS_SOCKETD_RECORD_PATH_MAX];
+  char hostname[DS_SOCKETD_RECORD_NAME_MAX];
+  char nat_ip[INET_ADDRSTRLEN]; /* empty string if not NAT mode */
+  char custom_init[DS_SOCKETD_RECORD_PATH_MAX]; /* empty = /sbin/init */
+  char dns_servers[DS_SOCKETD_INSPECT_STRING_MAX];
+
+  int32_t pid_be;       /* host-view PID 1; 0 = stopped */
+  int64_t started_at_be; /* CLOCK_REALTIME seconds; 0 if unknown */
+
+  int64_t memory_limit_be; /* bytes; 0 = unlimited */
+  int64_t cpu_quota_be;    /* us per period; 0 = unlimited */
+  int64_t cpu_period_be;   /* us; 0 = runtime default */
+  int64_t pids_limit_be;   /* 0 = unlimited */
+  int32_t privileged_mask_be;
+
+  uint8_t net_mode; /* 0=host 1=nat 2=none */
+  uint8_t foreground;
+  uint8_t volatile_mode;
+  uint8_t force_cgroupv1;
+  uint8_t disable_ipv6;
+  uint8_t android_storage;
+  uint8_t selinux_permissive;
+  uint8_t hw_access;
+  uint8_t gpu_mode;
+  uint8_t termux_x11;
+  uint8_t block_nested_ns;
+  uint8_t is_img_mount;
+
+  uint16_t env_count_be;            /* entries serialized in env[] */
+  uint16_t env_total_count_be;      /* original cfg count before truncation */
+  uint16_t bind_count_be;           /* entries serialized in binds[] */
+  uint16_t bind_total_count_be;     /* original cfg count before truncation */
+  uint16_t port_count_be;           /* entries serialized in ports[] */
+  uint16_t port_total_count_be;     /* original cfg count before truncation */
+
+  struct ds_socketd_env_record env[DS_SOCKETD_INSPECT_ENV_MAX];
+  struct ds_socketd_bind_record binds[DS_SOCKETD_INSPECT_BINDS_MAX];
+  struct ds_socketd_port_record ports[DS_SOCKETD_RECORD_PORTS_MAX];
+};
+
+/*
+ * Inspect fixed-list truncation rules:
+ *   env_count/bind_count/port_count are capped at the protocol array widths;
+ *   *_total_count reports the complete config-side count so clients can mark
+ *   the Docker-compatible JSON projection as incomplete if desired.
  */
 
 struct DS_SOCKETD_PACKED ds_socketd_poll_events_req {

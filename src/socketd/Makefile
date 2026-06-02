@@ -43,6 +43,7 @@ SRCS := \
 	main.cpp \
 	backend_client.cpp \
 	container_list.cpp \
+	container_inspect.cpp \
 	snapshot_lists.cpp \
 	event_log.cpp \
 	api_server.cpp
