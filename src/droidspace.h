@@ -459,6 +459,12 @@ ds_init_type_t detect_container_init(const char *path);
 int get_user_shell(const char *user, char *shell_buf, size_t size);
 void check_kernel_recommendation(void);
 void write_monitor_debug_log(const char *name, const char *fmt, ...);
+void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write);
+int is_external_lock_active(const char *name);
+int wait_for_socket_or_death(pid_t pid, const char *path, int timeout_ms,
+                             int interval_us);
+void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
+                                 int skip_unmount, int force_cleanup);
 void ds_open_container_log(struct ds_config *cfg);
 void ds_close_container_log(void);
 void ds_socketd_record_core_event(const char *action,
