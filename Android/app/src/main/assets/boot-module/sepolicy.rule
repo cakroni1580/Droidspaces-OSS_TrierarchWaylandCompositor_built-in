@@ -66,3 +66,7 @@ allow system_server droidspacesd fifo_file write
 allow untrusted_app droidspacesd fd use
 allow untrusted_app droidspacesd fifo_file write
 allow untrusted_app_27 droidspacesd fd use
+
+# for pulseAudio
+allow audioserver droidspacesd binder { call transfer }
+allow mediaserver droidspacesd binder { call transfer }

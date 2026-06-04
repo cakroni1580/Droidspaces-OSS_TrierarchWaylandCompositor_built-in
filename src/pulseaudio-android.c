@@ -66,26 +66,6 @@ static void pulse_child_wrapper(int ready_fd, void *user_data) {
    * Must be done while still root, before privilege drop. */
   ds_oom_protect();
 
-  /* Read Termux's SELinux MLS categories from its data directory xattr.
-   * Identical to x11.c: we need the same categories so the process is
-   * treated as belonging to the Termux app sandbox. */
-  char ctx[256];
-  if (get_selinux_context(TX11_DATA_DIR, ctx, sizeof(ctx)) < 0 &&
-      get_selinux_context(TX11_DATA_ALT, ctx, sizeof(ctx)) < 0) {
-    fprintf(stderr, "[PulseAudio] cannot read Termux SELinux context\n");
-    if (write(ready_fd, "\x01", 1) < 0) { /* ignore */
-    }
-    _exit(1);
-  }
-
-  const char *mls = ds_extract_mls(ctx);
-  if (!mls) {
-    fprintf(stderr, "[PulseAudio] malformed SELinux context: %s\n", ctx);
-    if (write(ready_fd, "\x01", 1) < 0) { /* ignore */
-    }
-    _exit(1);
-  }
-
   /* Set up the Termux environment before dropping privileges */
   setenv("TMPDIR", TX11_PREFIX "/tmp", 1);
   setenv("HOME", TX11_HOME, 1);
@@ -95,7 +75,7 @@ static void pulse_child_wrapper(int ready_fd, void *user_data) {
   /* Ensure the tmp directory exists (root creates it before priv drop) */
   mkdir_p(TX11_PREFIX "/tmp", 0755);
 
-  /* Drop root -> Termux UID with supplementary Android groups. */
+  /* Drop root -> Termux UID. */
   if (ds_drop_privileges(args->uid) < 0) {
     perror("[PulseAudio] privilege drop failed");
     if (write(ready_fd, "\x01", 1) < 0) { /* ignore */
@@ -103,12 +83,8 @@ static void pulse_child_wrapper(int ready_fd, void *user_data) {
     _exit(1);
   }
 
-  /* SELinux dyntransition into untrusted_app with Termux's MLS categories. */
-  char target[256] = "";
-  ds_selinux_dyntransition(mls, target, sizeof(target));
-
-  fprintf(stdout, "[PulseAudio] ctx=%s uid=%d socket=%s\n", target,
-          (int)getuid(), TX11_PULSE_SOCKET);
+  fprintf(stdout, "[PulseAudio] uid=%d socket=%s\n", (int)getuid(),
+          TX11_PULSE_SOCKET);
   fflush(stdout);
 
   /* Launch PulseAudio in non-daemon foreground mode.

@@ -212,9 +212,7 @@ void ds_selinux_dyntransition(const char *mls, char *applied_ctx,
  * Returns 0 on success, -1 on failure.
  */
 int ds_drop_privileges(int uid) {
-  gid_t groups[] = {(gid_t)uid, 1003, 1004, 1011, 1015, 1028, 3003, 9997};
-  if (setgroups(sizeof(groups) / sizeof(groups[0]), groups) < 0 ||
-      setresgid(uid, uid, uid) < 0 || setresuid(uid, uid, uid) < 0)
+  if (setresgid(uid, uid, uid) < 0 || setresuid(uid, uid, uid) < 0)
     return -1;
   return 0;
 }
