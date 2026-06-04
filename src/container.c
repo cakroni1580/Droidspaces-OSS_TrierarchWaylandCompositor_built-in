@@ -1599,6 +1599,9 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       if (cfg->virgl_extra_flags)
         printf("VIRGL_FLAGS=%s\n", cfg->virgl_extra_flags);
     }
+    if (is_android()) {
+      printf("PULSEAUDIO=%d\n", cfg->pulseaudio);
+    }
 
     if (access("/sys/fs/selinux/enforce", R_OK) == 0) {
       printf("SELINUX=%s\n",
@@ -1786,7 +1789,13 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
-    /* 9. SELinux Status */
+    /* 9. PulseAudio */
+    if (is_android() && cfg->pulseaudio) {
+      printf("  PulseAudio: enabled\n");
+      feat_count++;
+    }
+
+    /* 10. SELinux Status */
     if (access("/sys/fs/selinux/enforce", R_OK) == 0) {
       int status = ds_get_selinux_status();
       if (status == 0) {
@@ -1797,25 +1806,25 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
-    /* 10. Volatile Mode */
+    /* 11. Volatile Mode */
     if (cfg->volatile_mode) {
       printf("  Volatile mode: enabled\n");
       feat_count++;
     }
 
-    /* 11. Cgroup v1 */
+    /* 12. Cgroup v1 */
     if (cfg->force_cgroupv1) {
       printf("  " C_RED "Force Cgroup V1:" C_RESET " yes\n");
       feat_count++;
     }
 
-    /* 12. Deadlock Shield (block_nested_ns) */
+    /* 13. Deadlock Shield (block_nested_ns) */
     if (cfg->block_nested_ns) {
       printf("  " C_RED "Deadlock Shield:" C_RESET " enabled\n");
       feat_count++;
     }
 
-    /* 13. Privileged Mode */
+    /* 14. Privileged Mode */
     if (cfg->privileged_mask > 0) {
       printf("  " C_RED "Privileged mode:" C_RESET " ");
       if (cfg->privileged_mask == DS_PRIV_FULL) {
@@ -1847,19 +1856,19 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
-    /* 14. Bind Mounts */
+    /* 15. Bind Mounts */
     if (cfg->bind_count > 0) {
       printf("  Bind mounts: %d active\n", cfg->bind_count);
       feat_count++;
     }
 
-    /* 15. Custom Init */
+    /* 16. Custom Init */
     if (cfg->custom_init[0]) {
       printf("  " C_RED "Custom Init:" C_RESET " %s\n", cfg->custom_init);
       feat_count++;
     }
 
-    /* 16. Environment Variables */
+    /* 17. Environment Variables */
     if (cfg->env_var_count > 0) {
       printf("  Env variables: %d loaded\n", cfg->env_var_count);
       feat_count++;

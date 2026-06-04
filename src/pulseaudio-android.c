@@ -33,7 +33,7 @@ static int pa_resolve_termux_uid(void) {
     return -1;
 
   if (access(TX11_PULSE_BIN, F_OK) != 0) {
-    ds_warn("[PulseAudio] binary not found at %s. Is pulseaudio installed in "
+    ds_warn("PulseAudio: binary not found at %s. Is pulseaudio installed in "
             "Termux?",
             TX11_PULSE_BIN);
     return -1;
@@ -113,7 +113,7 @@ static void pulse_child_wrapper(int ready_fd, void *user_data) {
 
   /* Launch PulseAudio in non-daemon foreground mode.
    * - module-native-protocol-unix: UNIX socket with anonymous auth
-   * - module-sles-sink: Android OpenSL ES audio output (default)
+   * - module-aaudio-sink: Android AAudio low-latency audio output (default)
    * - --exit-idle-time=-1: never exit on idle (we manage lifecycle ourselves)
    * - --daemonize=no: stay in foreground so our log relay captures all output
    */
@@ -121,7 +121,7 @@ static void pulse_child_wrapper(int ready_fd, void *user_data) {
       TX11_PULSE_BIN,
       "--load=module-native-protocol-unix socket=" TX11_PULSE_SOCKET
       " auth-anonymous=1",
-      "--load=module-sles-sink",
+      "--load=module-aaudio-sink",
       "--exit-idle-time=-1",
       "--daemonize=no",
       "--log-target=stderr",
@@ -138,7 +138,7 @@ static void pulse_child_wrapper(int ready_fd, void *user_data) {
 /* ---- pactl post-start helper ------------------------------------------ */
 
 /*
- * Run 'pactl set-default-sink module-sles-sink' once the socket is up.
+ * Run 'pactl set-default-sink AAudio_sink' once the socket is up.
  * Forked as a short-lived child; parent doesn't wait -- fire and forget.
  */
 static void run_pactl_set_default(int uid) {
@@ -193,7 +193,7 @@ int ds_pulse_daemon_start(struct ds_config *cfg) {
   /* Reuse existing global daemon if still alive */
   pid_t existing = ds_daemon_read_pid("pulse.ppid");
   if (existing > 0) {
-    ds_log("[PulseAudio] daemon already running (PID %d)", (int)existing);
+    ds_log("PulseAudio: daemon already running (PID %d)", (int)existing);
     cfg->pulse_pid = existing;
     return 1;
   }
@@ -214,23 +214,13 @@ int ds_pulse_daemon_start(struct ds_config *cfg) {
   ds_daemon_write_pid("pulse.ppid", child);
 
   /* Wait for the UNIX socket to appear, then set the default sink.
-   * We poll for up to 3 seconds (30 * 100ms); if PA hasn't created the
-   * socket by then it probably failed -- pactl will be skipped gracefully. */
-  int waited = 0;
-  while (waited < 30) {
-    struct stat st;
-    if (stat(TX11_PULSE_SOCKET, &st) == 0 && S_ISSOCK(st.st_mode))
-      break;
-    usleep(100000);
-    waited++;
-  }
-
-  if (waited < 30) {
-    ds_log("[PulseAudio] socket appeared -- setting default sink to %s",
+   * If PA hasn't created the socket in 3s (or dies), pactl is skipped. */
+  if (wait_for_socket_or_death(child, TX11_PULSE_SOCKET, 3000, 100000) == 0) {
+    ds_log("[PulseAudio] socket appeared - setting default sink to %s",
            TX11_PULSE_DEFAULT_SINK);
     run_pactl_set_default(uid);
   } else {
-    ds_warn("[PulseAudio] socket did not appear in 3s -- skipping pactl");
+    ds_warn("PulseAudio: socket did not appear in 3s - skipping pactl");
   }
 
   return 0;
@@ -279,8 +269,7 @@ int ds_setup_pulse_socket(struct ds_config *cfg) {
 
   struct stat st;
   if (stat(src, &st) != 0) {
-    ds_warn("[PulseAudio] socket not found at %s - skipping socket bridge",
-            src);
+    ds_warn("PulseAudio: socket not found at %s - skipping socket bridge", src);
     return 0;
   }
 
@@ -289,7 +278,7 @@ int ds_setup_pulse_socket(struct ds_config *cfg) {
   if (ds_bind_mount_socket(src, DS_PULSE_SOCKET, uid, "PulseAudio") < 0)
     return 0;
 
-  ds_log("[PulseAudio] socket bind-mounted into container");
+  ds_log("PulseAudio: socket bind-mounted into container");
 
   /* Inject PULSE_SERVER so all processes inside the container find the daemon
    */

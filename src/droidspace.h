@@ -151,7 +151,7 @@
 #define TX11_PULSE_SOCKET TX11_PREFIX "/tmp/.pulse-socket"
 #define TX11_PULSE_BIN TX11_PREFIX "/bin/pulseaudio"
 #define TX11_PACTL_BIN TX11_PREFIX "/bin/pactl"
-#define TX11_PULSE_DEFAULT_SINK "module-sles-sink"
+#define TX11_PULSE_DEFAULT_SINK "AAudio_sink"
 
 /* File Extensions */
 #define DS_EXT_PID ".pid"
