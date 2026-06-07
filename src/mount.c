@@ -8,6 +8,27 @@
 #include "droidspace.h"
 #include <linux/loop.h>
 
+/* loop_config and LOOP_CONFIGURE were added in kernel 5.8 uapi.
+ * Older musl/glibc headers may not have them - define compat stubs. */
+#ifndef LOOP_CONFIGURE
+struct ds_loop_config {
+  __u32 fd;
+  __u32 block_size;
+  struct loop_info64 info;
+  __u64 __reserved[8];
+};
+#define LOOP_CONFIGURE _IOW(0x4C, 0x0A, struct ds_loop_config)
+#define DS_USE_COMPAT_LOOP_CONFIG
+#endif
+
+#ifndef LO_FLAGS_DIRECT_IO
+#define LO_FLAGS_DIRECT_IO 16
+#endif
+
+#ifndef LOOP_SET_DIRECT_IO
+#define LOOP_SET_DIRECT_IO 0x4C08
+#endif
+
 #define DS_VTTY_COUNT 6 /* /dev/tty1..6 null symlinks for non-systemd inits */
 
 /* Forward declarations for loop helpers used in find_available_mountpoint */
@@ -917,7 +938,19 @@ static int open_loop_dev(long devnr, char *path_out, size_t path_size) {
 
 /*
  * Attach img_path to a free loop device via ioctls.
- * Sets LO_FLAGS_AUTOCLEAR so the kernel auto-releases the loop after umount.
+ *
+ * Direct I/O mode (LO_FLAGS_DIRECT_IO) eliminates the host page cache layer,
+ * preventing double-buffering between the loop backing file and the mounted
+ * ext4 page cache - the primary cause of severe I/O throughput degradation on
+ * loop-mounted rootfs images (observed: ~2000 point Geekbench 6 deficit vs
+ * native directory mode on Snapdragon 8 Elite).
+ *
+ * Fallback chain (widest kernel support first):
+ *   1. LOOP_CONFIGURE (kernel >= 5.8): atomic setup + DIO in one ioctl.
+ *   2. LOOP_SET_FD + LOOP_SET_STATUS64 + LOOP_SET_DIRECT_IO (kernel >= 4.10).
+ *   3. LOOP_SET_FD + LOOP_SET_STATUS64 only (kernel < 4.10, e.g. 3.10):
+ *      buffered I/O - DIO not available, warn and continue.
+ *
  * Returns the open loop_fd on success (caller must close after mount()).
  * loop_path_out is filled with the device node path for the mount() call.
  */
@@ -942,7 +975,38 @@ static int loop_attach(const char *img_path, char *loop_path_out,
     return -1;
   }
 
+  /* --- Attempt 1: LOOP_CONFIGURE (kernel >= 5.8) ---
+   * Atomically sets fd, flags (DIO + AUTOCLEAR), and filename in one ioctl.
+   * img_fd is opened normally; the kernel switches the backing file to O_DIRECT
+   * internally when LO_FLAGS_DIRECT_IO is set via LOOP_CONFIGURE. */
   int img_fd = open(img_path, O_RDWR | O_CLOEXEC);
+  if (img_fd < 0) {
+    ds_error("open image %s: %s", img_path, strerror(errno));
+    close(loop_fd);
+    return -1;
+  }
+
+#ifdef DS_USE_COMPAT_LOOP_CONFIG
+  struct ds_loop_config lcfg;
+#else
+  struct loop_config lcfg;
+#endif
+  memset(&lcfg, 0, sizeof(lcfg));
+  lcfg.fd = (unsigned int)img_fd;
+  lcfg.info.lo_flags = LO_FLAGS_AUTOCLEAR | LO_FLAGS_DIRECT_IO;
+  snprintf((char *)lcfg.info.lo_file_name, LO_NAME_SIZE, "%.63s", img_path);
+
+  if (ioctl(loop_fd, LOOP_CONFIGURE, &lcfg) == 0) {
+    close(img_fd);
+    ds_log("[DEBUG] Direct I/O enabled via LOOP_CONFIGURE (kernel >= 5.8).");
+    return loop_fd;
+  }
+
+  /* LOOP_CONFIGURE not supported - fall through to legacy path */
+  close(img_fd);
+
+  /* --- Legacy path: LOOP_SET_FD + LOOP_SET_STATUS64 --- */
+  img_fd = open(img_path, O_RDWR | O_CLOEXEC);
   if (img_fd < 0) {
     ds_error("open image %s: %s", img_path, strerror(errno));
     close(loop_fd);
@@ -967,6 +1031,15 @@ static int loop_attach(const char *img_path, char *loop_path_out,
   if (ioctl(loop_fd, LOOP_SET_STATUS64, &li) < 0)
     ds_warn("LOOP_SET_STATUS64: %s (continuing)", strerror(errno));
 
+  /* --- Attempt 2: LOOP_SET_DIRECT_IO (kernel >= 4.10) --- */
+  if (ioctl(loop_fd, LOOP_SET_DIRECT_IO, 1UL) == 0) {
+    ds_log(
+        "[DEBUG] Direct I/O enabled via LOOP_SET_DIRECT_IO (kernel >= 4.10).");
+    return loop_fd;
+  }
+
+  /* --- Attempt 3: kernel < 4.10 (e.g. 3.10) - buffered I/O only --- */
+  ds_log("[DEBUG] Direct I/O unavailable on this kernel; using buffered I/O.");
   return loop_fd;
 }
 
@@ -1038,11 +1111,15 @@ int mount_rootfs_img(const char *img_path, char *mount_point, size_t mp_size,
    * Build mount flags: base VFS flags + any fstype-specific extras.
    * pivot_root requires a writable mount to create .old_root, so no MS_RDONLY.
    */
-  unsigned long mnt_flags = MS_NOATIME | MS_NODIRATIME;
+  /* MS_NOATIME covers both file and directory atimes; MS_NODIRATIME is
+   * redundant. Omitting nodelalloc restores ext4 default delayed allocation,
+   * which dramatically improves write throughput (nodelalloc can drop writes
+   * from ~200 MB/s to ~22 MB/s by forcing single-block extent allocation). */
+  unsigned long mnt_flags = MS_NOATIME;
   const char *mnt_data = NULL;
 
   if (strcmp(fstype, "ext4") == 0) {
-    mnt_data = "nodelalloc,errors=remount-ro,init_itable=0";
+    mnt_data = "errors=remount-ro,init_itable=0";
   } else if (strcmp(fstype, "btrfs") == 0) {
     /* btrfs defaults are usually sane */
     mnt_data = NULL;
