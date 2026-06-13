@@ -1933,6 +1933,14 @@ int restart_rootfs_with_timeout(struct ds_config *cfg, int timeout_seconds) {
   if (stop_rootfs_with_timeout(cfg, 1, timeout_seconds) < 0) {
     return -1;
   }
+  /* The stop above tore down using the booted snapshot (loaded while the
+   * container was alive). It is gone now, so reloading by name returns the
+   * workspace copy - reload it so host-side container.config edits made while
+   * it ran take effect on this restart. start_rootfs re-derives the preserved
+   * mount from the on-disk .mount sidecar, so losing the snapshot paths is
+   * fine. */
+  free_config_binds(cfg);
+  ds_config_load_by_name(cfg->container_name, cfg);
   putchar('\n');
   print_ds_banner();
   return start_rootfs(cfg);

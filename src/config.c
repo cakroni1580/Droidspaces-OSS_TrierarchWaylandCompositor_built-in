@@ -911,6 +911,23 @@ int ds_config_load_by_name(const char *name, struct ds_config *cfg) {
   snprintf(config_path, sizeof(config_path),
            "%s/Containers/%s/container.config", get_workspace_dir(), safe_name);
 
+  /* Single source of truth: if the container is running, load the immutable
+   * snapshot it actually booted with (/run/droidspaces/container.config inside
+   * its mount ns) so host-side edits to container.config while it runs never
+   * desync stop/cleanup/info. Keep config_file pointing at the workspace copy
+   * so later saves still target the host file. Fall back to the workspace copy
+   * when not running or the snapshot is unreadable. */
+  pid_t pid = find_container_by_name(name);
+  if (pid > 0) {
+    char run_path[PATH_MAX];
+    if (build_proc_root_path(pid, "/run/droidspaces/container.config", run_path,
+                             sizeof(run_path)) == 0 &&
+        access(run_path, F_OK) == 0 && ds_config_load(run_path, cfg) == 0) {
+      safe_strncpy(cfg->config_file, config_path, sizeof(cfg->config_file));
+      return 0;
+    }
+  }
+
   return ds_config_load(config_path, cfg);
 }
 
