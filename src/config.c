@@ -291,6 +291,8 @@ int ds_config_load(const char *config_path, struct ds_config *cfg) {
       cfg->virgl_extra_flags = val[0] ? strdup(val) : NULL;
     } else if (strcmp(key, "enable_pulseaudio") == 0) {
       cfg->pulseaudio = parse_bool(val);
+    } else if (strcmp(key, "enable_wayland") == 0) {
+      cfg->wayland = parse_bool(val);  
     } else if (strcmp(key, "selinux_permissive") == 0) {
       cfg->selinux_permissive = parse_bool(val);
     } else if (strcmp(key, "volatile_mode") == 0) {
@@ -631,6 +633,7 @@ static void ds_config_serialize_known(FILE *f, struct ds_config *cfg) {
     if (cfg->virgl_extra_flags)
       fprintf(f, "virgl_extra_flags=%s\n", cfg->virgl_extra_flags);
     fprintf(f, "enable_pulseaudio=%d\n", cfg->pulseaudio);
+    fprintf(f, "enable_wayland=%d\n", cfg->wayland);
   }
   fprintf(f, "enable_hw_access=%d\n", cfg->hw_access);
   fprintf(f, "enable_gpu_mode=%d\n", cfg->gpu_mode);
