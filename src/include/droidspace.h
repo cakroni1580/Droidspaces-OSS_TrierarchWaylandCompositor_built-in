@@ -364,6 +364,7 @@ struct ds_config {
   int virgl;              /* --virgl (Android only) */
   char *virgl_extra_flags; /* --virgl-flags "..." (heap, NULL if unset) */
   int pulseaudio;          /* --pulse-audio (Android only) */
+  int wayland;             /* --wayland (Android only) */
   int volatile_mode;       /* --volatile */
   int disable_ipv6;        /* --disable-ipv6 */
   int android_storage;     /* --enable-android-storage */
