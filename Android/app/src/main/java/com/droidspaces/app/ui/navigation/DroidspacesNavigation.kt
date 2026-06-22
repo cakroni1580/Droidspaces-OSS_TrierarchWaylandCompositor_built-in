@@ -103,6 +103,8 @@ sealed class Screen(val route: String) {
     data object Terminal : Screen("terminal/{containerName}") {
         fun createRoute(containerName: String) = "terminal/${Uri.encode(containerName)}"
     }
+
+    data object WaylandDisplay : Screen("wayland_display")
 }
 
 @Composable
@@ -258,6 +260,9 @@ fun DroidspacesNavigation(
                 },
                 onNavigateToTerminal = { containerName ->
                     navController.navigate(Screen.Terminal.createRoute(containerName))
+                },
+                onNavigateToWaylandDisplay = {
+                    navController.navigate(Screen.WaylandDisplay.route)
                 }
             )
         }
@@ -316,6 +321,7 @@ fun DroidspacesNavigation(
                 initialEnableVirgl = viewModel.enableVirgl,
                 initialVirglExtraFlags = viewModel.virglExtraFlags,
                 initialEnablePulseaudio = viewModel.enablePulseaudio,
+                initialEnableWayland = viewModel.enableWayland,
                 initialSelinuxPermissive = viewModel.selinuxPermissive,
                 initialVolatileMode = viewModel.volatileMode,
                 initialBindMounts = viewModel.bindMounts,
@@ -334,8 +340,8 @@ fun DroidspacesNavigation(
                 initialGatewayBridge = viewModel.gatewayBridge,
                 containerName = viewModel.containerName,
                 installedContainers = sharedContainerViewModel.containerList,
-                onNext = { netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, selinuxPermissive, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, envFileContent, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge ->
-                    viewModel.setConfig(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, selinuxPermissive, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, envFileContent, portForwards, forceCgroupv1, blockNestedNs, privileged, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
+                onNext = { netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, enableWayland, selinuxPermissive, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, envFileContent, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge ->
+                    viewModel.setConfig(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, enableWayland, selinuxPermissive, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, envFileContent, portForwards, forceCgroupv1, blockNestedNs, privileged, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
                     navController.navigate(Screen.SparseImageConfig.route)
                 },
                 onBack = {
@@ -661,6 +667,19 @@ fun DroidspacesNavigation(
                     navController.popBackStack()
                     sharedContainerViewModel.refresh()
                 }
+            )
+        }
+
+        // Wayland display — global single compositor, no container arg needed
+        composable(
+            route = Screen.WaylandDisplay.route,
+            enterTransition = defaultEnterTransition,
+            exitTransition = defaultExitTransition,
+            popEnterTransition = defaultEnterTransition,
+            popExitTransition = defaultExitTransition,
+        ) {
+            com.droidspaces.app.ui.screen.WaylandScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }
