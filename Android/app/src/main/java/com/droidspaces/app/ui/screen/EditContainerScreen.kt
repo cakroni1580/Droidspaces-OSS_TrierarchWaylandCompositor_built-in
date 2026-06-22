@@ -100,6 +100,7 @@ fun EditContainerScreen(
     var enableVirgl by remember { mutableStateOf(container.enableVirgl) }
     var virglExtraFlags by remember { mutableStateOf(container.virglExtraFlags) }
     var enablePulseaudio by remember { mutableStateOf(container.enablePulseaudio) }
+    var enableWayland by remember { mutableStateOf(container.enableWayland) }
     var selinuxPermissive by remember { mutableStateOf(container.selinuxPermissive) }
     var volatileMode by remember { mutableStateOf(container.volatileMode) }
     var bindMounts by remember { mutableStateOf(container.bindMounts) }
@@ -139,6 +140,7 @@ fun EditContainerScreen(
     var savedEnableVirgl by remember { mutableStateOf(container.enableVirgl) }
     var savedVirglExtraFlags by remember { mutableStateOf(container.virglExtraFlags) }
     var savedEnablePulseaudio by remember { mutableStateOf(container.enablePulseaudio) }
+    var savedEnableWayland by remember { mutableStateOf(container.enableWayland) }
     var savedSelinuxPermissive by remember { mutableStateOf(container.selinuxPermissive) }
     var savedVolatileMode by remember { mutableStateOf(container.volatileMode) }
     var savedBindMounts by remember { mutableStateOf(container.bindMounts) }
@@ -180,6 +182,7 @@ fun EditContainerScreen(
             enableVirgl != savedEnableVirgl ||
             virglExtraFlags != savedVirglExtraFlags ||
             enablePulseaudio != savedEnablePulseaudio ||
+            enableWayland != savedEnableWayland ||
             selinuxPermissive != savedSelinuxPermissive ||
             volatileMode != savedVolatileMode ||
             bindMounts != savedBindMounts ||
@@ -227,6 +230,7 @@ fun EditContainerScreen(
                     enableVirgl = enableVirgl,
                     virglExtraFlags = virglExtraFlags,
                     enablePulseaudio = enablePulseaudio,
+                    enableWayland = enableWayland,
                     selinuxPermissive = selinuxPermissive,
                     volatileMode = volatileMode,
                     bindMounts = bindMounts,
@@ -265,6 +269,7 @@ fun EditContainerScreen(
                         savedEnableVirgl = enableVirgl
                         savedVirglExtraFlags = virglExtraFlags
                         savedEnablePulseaudio = enablePulseaudio
+                        savedEnableWayland = enableWayland
                         savedSelinuxPermissive = selinuxPermissive
                         savedVolatileMode = volatileMode
                         savedBindMounts = bindMounts
@@ -916,6 +921,18 @@ fun EditContainerScreen(
                 onCheckedChange = {
                     clearFocus()
                     enablePulseaudio = it
+                },
+                enabled = true
+            )
+
+            if (Constants.isArm64) ToggleCard(
+                icon = Icons.Default.DesktopWindows,
+                title = context.getString(R.string.enable_wayland),
+                description = context.getString(R.string.enable_wayland_description),
+                checked = enableWayland,
+                onCheckedChange = {
+                    clearFocus()
+                    enableWayland = it
                 },
                 enabled = true
             )
