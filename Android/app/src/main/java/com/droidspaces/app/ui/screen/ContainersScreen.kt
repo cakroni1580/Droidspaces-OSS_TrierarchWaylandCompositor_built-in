@@ -60,6 +60,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import com.droidspaces.app.R
 import androidx.compose.ui.window.Dialog
+import com.droidspaces.app.wayland.WaylandManager
 
 // Uninstall state (similar to SystemdScreen ActionState)
 private sealed class UninstallState {
@@ -385,6 +386,11 @@ fun ContainersScreen(
                     }
                 )
                 systemStatsViewModel.clearContainerUsage(container.name)
+            }
+
+            // Auto-start Wayland compositor if this container needs it and it isn't running yet
+            if (operation == "start" && container.enableWayland) {
+                WaylandManager.ensureStarted(context)
             }
 
             // Build command
