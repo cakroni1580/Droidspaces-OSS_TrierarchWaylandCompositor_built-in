@@ -849,6 +849,7 @@ int check_selinux_permissive_needs(void);
 int check_x11_needs(void);
 int check_virgl_needs(void);
 int check_pulse_needs(void);
+int check_wayland_needs(void);
 
 /*
  * ds_feature_needs - generic feature-needs scanner.
