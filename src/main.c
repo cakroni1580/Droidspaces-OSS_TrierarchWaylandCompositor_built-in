@@ -86,8 +86,8 @@ void print_usage(void) {
       "      --virgl-flags=\"FLAGS\"   Extra flags passed to "
       "virgl_test_server_android\n"
       "      --pulse-audio         Configure PulseAudio sound server "
-      "support\n\n");
-
+      "support\n"
+      "      --wayland             Bridge Wayland compositor socket into container\n\n");
   printf(
       C_BOLD
       "Options (Security & Boot):" C_RESET "\n"
@@ -408,6 +408,7 @@ int main(int argc, char **argv) {
       {"gateway-net", required_argument, 0, 275},
       {"gateway-iface", required_argument, 0, 276},
       {"gateway-bridge", required_argument, 0, 277},
+      {"wayland", no_argument, 0, 278},
       {"reset", no_argument, 0, 256},
       {"format", no_argument, 0, 265},
       {"memory", required_argument, 0, 266},
@@ -680,6 +681,9 @@ int main(int argc, char **argv) {
       break;
     case 277:
       safe_strncpy(cfg.gateway_bridge, optarg, sizeof(cfg.gateway_bridge));
+      break;
+    case 278:
+      cfg.wayland = 1;
       break;
     case 'I':
       cfg.disable_ipv6 = 1;
