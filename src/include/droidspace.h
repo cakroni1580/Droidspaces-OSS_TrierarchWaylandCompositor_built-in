@@ -153,6 +153,19 @@
 #define TX11_PACTL_BIN TX11_PREFIX "/bin/pactl"
 #define TX11_PULSE_DEFAULT_SINK "AAudio_sink"
 
+/* Wayland compositor paths (Android only — compositor runs inside Droidspaces app) */
+/* Host-side socket created by libwayland-compositor.so in the app's data dir.
+ * The droidspaces binary bind-mounts it into the container's /run/user/0. */
+#define DS_WL_APP_PKG          "com.droidspaces.app"
+#define DS_WL_APP_DATA_DIR     "/data/data/" DS_WL_APP_PKG
+#define DS_WL_RUNTIME_DIR      DS_WL_APP_DATA_DIR "/files/usr/tmp"
+#define DS_WL_RUNTIME_OLDROOT  "/.old_root" DS_WL_RUNTIME_DIR
+#define DS_WL_SOCKET_NAME      "wayland-1"
+#define DS_WL_HOST_SOCKET      DS_WL_RUNTIME_DIR "/" DS_WL_SOCKET_NAME
+#define DS_WL_HOST_SOCKET_OLDROOT DS_WL_RUNTIME_OLDROOT "/" DS_WL_SOCKET_NAME
+/* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
+#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/" DS_WL_SOCKET_NAME
+
 /* File Extensions */
 #define DS_EXT_PID ".pid"
 #define DS_EXT_XPID ".xpid"
@@ -658,6 +671,17 @@ int ds_setup_virgl_socket(struct ds_config *cfg);
 int ds_pulse_daemon_start(struct ds_config *cfg);
 void ds_pulse_daemon_stop(struct ds_config *cfg);
 int ds_setup_pulse_socket(struct ds_config *cfg);
+
+/* ---------------------------------------------------------------------------
+ * wayland.c
+ *
+ * No daemon to start/stop: the Wayland compositor runs inside the Droidspaces
+ * Android app as libwayland-compositor.so.  The backend's job is purely to
+ * bridge the socket that the app-side compositor creates into the container.
+ * ---------------------------------------------------------------------------*/
+
+int ds_setup_wayland_socket(struct ds_config *cfg);
+int check_wayland_needs(void);
 
 /* ---------------------------------------------------------------------------
  * network.c
