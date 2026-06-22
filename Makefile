@@ -60,7 +60,6 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/android/x11.c \
        $(SRC_DIR)/android/virgl.c \
        $(SRC_DIR)/android/pulseaudio.c \
-       $(SRC_DIR)/android/wayland.c \
        $(SRC_DIR)/virtualize.c
 
 # Compiler flags - hardened warning set, all warnings are errors
@@ -285,13 +284,3 @@ format:
 clean:
 	@rm -rf $(OUT_DIR) $(BINARY_NAME)-*.tar.gz
 	@echo "[+] Cleaned build artifacts"
-
-# Build libwayland-server.so + libffi.so for the Android Wayland compositor.
-# Calls scripts/build-wayland-libs.sh which handles libffi (autotools) and
-# wayland-server (meson) cross-compiled for arm64-v8a, then installs the
-# unversioned .so files directly into jniLibs/. Gradle + CMake handle the
-# rest at APK build time — no ndk-build invocation needed.
-WAYLAND_BUILD_SCRIPT = scripts/build-wayland-libs.sh
-
-wayland-libs:
-	@bash $(WAYLAND_BUILD_SCRIPT)
