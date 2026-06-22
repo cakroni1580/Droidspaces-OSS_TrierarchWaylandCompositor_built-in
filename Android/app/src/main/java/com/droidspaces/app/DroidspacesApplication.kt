@@ -3,7 +3,9 @@ package com.droidspaces.app
 import android.app.Application
 import android.system.Os
 import com.topjohnwu.superuser.Shell
+import com.droidspaces.app.util.PreferencesManager
 import com.droidspaces.app.util.SystemInfoManager
+import com.droidspaces.app.wayland.WaylandManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +24,13 @@ class DroidspacesApplication : Application() {
 
         // Set TMPDIR for native operations (if any)
         Os.setenv("TMPDIR", cacheDir.absolutePath, true)
+
+        // Restore Wayland compositor if the user had it enabled before the app
+        // was killed (OOM, swipe-close, etc.). The compositor must be up before
+        // any container with enable_wayland=1 is started.
+        if (PreferencesManager.getInstance(this).isWaylandCompositorEnabled) {
+            WaylandManager.start(this)
+        }
 
         // Pre-load system info in parallel on boot (non-blocking)
         applicationScope.launch {
