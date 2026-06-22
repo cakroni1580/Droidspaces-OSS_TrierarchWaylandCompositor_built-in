@@ -39,6 +39,7 @@ data class ContainerInfo(
     val enableVirgl: Boolean = false,
     val virglExtraFlags: String = "",
     val enablePulseaudio: Boolean = false,
+    val enableWayland: Boolean = false,
     val selinuxPermissive: Boolean = false,
     val volatileMode: Boolean = false,
     val bindMounts: List<BindMount> = emptyList(),
@@ -82,6 +83,7 @@ data class ContainerInfo(
         appendLine("enable_virgl=${if (enableVirgl) "1" else "0"}")
         if (virglExtraFlags.isNotBlank()) appendLine("virgl_extra_flags=$virglExtraFlags")
         appendLine("enable_pulseaudio=${if (enablePulseaudio) "1" else "0"}")
+        appendLine("enable_wayland=${if (enableWayland) "1" else "0"}")
         appendLine("selinux_permissive=${if (selinuxPermissive) "1" else "0"}")
         appendLine("volatile_mode=${if (volatileMode) "1" else "0"}")
         if (bindMounts.isNotEmpty()) {
@@ -313,6 +315,7 @@ object ContainerManager {
                 enableVirgl = configMap["enable_virgl"] == "1",
                 virglExtraFlags = configMap["virgl_extra_flags"] ?: "",
                 enablePulseaudio = configMap["enable_pulseaudio"] == "1",
+                enableWayland = configMap["enable_wayland"] == "1",
                 selinuxPermissive = configMap["selinux_permissive"] == "1",
                 volatileMode = configMap["volatile_mode"] == "1",
                 bindMounts = bindMounts,
