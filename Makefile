@@ -101,7 +101,7 @@ find-cc = $(shell \
 		echo ""; \
 	fi)
 
-.PHONY: all help clean native x86_64 aarch64 armhf x86 riscv64 all-build tarball all-tarball debug-hardened wayland-libs format
+.PHONY: all help clean native x86_64 aarch64 armhf x86 riscv64 all-build tarball all-tarball debug-hardened format
 
 all: help
 
@@ -129,7 +129,6 @@ help:
 	@echo "Other:"
 	@echo "  make clean     - Remove build artifacts"
 	@echo "  make debug-hardened - Build with ASan/UBSan/LSan to find bugs"
-@echo "  make wayland-libs   - Build Wayland prebuilt .so files for Android"
 	@echo "  make format    - Run clang-format on all .c/.h/.cpp files"
 
 $(OUT_DIR):
