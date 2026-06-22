@@ -129,7 +129,7 @@ help:
 	@echo "Other:"
 	@echo "  make clean     - Remove build artifacts"
 	@echo "  make debug-hardened - Build with ASan/UBSan/LSan to find bugs"
-    @echo "  make wayland-libs   - Build Wayland prebuilt .so files for Android"
+@echo "  make wayland-libs   - Build Wayland prebuilt .so files for Android"
 	@echo "  make format    - Run clang-format on all .c/.h/.cpp files"
 
 $(OUT_DIR):
