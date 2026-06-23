@@ -282,27 +282,35 @@ static void *render_loop(void *arg) {
             rp = g_pending_rp;
             sp = g_pending_sp;
 
-            g_resize_pending = 1;
+            /*g_resize_pending = 1;*/
 
             pthread_mutex_unlock(&g_lock);
+            static int last_rw = -1;
+            static int last_rh = -1;
+            static int last_rp = -1;
+            static int last_sp = -1;
 
             if (rw > 0 && rh > 0) {
+                if (rw == last_rw &&
+                    rh == last_rh &&
+                    rp == last_rp &&
+                    sp == last_sp) {
+                    goto skip_resize_apply;
+                }
+                last_rw = rw;
+                last_rh = rh;
+                last_rp = rp;
+                last_sp = sp;
 
-                apply_output_size(
-                    rw,
-                    rh,
-                    rp,
-                    sp
-                );
+                apply_output_size(rw, rh, rp, sp);
 
                 LOGI(
-                    "render-thread resize %dx%d rp=%d sp=%d",
-                    rw,
-                    rh,
-                    rp,
-                    sp
+                   "render-thread resize applied %dx%d rp=%d sp=%d",
+                    rw, rh, rp, sp
                 );
             }
+            skip_resize_apply:
+            ;
         }
 
         g_wayland_checkpoint = "render";
@@ -378,13 +386,19 @@ static void apply_output_size(int phys_w, int phys_h, int rp, int sp) {
      * FIX CRITICAL: clamp lebih agresif untuk cegah pointer OOB
      * ========================================================= */
 
-    /* minimal UI footprint (hindari “too tiny logical surface”) */
-    if (lw < 360) lw = 360;
-    if (lh < 640) lh = 640;
+    /* safety: ensure logical size never collapses too extreme */
+    float min_ratio = 0.20f;   // 20% of physical (safe lower bound)
+    float max_ratio = 2.00f;   // allow upscale for compositor mapping
 
-    /* maximal guard (hindari overflow mapping inverse scale) */
-    if (lw > phys_w * 2) lw = phys_w * 2;
-    if (lh > phys_h * 2) lh = phys_h * 2;
+    float lw_ratio = (float)lw / (float)phys_w;
+    float lh_ratio = (float)lh / (float)phys_h;
+
+    /* clamp by ratio instead of absolute pixels */
+    if (lw_ratio < min_ratio) lw = (int32_t)(phys_w * min_ratio);
+    if (lh_ratio < min_ratio) lh = (int32_t)(phys_h * min_ratio);
+
+    if (lw_ratio > max_ratio) lw = (int32_t)(phys_w * max_ratio);
+    if (lh_ratio > max_ratio) lh = (int32_t)(phys_h * max_ratio);
 
     compositor_set_output_override(g_server, lw, lh);
     compositor_set_output_size(g_server, lw, lh, (int32_t)phys_w, (int32_t)phys_h);
