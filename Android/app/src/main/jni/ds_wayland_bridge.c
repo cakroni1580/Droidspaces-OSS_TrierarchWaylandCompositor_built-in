@@ -102,6 +102,7 @@ static int g_pending_width = 0;
 static int g_pending_height = 0;
 static int g_pending_rp = 100;
 static int g_pending_sp = 100;
+static int64_t g_time_offset_ms = 0;
 
 static void apply_output_size(
     int phys_w,
