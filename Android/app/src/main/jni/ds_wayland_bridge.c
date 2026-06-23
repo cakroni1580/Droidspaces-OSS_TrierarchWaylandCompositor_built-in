@@ -726,7 +726,7 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnKeyEvent(
     /* ===== FIX: monotonic timestamp guard ===== */
 
     keyq_push(
-        normalize_time(t),
+        (uint32_t)time_ms,
         key_linux,
         is_down ? 1u : 0u
     );
