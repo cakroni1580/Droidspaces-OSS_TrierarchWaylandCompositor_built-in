@@ -110,6 +110,17 @@ static void apply_output_size(
     int sp
 );
 
+static inline uint32_t normalize_time(uint32_t t)
+{
+      static uint32_t last = 0;
+
+      if (t < last)
+          t = last;
+
+      last = t;
+      return t;
+}
+
 static inline void compositor_notify_buffer_backpressure(void *srv) {
     (void)srv;
     /* no-op: handled via throttling */
@@ -475,6 +486,20 @@ Java_com_droidspaces_app_wayland_WaylandManager_nativeStart(
 }
 
 JNIEXPORT void JNICALL
+Java_com_droidspaces_app_wayland_WaylandSurface_nativeSyncTimebase(
+        JNIEnv *env, jclass clazz,
+        jlong android_uptime_ms)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+
+    int64_t native_ms =
+        (int64_t)(ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL);
+
+    g_time_offset_ms = android_uptime_ms - native_ms;
+}
+
+JNIEXPORT void JNICALL
 Java_com_droidspaces_app_wayland_WaylandManager_nativeStop(
         JNIEnv *env, jobject thiz)
 {
@@ -698,16 +723,12 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnKeyEvent(
     if (key_linux == 0) return;
         
     /* ===== FIX: monotonic timestamp guard ===== */
-    static uint32_t last_ts = 0;
 
-    uint32_t t = (uint32_t)time_ms;
-
-    if (t < last_ts) {
-        t = last_ts + 1;
-    }
-    last_ts = t;
-
-    keyq_push(t, key_linux, is_down ? 1u : 0u);
+    keyq_push(
+        normalize_time(t),
+        key_linux,
+        is_down ? 1u : 0u
+    );
 }
 
 /*
