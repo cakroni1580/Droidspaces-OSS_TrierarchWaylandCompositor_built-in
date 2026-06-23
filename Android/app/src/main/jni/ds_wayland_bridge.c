@@ -94,7 +94,6 @@ static volatile int  g_dispatch_running = 0;
 /* render thread — runs when a Surface is attached; also drives dispatch */
 static pthread_t     g_render_thread;
 static volatile int  g_render_running  = 0;
-static volatile int  g_scene_ready = 0;
 
 static volatile int32_t g_output_width  = 1;
 static volatile int32_t g_output_height = 1;
@@ -652,25 +651,8 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnPointerEvent(
         jfloat x, jfloat y, jint action, jint time_ms)
 {
     (void)env; (void)thiz;
-
-    /* FIX: block input sebelum scene render pertama siap */
-    if (!g_server || !g_renderer || !g_scene_ready)
-        return;
-
-    int32_t w = 0, h = 0;
-    compositor_get_output_size(g_server, &w, &h);
-
-    /* FIX: jangan proses kalau output belum valid */
-    if (w < 360 || h < 640)
-        return;
-
-    compositor_pointer_event(
-        g_server,
-        (float)x,
-        (float)y,
-        (int)action,
-        (uint32_t)time_ms
-    );
+    if (!g_server) return;
+    compositor_pointer_event(g_server, (float)x, (float)y, (int)action, (uint32_t)time_ms);
 }
 
 JNIEXPORT void JNICALL
