@@ -317,10 +317,7 @@ static void *render_loop(void *arg) {
             );
 
             break;
-        }
-        /* FIX: scene dianggap valid setelah render pertama sukses */
-        if (!g_scene_ready)
-            g_scene_ready = 1;
+        } 
             
         g_wayland_checkpoint = "frame_callbacks";
         compositor_send_frame_callbacks(srv);
@@ -541,9 +538,6 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeSurfaceCreated(
         start_dispatch();
         return;
     }
-
-    /* FIX: reset scene state setiap EGL recreate */
-    g_scene_ready = 0;   
 
     int pw = 0, ph = 0;
 
