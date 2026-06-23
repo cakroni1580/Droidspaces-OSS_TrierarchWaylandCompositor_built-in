@@ -81,11 +81,9 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
             // Hardware-style key events from IME (Backspace, Enter, arrows)
             override fun sendKeyEvent(event: KeyEvent): Boolean {
                 WaylandSurface.nativeOnKeyEvent(
-                    event.keyCode,
-                    event.action == KeyEvent.ACTION_DOWN,
-                    SystemClock.uptimeMillis().toInt()
-               )
-               return true
+                    event.keyCode, event.action == KeyEvent.ACTION_DOWN,
+                    event.eventTime.toInt())
+                return true
             }
 
             // Composing text: forward each update immediately so keystrokes aren't lost
@@ -109,11 +107,10 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
                 val b = beforeLength.coerceIn(0, 256)
                 val a = afterLength.coerceIn(0, 256)
                 commitExecutor.execute {
-                    var t = SystemClock.uptimeMillis()
+                    var t = System.currentTimeMillis()
                     repeat(b) {
-                        WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, true,  t.toInt())
-                        WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, false, t.toInt())
-                        t += 1
+                        WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, true,  t.toInt()); t++
+                        WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, false, t.toInt()); t++
                     }
                     repeat(a) {
                         WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_FORWARD_DEL, true,  t.toInt()); t++
@@ -127,15 +124,9 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
                 if (text.isNullOrEmpty()) return true
                 val str = text.toString()
                 commitExecutor.execute {
-                    var t = SystemClock.uptimeMillis()
-                    fun dn(kc: Int) {
-                        WaylandSurface.nativeOnKeyEvent(kc, true, t.toInt())
-                        t += 1
-                    }
-                    fun up(kc: Int) {
-                        WaylandSurface.nativeOnKeyEvent(kc, false, t.toInt())
-                        t += 1
-                    }
+                    var t = System.currentTimeMillis()
+                    fun dn(kc: Int) { WaylandSurface.nativeOnKeyEvent(kc, true,  t.toInt()); t++ }
+                    fun up(kc: Int) { WaylandSurface.nativeOnKeyEvent(kc, false, t.toInt()); t++ }
                     fun tap(kc: Int) { dn(kc); up(kc) }
 
                     val cps = str.codePoints().toArray()
