@@ -612,7 +612,7 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOutputSizeChanged(
     g_pending_rp     = (int)resolution_percent;
     g_pending_sp     = (int)scale_percent;
 
-    /*g_resize_pending = 1;*/
+    g_resize_pending = 1;
 
     pthread_mutex_unlock(&g_lock);
 }
