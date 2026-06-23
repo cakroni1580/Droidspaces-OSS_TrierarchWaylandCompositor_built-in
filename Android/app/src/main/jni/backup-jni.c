@@ -364,45 +364,48 @@ static void stop_render(void) {
 
 /* Shared output-size calculation: both nativeSurfaceCreated and
  * nativeOutputSizeChanged do the same rp/sp math. */
-static void apply_output_size(int phys_w, int phys_h, int rp, int sp) {
+static void apply_output_size(int phys_w, int phys_h, int rp, int sp)
+{
     if (!g_server || phys_w <= 0 || phys_h <= 0) return;
 
-    rp = (rp >= 5 && rp <= 150) ? rp : 100;
+    /* normalize input */
+    if (rp < 5 || rp > 150) rp = 100;
+    if (sp < 50 || sp > 1000) sp = 200;
 
-    int user_scale = (sp >= 50 && sp <= 1000) ? sp / 100 : 2;
-
-    if (user_scale < 1) user_scale = 1;
-    if (user_scale > 10) user_scale = 10;
-
-    int32_t lw = (phys_w * rp + 50) / 100;
-    int32_t lh = (phys_h * rp + 50) / 100;
-
-    if (user_scale > 1) {
-        lw = (lw + user_scale / 2) / user_scale;
-        lh = (lh + user_scale / 2) / user_scale;
-    }
+    /* convert scale percent → float scale */
+    float rp_scale = (float)rp / 100.0f;
+    float sp_scale = (float)sp / 100.0f;
 
     /* =========================================================
-     * FIX CRITICAL: clamp lebih agresif untuk cegah pointer OOB
+     * UNIFORM SCALE MODEL
+     * satu faktor global, tidak ada per-axis transform
      * ========================================================= */
 
-    /* safety: ensure logical size never collapses too extreme */
-    float min_ratio = 0.20f;   // 20% of physical (safe lower bound)
-    float max_ratio = 2.00f;   // allow upscale for compositor mapping
+    float scale = rp_scale / sp_scale;
 
-    float lw_ratio = (float)lw / (float)phys_w;
-    float lh_ratio = (float)lh / (float)phys_h;
+    /* hard safety: avoid degenerate scale (bukan clamp output, tapi model stabilizer) */
+    if (scale < 0.05f) scale = 0.05f;
+    if (scale > 5.0f)  scale = 5.0f;
 
-    /* clamp by ratio instead of absolute pixels */
-    if (lw_ratio < min_ratio) lw = (int32_t)(phys_w * min_ratio);
-    if (lh_ratio < min_ratio) lh = (int32_t)(phys_h * min_ratio);
+    /* compute output */
+    float fw = (float)phys_w * scale;
+    float fh = (float)phys_h * scale;
 
-    if (lw_ratio > max_ratio) lw = (int32_t)(phys_w * max_ratio);
-    if (lh_ratio > max_ratio) lh = (int32_t)(phys_h * max_ratio);
+    /* integer conversion (single rounding point only) */
+    int32_t lw = (int32_t)(fw + 0.5f);
+    int32_t lh = (int32_t)(fh + 0.5f);
 
+    /* commit */
     compositor_set_output_override(g_server, lw, lh);
-    compositor_set_output_size(g_server, lw, lh, (int32_t)phys_w, (int32_t)phys_h);
-    compositor_set_output_user_scale(g_server, user_scale);
+    compositor_set_output_size(
+        g_server,
+        lw,
+        lh,
+        (int32_t)phys_w,
+        (int32_t)phys_h
+    );
+
+    compositor_set_output_user_scale(g_server, (int32_t)(scale * 100.0f));
 
     g_output_width  = lw;
     g_output_height = lh;
