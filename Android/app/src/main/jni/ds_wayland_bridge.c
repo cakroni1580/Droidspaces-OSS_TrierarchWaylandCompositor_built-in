@@ -764,7 +764,7 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeEnsureFocus(
         (uint32_t)((ts.tv_sec * 1000 + ts.tv_nsec / 1000000) & 0xFFFFFFFFu);
 
     /* MARKER EVENT (khusus focus synthetic) */
-    keyq_push(t, 0xFFFFFFFE, 1);
+    keyq_push(normalize_time(t), 0xFFFFFFFE, 1);
 }
 
 JNIEXPORT void JNICALL
