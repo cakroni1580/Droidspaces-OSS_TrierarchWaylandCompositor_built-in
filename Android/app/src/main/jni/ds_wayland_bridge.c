@@ -294,7 +294,7 @@ static void *render_loop(void *arg) {
             rp = g_pending_rp;
             sp = g_pending_sp;
 
-            /*g_resize_pending = 1;*/
+            g_resize_pending = 1;
 
             pthread_mutex_unlock(&g_lock);
             static int last_rw = -1;
