@@ -71,3 +71,6 @@ allow audioserver droidspacesd binder { call transfer }
 allow audioserver droidspacesd fd use
 allow mediaserver droidspacesd binder { call transfer }
 allow mediaserver droidspacesd fd use
+
+# fix permission denied when read/write mounted storage (#213)
+allow mediaprovider_app droidspacesd fd use
