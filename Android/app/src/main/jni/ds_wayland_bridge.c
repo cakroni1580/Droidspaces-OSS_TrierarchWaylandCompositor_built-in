@@ -302,7 +302,7 @@ static void *render_loop(void *arg) {
              * oleh render thread.
              * --------------------------------------------------------- */       
 
-            g_resize_pending = 0;
+            g_resize_pending = 1;
 
             pthread_mutex_unlock(&g_lock);
             if (rw > 0 && rh > 0) {
