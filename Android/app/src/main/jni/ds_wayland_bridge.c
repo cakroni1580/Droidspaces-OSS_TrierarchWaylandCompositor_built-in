@@ -293,26 +293,19 @@ static void *render_loop(void *arg) {
             rh = g_pending_height;
             rp = g_pending_rp;
             sp = g_pending_sp;
+            /* ---------------------------------------------------------
+             * Resize request consumed.
+             *
+             * g_resize_pending adalah single source of truth.
+             * Tidak ada cache/static dedupe state.
+             * Setiap resize yang dikirim Java diproses tepat sekali
+             * oleh render thread.
+             * --------------------------------------------------------- */       
 
             g_resize_pending = 1;
 
             pthread_mutex_unlock(&g_lock);
-            static int last_rw = -1;
-            static int last_rh = -1;
-            static int last_rp = -1;
-            static int last_sp = -1;
-
             if (rw > 0 && rh > 0) {
-                if (rw == last_rw &&
-                    rh == last_rh &&
-                    rp == last_rp &&
-                    sp == last_sp) {
-                    goto skip_resize_apply;
-                }
-                last_rw = rw;
-                last_rh = rh;
-                last_rp = rp;
-                last_sp = sp;
 
                 apply_output_size(rw, rh, rp, sp);
 
@@ -321,8 +314,6 @@ static void *render_loop(void *arg) {
                     rw, rh, rp, sp
                 );
             }
-            skip_resize_apply:
-            ;
         }
 
         g_wayland_checkpoint = "render";
