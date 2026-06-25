@@ -94,6 +94,7 @@ static volatile int  g_dispatch_running = 0;
 /* render thread — runs when a Surface is attached; also drives dispatch */
 static pthread_t     g_render_thread;
 static volatile int  g_render_running  = 0;
+static volatile int  g_scene_ready = 0;
 
 static volatile int32_t g_output_width  = 1;
 static volatile int32_t g_output_height = 1;
@@ -102,7 +103,6 @@ static int g_pending_width = 0;
 static int g_pending_height = 0;
 static int g_pending_rp = 100;
 static int g_pending_sp = 100;
-static int64_t g_time_offset_ms = 0;
 
 static void apply_output_size(
     int phys_w,
@@ -110,17 +110,6 @@ static void apply_output_size(
     int rp,
     int sp
 );
-
-static inline uint32_t normalize_time(uint32_t t)
-{
-      static uint32_t last = 0;
-
-      if (t < last)
-          t = last;
-
-      last = t;
-      return t;
-}
 
 static inline void compositor_notify_buffer_backpressure(void *srv) {
     (void)srv;
@@ -293,25 +282,26 @@ static void *render_loop(void *arg) {
             rh = g_pending_height;
             rp = g_pending_rp;
             sp = g_pending_sp;
-            /* ---------------------------------------------------------
-             * Resize request consumed.
-             *
-             * g_resize_pending adalah single source of truth.
-             * Tidak ada cache/static dedupe state.
-             * Setiap resize yang dikirim Java diproses tepat sekali
-             * oleh render thread.
-             * --------------------------------------------------------- */       
 
             g_resize_pending = 1;
 
             pthread_mutex_unlock(&g_lock);
+
             if (rw > 0 && rh > 0) {
 
-                apply_output_size(rw, rh, rp, sp);
+                apply_output_size(
+                    rw,
+                    rh,
+                    rp,
+                    sp
+                );
 
                 LOGI(
-                   "render-thread resize applied %dx%d rp=%d sp=%d",
-                    rw, rh, rp, sp
+                    "render-thread resize %dx%d rp=%d sp=%d",
+                    rw,
+                    rh,
+                    rp,
+                    sp
                 );
             }
         }
@@ -328,7 +318,10 @@ static void *render_loop(void *arg) {
             );
 
             break;
-        } 
+        }
+        /* FIX: scene dianggap valid setelah render pertama sukses */
+        if (!g_scene_ready)
+            g_scene_ready = 1;
             
         g_wayland_checkpoint = "frame_callbacks";
         compositor_send_frame_callbacks(srv);
@@ -367,48 +360,39 @@ static void stop_render(void) {
 
 /* Shared output-size calculation: both nativeSurfaceCreated and
  * nativeOutputSizeChanged do the same rp/sp math. */
-static void apply_output_size(int phys_w, int phys_h, int rp, int sp)
-{
+static void apply_output_size(int phys_w, int phys_h, int rp, int sp) {
     if (!g_server || phys_w <= 0 || phys_h <= 0) return;
 
-    /* normalize input */
-    if (rp < 5 || rp > 150) rp = 100;
-    if (sp < 50 || sp > 1000) sp = 200;
+    rp = (rp >= 5 && rp <= 150) ? rp : 100;
 
-    /* convert scale percent → float scale */
-    float rp_scale = (float)rp / 100.0f;
-    float sp_scale = (float)sp / 100.0f;
+    int user_scale = (sp >= 50 && sp <= 1000) ? sp / 100 : 2;
+
+    if (user_scale < 1) user_scale = 1;
+    if (user_scale > 10) user_scale = 10;
+
+    int32_t lw = (phys_w * rp + 50) / 100;
+    int32_t lh = (phys_h * rp + 50) / 100;
+
+    if (user_scale > 1) {
+        lw = (lw + user_scale / 2) / user_scale;
+        lh = (lh + user_scale / 2) / user_scale;
+    }
 
     /* =========================================================
-     * UNIFORM SCALE MODEL
-     * satu faktor global, tidak ada per-axis transform
+     * FIX CRITICAL: clamp lebih agresif untuk cegah pointer OOB
      * ========================================================= */
 
-    float scale = rp_scale / sp_scale;
+    /* minimal UI footprint (hindari “too tiny logical surface”) */
+    if (lw < 360) lw = 360;
+    if (lh < 640) lh = 640;
 
-    /* hard safety: avoid degenerate scale (bukan clamp output, tapi model stabilizer) */
-    if (scale < 0.05f) scale = 0.05f;
-    if (scale > 5.0f)  scale = 5.0f;
+    /* maximal guard (hindari overflow mapping inverse scale) */
+    if (lw > phys_w * 2) lw = phys_w * 2;
+    if (lh > phys_h * 2) lh = phys_h * 2;
 
-    /* compute output */
-    float fw = (float)phys_w * scale;
-    float fh = (float)phys_h * scale;
-
-    /* integer conversion (single rounding point only) */
-    int32_t lw = (int32_t)(fw + 0.5f);
-    int32_t lh = (int32_t)(fh + 0.5f);
-
-    /* commit */
     compositor_set_output_override(g_server, lw, lh);
-    compositor_set_output_size(
-        g_server,
-        lw,
-        lh,
-        (int32_t)phys_w,
-        (int32_t)phys_h
-    );
-
-    compositor_set_output_user_scale(g_server, (int32_t)(scale * 100.0f));
+    compositor_set_output_size(g_server, lw, lh, (int32_t)phys_w, (int32_t)phys_h);
+    compositor_set_output_user_scale(g_server, user_scale);
 
     g_output_width  = lw;
     g_output_height = lh;
@@ -475,20 +459,6 @@ Java_com_droidspaces_app_wayland_WaylandManager_nativeStart(
 
     start_dispatch();
     LOGI("compositor started");
-}
-
-JNIEXPORT void JNICALL
-Java_com_droidspaces_app_wayland_WaylandSurface_nativeSyncTimebase(
-        JNIEnv *env, jclass clazz,
-        jlong android_uptime_ms)
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-
-    int64_t native_ms =
-        (int64_t)(ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL);
-
-    g_time_offset_ms = android_uptime_ms - native_ms;
 }
 
 JNIEXPORT void JNICALL
@@ -572,6 +542,9 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeSurfaceCreated(
         start_dispatch();
         return;
     }
+
+    /* FIX: reset scene state setiap EGL recreate */
+    g_scene_ready = 0;   
 
     int pw = 0, ph = 0;
 
@@ -679,8 +652,25 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnPointerEvent(
         jfloat x, jfloat y, jint action, jint time_ms)
 {
     (void)env; (void)thiz;
-    if (!g_server) return;
-    compositor_pointer_event(g_server, (float)x, (float)y, (int)action, (uint32_t)time_ms);
+
+    /* FIX: block input sebelum scene render pertama siap */
+    if (!g_server || !g_renderer || !g_scene_ready)
+        return;
+
+    int32_t w = 0, h = 0;
+    compositor_get_output_size(g_server, &w, &h);
+
+    /* FIX: jangan proses kalau output belum valid */
+    if (w < 360 || h < 640)
+        return;
+
+    compositor_pointer_event(
+        g_server,
+        (float)x,
+        (float)y,
+        (int)action,
+        (uint32_t)time_ms
+    );
 }
 
 JNIEXPORT void JNICALL
@@ -715,12 +705,16 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnKeyEvent(
     if (key_linux == 0) return;
         
     /* ===== FIX: monotonic timestamp guard ===== */
+    static uint32_t last_ts = 0;
 
-    keyq_push(
-        (uint32_t)time_ms,
-        key_linux,
-        is_down ? 1u : 0u
-    );
+    uint32_t t = (uint32_t)time_ms;
+
+    if (t < last_ts) {
+        t = last_ts + 1;
+    }
+    last_ts = t;
+
+    keyq_push(t, key_linux, is_down ? 1u : 0u);
 }
 
 /*
@@ -755,7 +749,7 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeEnsureFocus(
         (uint32_t)((ts.tv_sec * 1000 + ts.tv_nsec / 1000000) & 0xFFFFFFFFu);
 
     /* MARKER EVENT (khusus focus synthetic) */
-    keyq_push(normalize_time(t), 0xFFFFFFFE, 1);
+    keyq_push(t, 0xFFFFFFFE, 1);
 }
 
 JNIEXPORT void JNICALL
