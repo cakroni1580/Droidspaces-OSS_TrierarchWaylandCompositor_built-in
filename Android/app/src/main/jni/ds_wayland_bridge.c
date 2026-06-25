@@ -654,8 +654,7 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnPointerEvent(
     (void)env; (void)thiz;
 
     /* FIX: block input sebelum scene render pertama siap */
-    if (!g_server || !g_renderer)
-        return;
+    if (!g_server) return;
 
     compositor_pointer_event(
         g_server,
