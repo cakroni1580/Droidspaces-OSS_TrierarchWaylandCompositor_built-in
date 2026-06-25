@@ -26,6 +26,7 @@ import com.droidspaces.app.util.ContainerOSInfoManager
 import com.droidspaces.app.util.ContainerSystemdManager
 import com.droidspaces.app.util.ContainerProcdManager
 import com.droidspaces.app.util.ContainerOpenRCManager
+import com.droidspaces.app.util.ContainerDiskUsageManager
 import com.droidspaces.app.util.ContainerManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -75,6 +76,14 @@ fun ContainerDetailsScreen(
 
     // Init system state - detect systemd first, then OpenWrt/procd, then OpenRC
     var initSystemState by remember { mutableStateOf<InitSystemCardState>(InitSystemCardState.Checking) }
+
+    // Disk usage of the sparse rootfs.img (only relevant for sparse-image containers).
+    // Seed from the in-memory cache so a re-opened screen paints instantly.
+    var diskUsage by remember {
+        mutableStateOf(
+            if (container.useSparseImage) ContainerDiskUsageManager.getCached(container.rootfsPath) else null
+        )
+    }
 
     LaunchedEffect(container.name) {
         initSystemState = when {
@@ -127,6 +136,15 @@ fun ContainerDetailsScreen(
                 }
                 delay(2000)
             }
+        }
+    }
+
+    // Disk-usage footprint - computed once when the screen opens (the sparse image's
+    // footprint changes slowly, so a snapshot is enough). Runs in its own effect so the
+    // first reading isn't blocked behind the heavier OS-info shell calls above.
+    if (container.useSparseImage) {
+        LaunchedEffect(container.name) {
+            ContainerDiskUsageManager.getUsage(container.rootfsPath)?.let { diskUsage = it }
         }
     }
 
@@ -215,6 +233,13 @@ fun ContainerDetailsScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // Disk Usage Card - only for sparse-image containers (shows rootfs.img footprint)
+            if (container.useSparseImage) {
+                item(key = "diskusage_${container.name}") {
+                    SparseDiskUsageCard(usage = diskUsage)
                 }
             }
 
@@ -437,6 +462,106 @@ private fun TerminalCard(
             }
         }
     }
+}
+
+/**
+ * Disk Usage Card - shows how much real device storage a sparse rootfs.img occupies.
+ * Only rendered for sparse-image containers. [usage] is null until the first measurement
+ * lands, during which a lightweight placeholder is shown.
+ */
+@Composable
+private fun SparseDiskUsageCard(
+    usage: ContainerDiskUsageManager.DiskUsage?,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = AnimationUtils.cardFadeSpec(),
+        label = "disk_usage_card_fade"
+    )
+
+    val fraction = usage?.let {
+        if (it.totalBytes > 0L) (it.usedBytes.toFloat() / it.totalBytes.toFloat()).coerceIn(0f, 1f) else 0f
+    } ?: 0f
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = AnimationUtils.cardFadeSpec(),
+        label = "disk_usage_progress"
+    )
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 88.dp)
+            .alpha(alpha)
+            .graphicsLayer { this.alpha = alpha },
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_disk),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column {
+                    Text(
+                        text = context.getString(R.string.disk_usage),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val subtitle = usage?.let {
+                        context.getString(
+                            R.string.disk_usage_used_of_total,
+                            formatBytes(it.usedBytes),
+                            formatBytes(it.totalBytes)
+                        )
+                    } ?: context.getString(R.string.disk_usage_calculating)
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            LinearProgressIndicator(
+                progress = { animatedFraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Formats a byte count as a human-readable string (GiB with one decimal, or MiB below 1 GiB).
+ */
+private fun formatBytes(bytes: Long): String {
+    val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+    if (gb >= 1.0) return String.format("%.1f GB", gb)
+    val mb = bytes.toDouble() / (1024.0 * 1024.0)
+    return String.format("%.0f MB", mb)
 }
 
 /**
