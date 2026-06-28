@@ -170,6 +170,9 @@
     <string name="ip_address">IP Address</string>
     <string name="uptime">Uptime</string>
     <string name="unable_to_read_container_info">Unable to read container information</string>
+    <string name="disk_usage">Disk Usage</string>
+    <string name="disk_usage_used_of_total">%1$s / %2$s used</string>
+    <string name="disk_usage_calculating">Calculating…</string>
     <string name="systemd">Systemd</string>
     <string name="checking">Checking</string>
     <string name="not_available">Not Available</string>
