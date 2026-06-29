@@ -305,6 +305,7 @@ struct ds_tty_info {
  * ---------------------------------------------------------------------------*/
 
 #define DS_MAX_PORT_FORWARDS 32
+#define DS_MAX_UPSTREAM_IFACES 32
 
 struct ds_port_forward {
   uint16_t host_port;          /* port on the Android/Linux host  */
@@ -429,6 +430,13 @@ struct ds_config {
    * instead of re-deriving a PID-hash IP.  Plain dotted-decimal, no CIDR. */
   char static_nat_ip[INET_ADDRSTRLEN];
 
+  /* User-pinned upstream interfaces (--upstream wlan0,rmnet*,...).  When set,
+   * NAT WAN is forced through this list (priority order, literals + wildcards)
+   * and automatic uplink detection is disabled entirely.  Empty = auto-detect.
+   */
+  char upstream_ifaces[DS_MAX_UPSTREAM_IFACES][IFNAMSIZ];
+  int upstream_iface_count;
+
   /* Resource limits (0 = unlimited) */
   long long memory_limit; /* bytes */
   long long cpu_quota;    /* us per period */
@@ -445,6 +453,8 @@ struct ds_config {
  * ---------------------------------------------------------------------------*/
 
 void safe_strncpy(char *dst, const char *src, size_t size);
+int ds_parse_iface_csv(const char *val, char ifaces[][IFNAMSIZ], int *count,
+                       int max);
 char *ds_resolve_path_arg(const char *path);
 void ds_resolve_argv_paths(int argc, char **argv);
 long ds_get_container_uptime(pid_t pid);

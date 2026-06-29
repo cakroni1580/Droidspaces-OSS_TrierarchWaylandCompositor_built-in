@@ -228,6 +228,14 @@ static volatile sig_atomic_t g_stop_monitor = 0;
 static pthread_t g_route_monitor_tid;
 static int g_route_monitor_started = 0; /* guarded by g_gw_mutex */
 
+/* User-pinned upstream interfaces (--upstream).  When non-empty, the uplink is
+ * resolved ONLY from this list (priority order, literals + wildcards) and all
+ * automatic detection is disabled - an explicit manual override.  Copied from
+ * cfg in setup_veth_host_side(), before routing setup and the monitor read it.
+ */
+static char g_upstream_ifaces[DS_MAX_UPSTREAM_IFACES][IFNAMSIZ];
+static int g_upstream_count = 0;
+
 /* Returns 1 if ifname exists and is both UP and RUNNING.
  * On Android, the active data interface has IFF_RUNNING set; an interface
  * that is physically present but not carrying data loses IFF_RUNNING. */
@@ -580,11 +588,11 @@ static void ds_net_setup_android_routing(ds_nl_ctx_t *ctx) {
     ds_warn("[NET] Android routing: failed to add tether-return rule (%d)",
             DS_RULE_PRIO_TETHER);
 
-  if (!active_iface[0]) {
-    ds_warn("[NET] Android routing: no active uplink detected yet - "
-            "route monitor will install rule when one comes up");
+  /* No uplink yet: find_active_uplink() already logged the single "no WAN"
+   * line.  The TO_SUBNET/tether rules above are in place; the route monitor
+   * installs the FROM rule once an uplink appears. */
+  if (!active_iface[0])
     return;
-  }
 
   ds_log("[NET] Android routing: active uplink %s → table %d", active_iface,
          gw_table);
@@ -800,7 +808,17 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
   }
   ds_log("[DEBUG] Successfully moved %s to PID %d", veth_peer, (int)child_pid);
 
-  /* 7. Android policy routing - uplink is detected automatically */
+  /* Cache the user-pinned upstream list (if any) into the globals that the
+   * routing setup and the route monitor read.  Empty list = auto-detect.  This
+   * runs before ds_net_setup_android_routing() and
+   * ds_net_start_route_monitor(), which both consult g_upstream_*.  The count
+   * is already capped at DS_MAX_UPSTREAM_IFACES by the parsers. */
+  g_upstream_count = cfg->upstream_iface_count;
+  for (int _i = 0; _i < g_upstream_count; _i++)
+    safe_strncpy(g_upstream_ifaces[_i], cfg->upstream_ifaces[_i], IFNAMSIZ);
+
+  /* 7. Android policy routing - uplink is auto-detected, or pinned via
+   * --upstream. */
   if (is_android())
     ds_net_setup_android_routing(ctx);
 
@@ -1473,6 +1491,24 @@ static void log_uplink_change(const char *ifname, int table,
   g_uplink_fail_warned = 0; /* reset so next failure logs once */
 }
 
+/* Single "no uplink" outcome for both modes: warn once (until the next success)
+ * and clear the last-seen cache.  This is the one place the condition is
+ * reported - callers must not log it again. */
+static void log_no_uplink(void) {
+  if (!g_uplink_fail_warned) {
+    if (g_upstream_count > 0)
+      ds_warn("[NET] Uplink: no pinned --upstream interface is up - container "
+              "has no WAN; the route monitor will "
+              "wire it when one appears");
+    else
+      ds_warn(
+          "[NET] Uplink: no active internet interface found - container has "
+          "no WAN; the route monitor will wire it when one appears");
+    g_uplink_fail_warned = 1;
+  }
+  g_last_uplink_iface[0] = '\0';
+}
+
 /* Tier 3 (last resort): scan all interfaces against the built-in uplink
  * whitelist in priority order; return the first that is RUNNING and has
  * an IPv4 default route in some table. */
@@ -1501,8 +1537,60 @@ static int scan_uplink_whitelist(ds_nl_ctx_t *ctx, char *iface_out,
   return -ENOENT;
 }
 
+/* Manual override: resolve the user-pinned --upstream list in priority order.
+ * The first entry that is RUNNING and has an IPv4 default route wins.  Literal
+ * entries are checked directly; wildcard entries (containing * or ?) are
+ * matched with fnmatch() against the live interface list (handles dynamic names
+ * like rmnet_dataX or v4-rmnet_dataX whose number changes across reconnects).
+ * No exclude heuristics apply here - the user picked the interface
+ * deliberately. Returns 0 + fills iface/table, or -ENOENT when none are
+ * currently available. */
+static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, char *iface_out,
+                                 int *table_out) {
+  char all_ifaces[64][IFNAMSIZ];
+  int all_count = -1; /* enumerated lazily, only if a wildcard needs it */
+
+  for (int i = 0; i < g_upstream_count; i++) {
+    const char *pat = g_upstream_ifaces[i];
+    int is_wild = (strchr(pat, '*') != NULL || strchr(pat, '?') != NULL);
+
+    if (!is_wild) {
+      int tbl = 0;
+      if (iface_is_running(pat) && ds_nl_get_iface_table(ctx, pat, &tbl) == 0) {
+        if (iface_out)
+          safe_strncpy(iface_out, pat, IFNAMSIZ);
+        if (table_out)
+          *table_out = tbl;
+        return 0;
+      }
+      continue;
+    }
+
+    if (all_count < 0)
+      all_count = ds_nl_list_ifaces(ctx, all_ifaces, 64);
+    for (int j = 0; j < all_count; j++) {
+      if (fnmatch(pat, all_ifaces[j], 0) != 0)
+        continue;
+      int tbl = 0;
+      if (!iface_is_running(all_ifaces[j]) ||
+          ds_nl_get_iface_table(ctx, all_ifaces[j], &tbl) != 0)
+        continue;
+      if (iface_out)
+        safe_strncpy(iface_out, all_ifaces[j], IFNAMSIZ);
+      if (table_out)
+        *table_out = tbl;
+      return 0;
+    }
+  }
+  return -ENOENT;
+}
+
 /* Find the interface/table currently providing internet access.
- * Fully automatic, three tiers, first hit wins:
+ *
+ * If --upstream is set this is a pure manual override: resolve ONLY from that
+ * list (resolve_pinned_uplink) and disable all auto-detection - the WAN never
+ * hops to whatever netd marks active.  Otherwise it is fully automatic, three
+ * tiers, first hit wins:
  *
  *   1. Android netd default-network FIB rule (fwmark 0x0/0xffff iif lo).
  *      The kernel's ground truth - swapped atomically on every handoff,
@@ -1519,6 +1607,21 @@ static int find_active_uplink(ds_nl_ctx_t *ctx, char *iface_out,
                               int *table_out) {
   char name[IFNAMSIZ] = {0};
   int tbl = 0;
+
+  /* Manual override: pinned --upstream list only, no fallback to auto-detect.
+   */
+  if (g_upstream_count > 0) {
+    if (resolve_pinned_uplink(ctx, name, &tbl) == 0) {
+      log_uplink_change(name, tbl, "pinned");
+      if (iface_out)
+        safe_strncpy(iface_out, name, IFNAMSIZ);
+      if (table_out)
+        *table_out = tbl;
+      return 0;
+    }
+    log_no_uplink();
+    return -ENOENT;
+  }
 
   /* Tier 1: netd default-network rule (Android only - the rule simply
    * does not exist elsewhere, but skip the dump cost off-Android). */
@@ -1556,12 +1659,7 @@ static int find_active_uplink(ds_nl_ctx_t *ctx, char *iface_out,
     return 0;
   }
 
-  if (!g_uplink_fail_warned) {
-    ds_warn("[NET] Uplink detection: no active internet interface found - "
-            "will keep probing");
-    g_uplink_fail_warned = 1;
-  }
-  g_last_uplink_iface[0] = '\0';
+  log_no_uplink();
   return -ENOENT;
 }
 
@@ -1575,7 +1673,30 @@ static void do_uplink_reprobe(void) {
   int new_table = 0;
 
   if (find_active_uplink(ctx, new_iface, &new_table) != 0) {
-    /* No uplink active yet - leave current rule in place */
+    /* No uplink available. */
+    if (g_upstream_count > 0) {
+      /* Pinned mode: the forced interface is gone.  Tear the FROM rule down so
+       * container traffic is NOT silently re-routed onto a table the kernel may
+       * recycle for a different network (no hopping / no leak).  When the
+       * pinned interface returns, a later reprobe reinstalls the rule. */
+      pthread_mutex_lock(&g_gw_mutex);
+      int old_table = g_current_gw_table;
+      pthread_mutex_unlock(&g_gw_mutex);
+      if (old_table > 0) {
+        uint32_t subnet_be, mask_be;
+        parse_cidr(DS_DEFAULT_SUBNET, &subnet_be, &mask_be);
+        (void)mask_be;
+        ds_nl_del_rule4(ctx, subnet_be, DS_NAT_PREFIX, 0, 0, old_table,
+                        DS_RULE_PRIO_FROM_SUBNET);
+        pthread_mutex_lock(&g_gw_mutex);
+        g_current_gw_table = 0;
+        pthread_mutex_unlock(&g_gw_mutex);
+        ds_log("[NET] Route monitor: pinned uplink gone - removed FROM rule "
+               "(container WAN is down until it returns)");
+      }
+    }
+    /* Auto mode leaves the current rule in place (avoid flapping on
+     * transients); pinned mode has already torn it down above. */
     ds_nl_close(ctx);
     return;
   }
