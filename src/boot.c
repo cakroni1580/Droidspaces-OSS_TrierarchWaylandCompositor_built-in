@@ -136,6 +136,8 @@ int internal_boot(struct ds_config *cfg) {
       if (nr != (ssize_t)sizeof(hs)) {
         ds_warn("[NET] Child: incomplete handshake (read %zd, expected %zu)",
                 nr, sizeof(hs));
+      } else if (cfg->net_mode == DS_NET_GATEWAY) {
+        ds_log("[NET] Child: handshake received (gateway mode)");
       } else {
         ds_log("[NET] Child: handshake received: peer=%s ip=%s", hs.peer_name,
                hs.ip_str);
