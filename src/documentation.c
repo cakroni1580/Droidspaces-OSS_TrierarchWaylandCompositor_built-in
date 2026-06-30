@@ -292,7 +292,11 @@ static void print_page(int page, const char *bin) {
            "start\n",
            bin);
     printf("  The internet uplink is detected automatically and tracked "
-           "in real time.\n\n");
+           "in real time.\n");
+    printf("  Use --upstream IFACE to pin WAN to a specific interface "
+           "(disables auto-detect),\n");
+    printf("  e.g. --upstream wlan0 to route the container over Wi-Fi while "
+           "the phone uses mobile data.\n\n");
 
     printf("%sPort Forwarding (NAT only):%s\n", bold, reset);
     printf("  --port=8080:80          Single port\n");
