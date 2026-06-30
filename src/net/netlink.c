@@ -423,7 +423,8 @@ int ds_nl_set_master(ds_nl_ctx_t *ctx, const char *ifname, const char *master) {
  * Bring link UP / DOWN
  * ---------------------------------------------------------------------------*/
 
-int ds_nl_link_up(ds_nl_ctx_t *ctx, const char *ifname) {
+/* Set or clear IFF_UP on an interface (shared by link_up / link_down). */
+static int ds_nl_link_set_up(ds_nl_ctx_t *ctx, const char *ifname, int up) {
   int idx = ds_nl_get_ifindex(ctx, ifname);
   if (idx <= 0)
     return -ENODEV;
@@ -438,29 +439,17 @@ int ds_nl_link_up(ds_nl_ctx_t *ctx, const char *ifname) {
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
   req.i.ifi_family = AF_UNSPEC;
   req.i.ifi_index = idx;
-  req.i.ifi_flags = IFF_UP;
+  req.i.ifi_flags = up ? IFF_UP : 0;
   req.i.ifi_change = IFF_UP;
   return ds_nl_talk(ctx, &req.n);
 }
 
-int ds_nl_link_down(ds_nl_ctx_t *ctx, const char *ifname) {
-  int idx = ds_nl_get_ifindex(ctx, ifname);
-  if (idx <= 0)
-    return -ENODEV;
+int ds_nl_link_up(ds_nl_ctx_t *ctx, const char *ifname) {
+  return ds_nl_link_set_up(ctx, ifname, 1);
+}
 
-  struct {
-    struct nlmsghdr n;
-    struct ifinfomsg i;
-  } req;
-  memset(&req, 0, sizeof(req));
-  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
-  req.n.nlmsg_type = RTM_NEWLINK;
-  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  req.i.ifi_family = AF_UNSPEC;
-  req.i.ifi_index = idx;
-  req.i.ifi_flags = 0;
-  req.i.ifi_change = IFF_UP;
-  return ds_nl_talk(ctx, &req.n);
+int ds_nl_link_down(ds_nl_ctx_t *ctx, const char *ifname) {
+  return ds_nl_link_set_up(ctx, ifname, 0);
 }
 
 /* ---------------------------------------------------------------------------
