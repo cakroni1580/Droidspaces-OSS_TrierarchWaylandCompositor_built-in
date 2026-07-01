@@ -1,5 +1,4 @@
 name: Droidspaces CI
-run-name: ${{ github.event.head_commit.message || format('Release {0}', github.event.inputs.tag_name) || github.workflow }}
 
 on:
   push:
