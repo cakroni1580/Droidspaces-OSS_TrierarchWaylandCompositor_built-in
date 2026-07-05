@@ -44,6 +44,37 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
+/* ---- globals -------------------------------------------------------------- */
+
+static wayland_server_t  *g_server   = NULL;
+static renderer_context_t *g_renderer = NULL;
+static ANativeWindow      *g_window   = NULL;
+static pthread_mutex_t     g_lock     = PTHREAD_MUTEX_INITIALIZER;
+
+/* dispatch thread — runs when no render surface is attached */
+static pthread_t     g_dispatch_thread;
+static volatile int  g_dispatch_running = 0;
+
+/* render thread — runs when a Surface is attached; also drives dispatch */
+static pthread_t     g_render_thread;
+static volatile int  g_render_running  = 0;
+static volatile int  g_scene_ready = 0;
+
+static volatile int32_t g_output_width  = 1;
+static volatile int32_t g_output_height = 1;
+static volatile int g_resize_pending = 0;
+static int g_pending_width = 0;
+static int g_pending_height = 0;
+static int g_pending_rp = 100;
+static int g_pending_sp = 100;
+
+static void apply_output_size(
+    int phys_w,
+    int phys_h,
+    int rp,
+    int sp
+);
+
 /*
  * Crash diagnostics.
  *
@@ -138,37 +169,6 @@ static void crash_handler(
 
     raise(sig);
 }
-
-/* ---- globals -------------------------------------------------------------- */
-
-static wayland_server_t  *g_server   = NULL;
-static renderer_context_t *g_renderer = NULL;
-static ANativeWindow      *g_window   = NULL;
-static pthread_mutex_t     g_lock     = PTHREAD_MUTEX_INITIALIZER;
-
-/* dispatch thread — runs when no render surface is attached */
-static pthread_t     g_dispatch_thread;
-static volatile int  g_dispatch_running = 0;
-
-/* render thread — runs when a Surface is attached; also drives dispatch */
-static pthread_t     g_render_thread;
-static volatile int  g_render_running  = 0;
-static volatile int  g_scene_ready = 0;
-
-static volatile int32_t g_output_width  = 1;
-static volatile int32_t g_output_height = 1;
-static volatile int g_resize_pending = 0;
-static int g_pending_width = 0;
-static int g_pending_height = 0;
-static int g_pending_rp = 100;
-static int g_pending_sp = 100;
-
-static void apply_output_size(
-    int phys_w,
-    int phys_h,
-    int rp,
-    int sp
-);
 
 /* ---- key event queue (JNI thread → render/dispatch thread) ---------------- */
 /*
