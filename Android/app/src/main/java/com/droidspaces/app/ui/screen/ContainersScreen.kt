@@ -421,6 +421,11 @@ fun ContainersScreen(
                 logger.e("")
                 logger.e(context.getString(R.string.operation_failed))
 
+                if ((operation == "stop" || operation == "restart") && container.enableWayland) {
+                    logger.i("Stopping Wayland compositor...")
+                    WaylandManager.stop()
+                }
+
                 // Operation failed - console stays open, user must close manually
 
                 // Show snackbar
@@ -436,6 +441,11 @@ fun ContainersScreen(
                 SystemInfoManager.refreshSELinuxStatus()
             } else {
                 lastErrorContainer = null
+
+                if ((operation == "stop" || operation == "restart") && container.enableWayland) {
+                    logger.i("Stopping Wayland compositor...")
+                    WaylandManager.stop()
+                }
 
                 // Operation succeeded - console stays open, user must close manually
 
