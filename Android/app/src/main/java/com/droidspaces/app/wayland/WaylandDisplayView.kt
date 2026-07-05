@@ -222,10 +222,6 @@ class WaylandDisplayLayout(
     private var scalePercent: Int,
 ) : FrameLayout(context) {
     
-    /* resize dedup */
-    private var lastWidth = -1
-    private var lastHeight = -1
-    
     private val imeSink  = SoftKeyboardSink(context)
 
     init {
