@@ -52,7 +52,7 @@ object WaylandSurface {
      * compositor_pointer_event() path — establishing wl_keyboard.enter on
      * whichever surface is at the center. Safe to call before toolbar key presses.
      */
-    external fun nativeEnsureFocus()
+    external fun nativeEnsureFocus(timeMs: Int)
 
     external fun nativeSetCursorVisible(visible: Boolean)
     external fun nativeGetLogicalWidth(): Int
