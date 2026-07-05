@@ -295,18 +295,32 @@ static void *render_loop(void *arg) {
     (void)arg;
     LOGI("render thread started");
     while (g_render_running) {
+
+        g_wayland_checkpoint = "loop_begin";
+
         pthread_mutex_lock(&g_lock);
+
         renderer_context_t *rctx = g_renderer;
         wayland_server_t   *srv  = g_server;
+
         pthread_mutex_unlock(&g_lock);
+
+        g_wayland_checkpoint = "loop_snapshot";
+
         if (!rctx || !srv) {
             usleep(16000);
             continue;
-        }        
+        }
+
+        g_wayland_checkpoint = "before_keyq";
 
         keyq_drain();
-        g_wayland_checkpoint = "dispatch";
+
+        g_wayland_checkpoint = "before_dispatch";
+
         compositor_dispatch(srv);
+
+        g_wayland_checkpoint = "after_dispatch";
 
         /* ==========================================================
          * Resize handling
@@ -355,30 +369,38 @@ static void *render_loop(void *arg) {
             }
         }
 
-        g_wayland_checkpoint = "render";
+        g_wayland_checkpoint = "before_render";
 
-        if (!renderer_render(
-                rctx,
-                (struct wayland_server *)srv)) {
+       if (!renderer_render(
+               rctx,
+               (struct wayland_server *)srv)) {
 
-            LOGE(
-                "renderer_render failed "
-                "— stopping render loop"
-            );
+           LOGE(
+               "renderer_render failed "
+               "— stopping render loop"
+           );
 
-            break;
-        }
-        /* FIX: scene dianggap valid setelah render pertama sukses */
-        if (!g_scene_ready)
-            g_scene_ready = 1;
-            
-        g_wayland_checkpoint = "frame_callbacks";
-        compositor_send_frame_callbacks(srv);
+           break;
+       }
 
-        g_wayland_checkpoint = "client_ping";
-        compositor_send_ping_to_clients(srv);
+       g_wayland_checkpoint = "after_render";
 
-        g_wayland_checkpoint = "render_idle";
+       if (!g_scene_ready)
+           g_scene_ready = 1;
+
+       g_wayland_checkpoint = "before_frame_callbacks";
+
+       compositor_send_frame_callbacks(srv);
+
+       g_wayland_checkpoint = "after_frame_callbacks";
+
+       g_wayland_checkpoint = "before_client_ping";
+
+       compositor_send_ping_to_clients(srv);
+
+       g_wayland_checkpoint = "after_client_ping";
+
+       g_wayland_checkpoint = "loop_end";
     }
     if (g_renderer && renderer_is_valid(g_renderer))
         renderer_release_context(g_renderer);
