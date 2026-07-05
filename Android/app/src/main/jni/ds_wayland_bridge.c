@@ -696,31 +696,13 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnKeyEvent(
     uint32_t key_linux = android_keycode_to_linux((int)android_keycode);
     if (key_linux == 0) return;
         
-    /* ===== FIX: monotonic timestamp guard ===== */
-    /*static uint32_t last_ts = 0;
-
-    uint32_t t = (uint32_t)time_ms;
-
-    if (t < last_ts) {
-        t = last_ts + 1;
-    }
-    last_ts = t;*/
 
     keyq_push(time_ms, key_linux, is_down ? 1u : 0u);
 }
 
-/*
- * nativeEnsureFocus — send a synthetic pointer-move to the center of the
- * compositor output to establish keyboard focus via the normal, fully
- * mutex-protected compositor_pointer_event() code path.
- *
- * Safe: uses the exact same path as a real touch event. No direct surface
- * list walking, no manual keyboard_focus_update() calls.
- * Call before the first toolbar key press so clients receive wl_keyboard.enter.
- */
 JNIEXPORT void JNICALL
 Java_com_droidspaces_app_wayland_WaylandSurface_nativeEnsureFocus(
-        JNIEnv *env, jobject thiz)
+        JNIEnv *env, jobject thiz, jint time_ms)
 {
     (void)env;
     (void)thiz;
@@ -734,14 +716,12 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeEnsureFocus(
     if (!compositor_has_toplevel_client(g_server))
         return;
 
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-
-    uint32_t t =
-        (uint32_t)((ts.tv_sec * 1000 + ts.tv_nsec / 1000000) & 0xFFFFFFFFu);
-
-    /* MARKER EVENT (khusus focus synthetic) */
-    keyq_push(t, 0xFFFFFFFE, 1);
+    /*
+     * Timestamp comes from Java using SystemClock.uptimeMillis(),
+     * keeping all synthetic and real input events on the same
+     * monotonic time source.
+     */
+    keyq_push((uint32_t)time_ms, 0xFFFFFFFE, 1);
 }
 
 JNIEXPORT void JNICALL
