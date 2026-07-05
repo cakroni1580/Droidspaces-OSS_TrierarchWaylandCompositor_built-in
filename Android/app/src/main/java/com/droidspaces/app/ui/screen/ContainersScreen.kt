@@ -386,6 +386,12 @@ fun ContainersScreen(
                     }
                 )
                 systemStatsViewModel.clearContainerUsage(container.name)
+                
+                if ((operation == "stop" || operation == "restart") && container.enableWayland) {
+                    logger.i("Ensuring Wayland compositor restarted...")
+                    WaylandManager.ensureRestarted(context)
+                }
+                
             }
 
             // Auto-start Wayland compositor if this container needs it and it isn't running yet
@@ -437,11 +443,6 @@ fun ContainersScreen(
                 SystemInfoManager.refreshSELinuxStatus()
             } else {
                 lastErrorContainer = null
-
-                if ((operation == "stop" || operation == "restart") && container.enableWayland) {
-                    logger.i("Ensuring Wayland compositor restarted...")
-                    WaylandManager.ensureRestarted(context)
-                }
 
                 // Operation succeeded - console stays open, user must close manually
 
