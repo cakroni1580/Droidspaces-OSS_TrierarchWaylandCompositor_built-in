@@ -390,6 +390,7 @@ fun ContainersScreen(
 
             // Auto-start Wayland compositor if this container needs it and it isn't running yet
             if (operation == "start" && container.enableWayland) {
+                logger.i("Wayland compositor started...")
                 WaylandManager.ensureStarted(context)
             }
 
