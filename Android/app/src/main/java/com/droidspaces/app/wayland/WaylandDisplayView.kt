@@ -238,7 +238,13 @@ class WaylandDisplayLayout(
                     val s = h.surface ?: return
                     WaylandSurface.nativeSurfaceCreated(s, resolutionPercent, scalePercent)
                     post { requestFocus() }
-                    postDelayed({ WaylandSurface.nativeEnsureFocus() }, 1000)
+                    /*
+                     * Use the same monotonic clock as all pointer/key events.
+                     * nativeEnsureFocus() will forward this timestamp unchanged.
+                     */
+                    postDelayed({
+                        WaylandSurface.nativeEnsureFocus(uptimeMs())
+                    }, 1000)
                 }
                 override fun surfaceChanged(
                     h: SurfaceHolder,
