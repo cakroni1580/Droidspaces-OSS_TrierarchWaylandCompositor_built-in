@@ -91,7 +91,6 @@ object WaylandManager {
     }
 
     fun ensureRestarted(context: Context) {
-        if (!isAvailable) return
         restart(context)
     }
 
