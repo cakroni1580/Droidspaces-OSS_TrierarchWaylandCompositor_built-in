@@ -63,12 +63,11 @@ object WaylandManager {
     fun restart(context: Context) {
         if (!isAvailable) return
 
-        runCatching {
-            if (isRunning) {
-                nativeStop()
-                isRunning = false
-            }
-        }
+        runCatching {  
+            nativeStop()  
+        }  
+  
+        isRunning = false
 
         nativeStart(runtimeDir(context), SOCKET_NAME)
         isRunning = true
