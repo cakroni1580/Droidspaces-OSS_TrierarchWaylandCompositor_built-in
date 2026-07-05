@@ -442,11 +442,6 @@ fun ContainersScreen(
             } else {
                 lastErrorContainer = null
 
-                if ((operation == "stop" || operation == "restart") && container.enableWayland) {
-                    logger.i("Stopping Wayland compositor...")
-                    WaylandManager.stop()
-                }
-
                 // Operation succeeded - console stays open, user must close manually
 
                 // Refresh container status and SELinux immediately after successful operation (KernelSU pattern)
