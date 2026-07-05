@@ -61,21 +61,18 @@ object WaylandManager {
     }
     
     fun restart(context: Context) {
-        if (!isAvailable || isRunning) return
-        
-        runCatching {
-            nativeStop()
-        }
-
-        isRunning = false
+        if (!isAvailable) return
 
         runCatching {
-            nativeStart(runtimeDir(context), SOCKET_NAME)
+            if (isRunning) {
+                nativeStop()
+                isRunning = false
+            }
         }
-        
+
+        nativeStart(runtimeDir(context), SOCKET_NAME)
         isRunning = true
     }
-
     /**
      * Stop the compositor.
      * No-op if not running.
@@ -95,7 +92,8 @@ object WaylandManager {
     }
 
     fun ensureRestarted(context: Context) {
-        if (!isRunning) restart(context)
+        if (!isAvailable) return
+        restart(context)
     }
 
     // ---- JNI ----------------------------------------------------------------
