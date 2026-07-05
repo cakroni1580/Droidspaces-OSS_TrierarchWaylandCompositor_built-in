@@ -50,6 +50,16 @@
  */
 static volatile const char *g_wayland_checkpoint = "startup";
 
+/*
+ * NOTE:
+ * Extra crash diagnostics.
+ * Safe because values are read-only snapshots.
+ */
+static inline pid_t current_tid(void)
+{
+    return (pid_t)syscall(__NR_gettid);
+}
+
 static void crash_handler(
         int sig,
         siginfo_t *info,
@@ -57,15 +67,62 @@ static void crash_handler(
 {
     (void)uctx;
 
+    const char *checkpoint =
+        g_wayland_checkpoint ?
+        g_wayland_checkpoint :
+        "unknown";
+
+    void *pc = NULL;
+    void *lr = NULL;
+
+    #if defined(__aarch64__)
+    ucontext_t *ctx = (ucontext_t *)uctx;
+    if (ctx) {
+        pc = (void *)ctx->uc_mcontext.pc;
+        lr = (void *)ctx->uc_mcontext.regs[30];
+    }
+    #elif defined(__arm__)
+    ucontext_t *ctx = (ucontext_t *)uctx;
+    if (ctx) {
+        pc = (void *)ctx->uc_mcontext.arm_pc;
+        lr = (void *)ctx->uc_mcontext.arm_lr;
+    }
+    #endif
+
     __android_log_print(
         ANDROID_LOG_FATAL,
         TAG,
-        "CRASH signal=%d addr=%p checkpoint=%s",
+        "========== JNI CRASH ==========\n"
+        "signal      : %d\n"
+        "code        : %d\n"
+        "fault addr  : %p\n"
+        "thread tid  : %d\n"
+        "checkpoint  : %s\n"
+        "server      : %p\n"
+        "renderer    : %p\n"
+        "window      : %p\n"
+        "dispatch    : %d\n"
+        "render      : %d\n"
+        "scene_ready : %d\n"
+        "logical     : %dx%d\n"
+        "PC          : %p\n"
+        "LR          : %p\n"
+        "==============================",
         sig,
+        info ? info->si_code : 0,
         info ? info->si_addr : NULL,
-        g_wayland_checkpoint ?
-            g_wayland_checkpoint :
-            "unknown"
+        current_tid(),
+        checkpoint,
+        g_server,
+        g_renderer,
+        g_window,
+        g_dispatch_running,
+        g_render_running,
+        g_scene_ready,
+        (int)g_output_width,
+        (int)g_output_height,
+        pc,
+        lr
     );
 
     struct sigaction sa;
