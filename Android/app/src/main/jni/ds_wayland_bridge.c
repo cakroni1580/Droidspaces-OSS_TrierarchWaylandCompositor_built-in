@@ -35,6 +35,8 @@
 #include "keycode_map.h"      /* android_keycode_to_linux() */
 #include <signal.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <ucontext.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 
