@@ -61,23 +61,18 @@ object WaylandManager {
     }
     
     fun restart(context: Context) {
-        if (!isAvailable) return
-
-        /*
-         * Always restart the compositor.
-         *
-         * The Android process survives while containers may be
-         * stopped/recreated multiple times. Force a complete native
-         * teardown before creating a new compositor instance so the
-         * native lifecycle follows the container lifecycle.
-         */
+        if (!isAvailable || isRunning) return
+        
         runCatching {
             nativeStop()
         }
 
         isRunning = false
 
-        nativeStart(runtimeDir(context), SOCKET_NAME)
+        runCatching {
+            nativeStart(runtimeDir(context), SOCKET_NAME)
+        }
+        
         isRunning = true
     }
 
