@@ -111,16 +111,6 @@ static void apply_output_size(
     int sp
 );
 
-static inline void compositor_notify_buffer_backpressure(void *srv) {
-    (void)srv;
-    /* no-op: handled via throttling */
-}
-
-static inline void renderer_reset_surface(void *rctx, void *win) {
-    (void)rctx;
-    (void)win;
-    /* no-op: handled by recreate in surface logic */
-}
 /* ---- key event queue (JNI thread → render/dispatch thread) ---------------- */
 /*
  * libwayland-server is not thread-safe.  Key events arrive from the UI
