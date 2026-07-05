@@ -250,7 +250,7 @@ private fun RowScope.WlIconKey(
 
 private fun sendKey(keyCode: Int) {
     val t = (SystemClock.uptimeMillis() and 0x7FFF_FFFFL).toInt()
-    WaylandSurface.nativeEnsureFocus()
+    WaylandSurface.nativeEnsureFocus(t)
     WaylandSurface.nativeOnKeyEvent(keyCode, true, t)
     WaylandSurface.nativeOnKeyEvent(keyCode, false, t + 1)
 }
