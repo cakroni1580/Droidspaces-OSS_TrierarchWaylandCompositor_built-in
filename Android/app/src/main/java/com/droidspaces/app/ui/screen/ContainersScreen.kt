@@ -439,7 +439,7 @@ fun ContainersScreen(
 
                 if ((operation == "stop" || operation == "restart") && container.enableWayland) {
                     logger.i("Ensuring Wayland compositor restarted...")
-                    WaylandManager.ensureStarted(context)
+                    WaylandManager.ensureRestarted(context)
                 }
 
                 // Operation succeeded - console stays open, user must close manually
