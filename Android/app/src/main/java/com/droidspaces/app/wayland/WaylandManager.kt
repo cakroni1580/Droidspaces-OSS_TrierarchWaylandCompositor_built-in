@@ -55,6 +55,12 @@ object WaylandManager {
      * No-op if already running or library unavailable.
      */
     fun start(context: Context) {
+        if (!isAvailable || isRunning) return
+        nativeStart(runtimeDir(context), SOCKET_NAME)
+        isRunning = true
+    }
+    
+    fun restart(context: Context) {
         if (!isAvailable) return
 
         /*
@@ -91,6 +97,10 @@ object WaylandManager {
      */
     fun ensureStarted(context: Context) {
         if (!isRunning) start(context)
+    }
+
+    fun ensureRestarted(context: Context) {
+        if (!isRunning) restart(context)
     }
 
     // ---- JNI ----------------------------------------------------------------
