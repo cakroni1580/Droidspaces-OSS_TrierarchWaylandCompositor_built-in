@@ -47,32 +47,57 @@ object WaylandManager {
     }
 
     /**
-     * Start the compositor. Idempotent — safe to call multiple times.
-     * No-op if already running or library unavailable.
-     */
-    fun start(context: Context) {
-        if (!isAvailable || isRunning) return
-        nativeStart(runtimeDir(context), SOCKET_NAME)
-        isRunning = true
-    }
+ * Start the compositor.
+ *
+ * Safe to call repeatedly.
+ */
+@Synchronized
+fun start(context: Context) {
+    if (!isAvailable || isRunning)
+        return
 
-    /**
-     * Stop the compositor.
-     * No-op if not running.
-     */
-    fun stop() {
-        if (!isRunning) return
-        nativeStop()
-        isRunning = false
-    }
+    nativeStart(
+        runtimeDir(context),
+        SOCKET_NAME
+    )
 
-    /**
-     * Start the compositor if not already running.
-     * Called from ContainersScreen before launching a wayland-enabled container.
-     */
-    fun ensureStarted(context: Context) {
-        if (!isRunning) start(context)
-    }
+    isRunning = true
+}
+
+/**
+ * Stop the compositor.
+ *
+ * Safe to call repeatedly.
+ */
+@Synchronized
+fun stop() {
+    if (!isRunning)
+        return
+
+    nativeStop()
+
+    isRunning = false
+}
+
+/**
+ * Fully restart the compositor.
+ *
+ * Reuses the existing stop/start logic so there is only
+ * one implementation of each lifecycle transition.
+ */
+@Synchronized
+fun restart(context: Context) {
+    stop()
+    start(context)
+}
+
+/**
+ * Ensure compositor is running.
+ */
+@Synchronized
+fun ensureStarted(context: Context) {
+    start(context)
+}
 
     // ---- JNI ----------------------------------------------------------------
 
