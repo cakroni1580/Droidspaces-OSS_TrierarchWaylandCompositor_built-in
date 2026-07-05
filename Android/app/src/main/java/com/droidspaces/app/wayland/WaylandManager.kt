@@ -50,23 +50,12 @@ object WaylandManager {
      * Start the compositor. Idempotent — safe to call multiple times.
      * No-op if already running or library unavailable.
      */
+    /**
+     * Start the compositor. Idempotent — safe to call multiple times.
+     * No-op if already running or library unavailable.
+     */
     fun start(context: Context) {
-        if (!isAvailable) return
-
-        /*
-         * Always restart the compositor.
-         *
-         * The Android process survives while containers may be
-         * stopped/recreated multiple times. Force a complete native
-         * teardown before creating a new compositor instance so the
-         * native lifecycle follows the container lifecycle.
-         */
-        runCatching {
-            nativeStop()
-        }
-
-        isRunning = false
-
+        if (!isAvailable || isRunning) return
         nativeStart(runtimeDir(context), SOCKET_NAME)
         isRunning = true
     }
