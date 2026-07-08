@@ -45,7 +45,7 @@ internal class WaylandCursorVisibilityPolicy(
         val physicalMouseActive = now < physicalMouseActiveUntilMs
         val wantWaylandCursor = (mouseMode == MOUSE_MODE_TOUCHPAD) && !physicalMouseActive
         try {
-            WaylandBridge.nativeSetCursorVisible(wantWaylandCursor)
+            WaylandSurface.nativeSetCursorVisible(wantWaylandCursor)
         } catch (_: Throwable) {
         }
     }
