@@ -1,8 +1,8 @@
 package com.droidspaces.app.wayland
 
 import android.view.KeyEvent
-import app.trierarch.WaylandBridge
-import com.termux.view.TerminalView
+import com.droidspaces.app.wayland.WaylandSurface
+/*import com.termux.view.TerminalView*/
 
 /**
  * Hardware keyboard router for Wayland clients.
