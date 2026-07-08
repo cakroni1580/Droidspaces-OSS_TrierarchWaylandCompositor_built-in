@@ -114,7 +114,7 @@ internal class WaylandTouchpadController(
                 touchpadButtonDown = false
                 return true
             }
-            MotionEvent.POINTER_UP -> {
+            MotionEvent.ACTION_POINTER_UP -> {
                 val stayIdx = 1 - event.actionIndex
                 if (event.pointerCount >= 2 && stayIdx in 0 until event.pointerCount) {
                     lastX = event.getX(stayIdx)
