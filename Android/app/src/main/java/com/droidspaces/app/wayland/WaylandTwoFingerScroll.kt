@@ -1,4 +1,4 @@
-package app.trierarch.wayland
+package com.droidspaces.app.wayland
 
 import android.view.MotionEvent
 import app.trierarch.WaylandBridge
