@@ -92,6 +92,9 @@ void print_usage(void) {
       "      --pulse-audio         Configure PulseAudio sound server "
       "support\n"
       "      --wayland             Bridge Wayland compositor socket into container\n\n");
+      "      --anland              Embed the anland display daemon "
+      "(Android)\n\n");
+
   printf(
       C_BOLD
       "Options (Security & Boot):" C_RESET "\n"
@@ -413,6 +416,7 @@ int main(int argc, char **argv) {
       {"virgl", no_argument, 0, 270},
       {"virgl-flags", required_argument, 0, 272},
       {"pulse-audio", no_argument, 0, 273},
+      {"anland", no_argument, 0, 278},
       {"gateway", required_argument, 0, 274},
       {"gateway-container", required_argument, 0, 274},
       {"gateway-net", required_argument, 0, 275},
@@ -677,6 +681,9 @@ int main(int argc, char **argv) {
       break;
     case 273:
       cfg.pulseaudio = 1;
+      break;
+    case 278:
+      cfg.anland = 1;
       break;
     case 274:
       safe_strncpy(cfg.gateway_container, optarg,
