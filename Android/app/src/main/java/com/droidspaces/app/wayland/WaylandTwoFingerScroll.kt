@@ -55,7 +55,7 @@ internal class WaylandTwoFingerScroll(
                 val lastCx = scrollLastCentroidX
                 val lastCy = scrollLastCentroidY
                 if (lastCx != null && lastCy != null) {
-                    WaylandSurface.nativeOnPointerAxis(cx - lastCx, cy - lastCy, timeMs, WaylandBridge.AXIS_SOURCE_FINGER)
+                    WaylandSurface.nativeOnPointerAxis(cx - lastCx, cy - lastCy, timeMs, WaylandSurface.AXIS_SOURCE_FINGER)
                 }
             }
             scrollLastCentroidX = cx
