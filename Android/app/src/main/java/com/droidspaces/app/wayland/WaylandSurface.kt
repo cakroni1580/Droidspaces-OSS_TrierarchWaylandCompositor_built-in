@@ -20,6 +20,9 @@ object WaylandSurface {
     const val ACTION_UP            = 2
     const val ACTION_POINTER_MOVE  = 6
 
+    /** Pointer axis source (compatible with Trierarch API). */
+    const val AXIS_SOURCE_FINGER   = 1
+
     // ---- Surface lifecycle --------------------------------------------------
 
     external fun nativeSurfaceCreated(
@@ -37,25 +40,90 @@ object WaylandSurface {
         scalePercent: Int,
     )
 
-    // ---- Input --------------------------------------------------------------
+    // ---- Pointer input ------------------------------------------------------
 
-    external fun nativeOnPointerEvent(x: Float, y: Float, action: Int, timeMs: Int)
-    external fun nativeOnPointerAxis(deltaX: Float, deltaY: Float, timeMs: Int)
-    external fun nativeOnPointerRightClick(x: Float, y: Float, timeMs: Int)
-
-    /** androidKeyCode: Android KeyEvent.KEYCODE_* — converted to Linux evdev in C. */
-    external fun nativeOnKeyEvent(androidKeyCode: Int, isDown: Boolean, timeMs: Int)
+    external fun nativeOnPointerEvent(
+        x: Float,
+        y: Float,
+        action: Int,
+        timeMs: Int,
+    )
 
     /**
-     * Send a synthetic pointer-move to the center of the compositor output.
-     * This triggers keyboard_focus_update() via the normal mutex-protected
-     * compositor_pointer_event() path — establishing wl_keyboard.enter on
-     * whichever surface is at the center. Safe to call before toolbar key presses.
+     * axisSource disediakan agar API kompatibel dengan Trierarch.
+     * Native boleh mengabaikannya bila compositor belum membedakan
+     * finger wheel / mouse wheel.
+     */
+    @JvmOverloads
+    external fun nativeOnPointerAxis(
+        deltaX: Float,
+        deltaY: Float,
+        timeMs: Int,
+        axisSource: Int = AXIS_SOURCE_FINGER,
+    )
+
+    external fun nativeOnPointerRightClick(
+        x: Float,
+        y: Float,
+        timeMs: Int,
+    )
+
+    /**
+     * Sinkronkan posisi cursor fisik Android dengan mapper native.
+     *
+     * NOTE:
+     * Dipakai oleh TouchpadController, TabletController dan
+     * TwoFingerScroll agar seluruh stack input Trierarch dapat
+     * dipakai tanpa modifikasi.
+     */
+    external fun nativeSetCursorPhysical(
+        x: Float,
+        y: Float,
+    )
+
+    // ---- Keyboard -----------------------------------------------------------
+
+    /** Android KEYCODE_* → Linux evdev dilakukan di native. */
+    external fun nativeOnKeyEvent(
+        androidKeyCode: Int,
+        isDown: Boolean,
+        timeMs: Int,
+    )
+
+    /**
+     * Release seluruh modifier (Shift/Ctrl/Alt/Meta) apabila
+     * terjadi stuck key.
+     */
+    external fun nativeResetKeyboardState()
+
+    /**
+     * Send a synthetic pointer-move to establish wl_keyboard.enter.
      */
     external fun nativeEnsureFocus(timeMs: Int)
 
+    // ---- Cursor -------------------------------------------------------------
+
     external fun nativeSetCursorVisible(visible: Boolean)
+
+    // ---- Output -------------------------------------------------------------
+
     external fun nativeGetLogicalWidth(): Int
 
     external fun nativeGetLogicalHeight(): Int
+
+    /**
+     * Convenience wrapper agar kompatibel dengan Trierarch.
+     */
+    fun nativeGetOutputSize(): IntArray =
+        intArrayOf(
+            nativeGetLogicalWidth(),
+            nativeGetLogicalHeight(),
+        )
+
+    /**
+     * True bila compositor memiliki minimal satu client/toplevel aktif.
+     * Saat ini fallback menggunakan ukuran output; implementasi native
+     * dapat diganti nanti tanpa mengubah API Kotlin.
+     */
+    external fun nativeHasActiveClients(): Boolean
 }
