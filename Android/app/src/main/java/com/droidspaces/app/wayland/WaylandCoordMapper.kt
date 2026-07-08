@@ -50,7 +50,7 @@ internal class WaylandCoordMapper {
     }
 
     fun toWaylandCoords(viewX: Float, viewY: Float): FloatArray {
-        val out = WaylandBridge.nativeGetOutputSize() ?: return floatArrayOf(viewX, viewY)
+        val out = WaylandSurface.nativeGetOutputSize() ?: return floatArrayOf(viewX, viewY)
         if (out.size < 2 || out[0] <= 0 || out[1] <= 0) return floatArrayOf(viewX, viewY)
 
         val refW = referenceWidth()
