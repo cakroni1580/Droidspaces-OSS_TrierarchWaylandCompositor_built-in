@@ -125,18 +125,18 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
             coordMapper.setCursorPhysical(x, y)
             when (event.actionMasked) {
                 MotionEvent.ACTION_MOVE, MotionEvent.ACTION_HOVER_MOVE -> {
-                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_POINTER_MOVE, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_POINTER_MOVE, timeMs)
                 }
                 MotionEvent.ACTION_DOWN -> {
                     if ((event.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) {
                         WaylandSurface.nativeOnPointerRightClick(w[0], w[1], timeMs)
                     } else {
-                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_DOWN, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_DOWN, timeMs)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
                     if ((event.buttonState and MotionEvent.BUTTON_SECONDARY) == 0) {
-                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_UP, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
                     }
                 }
             }
@@ -194,7 +194,7 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
                     val y = event.y
                     val w = coordMapper.toWaylandCoords(x, y)
                     coordMapper.setCursorPhysical(x, y)
-                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_POINTER_MOVE, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_POINTER_MOVE, timeMs)
                     return true
                 }
             }
