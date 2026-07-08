@@ -272,7 +272,7 @@ class WaylandDisplayLayout(
                     /* PATCH:
                      * Sinkronkan ukuran Surface dengan mapper Trierarch.
                      */
-                    inputRouter.onSurfaceSizeChanged(w, h)
+                    inputRouter.onSurfaceSizeChanged(w, h2)
                 }
                 override fun surfaceDestroyed(h: SurfaceHolder) {
                     WaylandSurface.nativeSurfaceDestroyed()
@@ -314,7 +314,11 @@ class WaylandDisplayLayout(
         resolutionPercent = rp
         scalePercent = sp
         // ONLY STORE POLICY
-        
+        /* PATCH:
+         * Sinkronkan policy input dengan renderer.
+         */
+        inputRouter.resolutionPercent = rp
+        inputRouter.scalePercent = sp 
     }
 
     /** Show soft keyboard — focus the IME sink and call showSoftInput on it. */
