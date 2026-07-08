@@ -10,8 +10,8 @@ import android.widget.FrameLayout
 import androidx.lifecycle.LifecycleOwner
 import com.droidspaces.app.wayland.WaylandSurface
 import com.droidspaces.app.wayland.input.SoftKeyboardView
-/*import app.trierarch.ui.dialog.MOUSE_MODE_TABLET*/
-/*import app.trierarch.ui.dialog.MOUSE_MODE_TOUCHPAD*/
+import com.droidspaces.app.ui.dialog.MOUSE_MODE_TABLET
+import com.droidspaces.app.ui.dialog.MOUSE_MODE_TOUCHPAD
 
 /**
  * Touch + mouse input router and glue for the embedded Wayland compositor.
