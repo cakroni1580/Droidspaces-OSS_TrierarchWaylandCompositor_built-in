@@ -1,4 +1,4 @@
-package com.droidspaces.app.wayland
+package com.droidspaces.app.ui.dialog
 
 /** Pointer semantics for the Wayland view (matches stored preference int). */
 const val MOUSE_MODE_TABLET = 0
