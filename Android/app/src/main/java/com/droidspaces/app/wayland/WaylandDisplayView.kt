@@ -222,7 +222,18 @@ class WaylandDisplayLayout(
     private var scalePercent: Int,
 ) : FrameLayout(context) {
     
-    private val imeSink  = SoftKeyboardSink(context)
+    private val imeSink = SoftKeyboardSink(context)
+
+    /* -----------------------------------------------------------------------
+     * PATCH:
+     * Trierarch-compatible input router.
+     *
+     * Semua routing touch/mouse nantinya dipindahkan ke WaylandTouchLayout
+     * tanpa mengubah lifecycle SurfaceView maupun IME.
+     * ----------------------------------------------------------------------*/
+    private val inputRouter by lazy {
+        WaylandTouchLayout(context)
+    }
 
     init {
         isFocusable = true
@@ -258,6 +269,10 @@ class WaylandDisplayLayout(
                         resolutionPercent,
                         scalePercent
                     )
+                    /* PATCH:
+                     * Sinkronkan ukuran Surface dengan mapper Trierarch.
+                     */
+                    inputRouter.onSurfaceSizeChanged(w, h)
                 }
                 override fun surfaceDestroyed(h: SurfaceHolder) {
                     WaylandSurface.nativeSurfaceDestroyed()
@@ -279,6 +294,20 @@ class WaylandDisplayLayout(
         ))
 
         WaylandSurface.nativeSetCursorVisible(false)
+        /* -----------------------------------------------------------------------
+         * PATCH:
+         * WaylandTouchLayout tidak menggambar apapun.
+         * Ia hanya menerima seluruh MotionEvent kemudian meneruskannya
+         * ke JNI sehingga DisplayLayout cukup menjadi host.
+         * ----------------------------------------------------------------------*/
+
+        addView(
+            inputRouter,
+            LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
     }
 
     fun updateParams(rp: Int, sp: Int) {
@@ -317,56 +346,28 @@ class WaylandDisplayLayout(
 
     // ---- Touch input ------------------------------------------------------
 
-    override fun onInterceptTouchEvent(ev: MotionEvent) = true
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        return inputRouter.onInterceptTouchEvent(ev)
+    }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val timeMs = uptimeMs()
-        val idx    = event.actionIndex
-        val x      = event.getX(idx)
-        val y      = event.getY(idx)
 
-        if ((event.source and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE) {
-            val (wx, wy) = toWaylandCoords(x, y)
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    if ((event.buttonState and MotionEvent.BUTTON_SECONDARY) != 0)
-                        WaylandSurface.nativeOnPointerRightClick(wx, wy, timeMs)
-                    else
-                        WaylandSurface.nativeOnPointerEvent(wx, wy, WaylandSurface.ACTION_DOWN, timeMs)
-                }
-                MotionEvent.ACTION_MOVE,
-                MotionEvent.ACTION_HOVER_MOVE ->
-                    WaylandSurface.nativeOnPointerEvent(wx, wy, WaylandSurface.ACTION_POINTER_MOVE, timeMs)
-                MotionEvent.ACTION_UP ->
-                    WaylandSurface.nativeOnPointerEvent(wx, wy, WaylandSurface.ACTION_UP, timeMs)
-            }
-            return true
-        }
+        inputRouter.lastSurfaceWidth = width
+        inputRouter.lastSurfaceHeight = height
 
-        val (wx, wy) = toWaylandCoords(x, y)
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN ->
-                WaylandSurface.nativeOnPointerEvent(wx, wy, WaylandSurface.ACTION_DOWN, timeMs)
-            MotionEvent.ACTION_MOVE ->
-                WaylandSurface.nativeOnPointerEvent(wx, wy, WaylandSurface.ACTION_MOVE, timeMs)
-            MotionEvent.ACTION_UP,
-            MotionEvent.ACTION_CANCEL ->
-                WaylandSurface.nativeOnPointerEvent(wx, wy, WaylandSurface.ACTION_UP, timeMs)
-        }
-        return true
+        inputRouter.resolutionPercent = resolutionPercent
+        inputRouter.scalePercent = scalePercent
+
+        return inputRouter.onTouchEvent(event)
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-        if ((event.source and InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE
-            && event.actionMasked == MotionEvent.ACTION_SCROLL) {
-            val v = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
-            val h = event.getAxisValue(MotionEvent.AXIS_HSCROLL)
-            if (v != 0f || h != 0f) WaylandSurface.nativeOnPointerAxis(-h, -v, uptimeMs())
-            return true
-        }
-        return super.onGenericMotionEvent(event)
-    }
 
+        inputRouter.lastSurfaceWidth = width
+        inputRouter.lastSurfaceHeight = height
+
+        return inputRouter.onGenericMotionEvent(event)
+    }
     // ---- Helpers ----------------------------------------------------------
 
     private fun toWaylandCoords(viewX: Float, viewY: Float): Pair<Float, Float> {
