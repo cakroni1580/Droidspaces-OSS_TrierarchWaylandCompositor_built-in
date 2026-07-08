@@ -3,7 +3,7 @@ package com.droidspaces.app.wayland
 import android.os.Handler
 import android.os.SystemClock
 import android.view.MotionEvent
-import app.trierarch.WaylandBridge
+import com.droidspaces.app.wayland.WaylandSurface
 
 /**
  * Tablet-style absolute pointer controller for tablet mode.
