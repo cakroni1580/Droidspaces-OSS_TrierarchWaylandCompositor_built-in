@@ -55,7 +55,7 @@ internal class WaylandTwoFingerScroll(
                 val lastCx = scrollLastCentroidX
                 val lastCy = scrollLastCentroidY
                 if (lastCx != null && lastCy != null) {
-                    WaylandBridge.nativeOnPointerAxis(cx - lastCx, cy - lastCy, timeMs, WaylandBridge.AXIS_SOURCE_FINGER)
+                    WaylandSurface.nativeOnPointerAxis(cx - lastCx, cy - lastCy, timeMs, WaylandBridge.AXIS_SOURCE_FINGER)
                 }
             }
             scrollLastCentroidX = cx
@@ -71,7 +71,7 @@ internal class WaylandTwoFingerScroll(
                 twoFingerTapPending = true
                 coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
                 val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
-                WaylandBridge.nativeOnPointerRightClick(w[0], w[1], timeMs)
+                WaylandSurface.nativeOnPointerRightClick(w[0], w[1], timeMs)
             }
             scrollJustEnded = true
             scrollLastCentroidX = null
