@@ -1,4 +1,4 @@
-package app.trierarch.wayland
+package com.droidspaces.app.wayland
 
 import android.os.SystemClock
 import app.trierarch.WaylandBridge
