@@ -125,18 +125,18 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
             coordMapper.setCursorPhysical(x, y)
             when (event.actionMasked) {
                 MotionEvent.ACTION_MOVE, MotionEvent.ACTION_HOVER_MOVE -> {
-                    WaylandBridge.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_POINTER_MOVE, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_POINTER_MOVE, timeMs)
                 }
                 MotionEvent.ACTION_DOWN -> {
                     if ((event.buttonState and MotionEvent.BUTTON_SECONDARY) != 0) {
-                        WaylandBridge.nativeOnPointerRightClick(w[0], w[1], timeMs)
+                        WaylandSurface.nativeOnPointerRightClick(w[0], w[1], timeMs)
                     } else {
-                        WaylandBridge.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_DOWN, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_DOWN, timeMs)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
                     if ((event.buttonState and MotionEvent.BUTTON_SECONDARY) == 0) {
-                        WaylandBridge.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_UP, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_UP, timeMs)
                     }
                 }
             }
@@ -185,7 +185,7 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
                     val v = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
                     val h = event.getAxisValue(MotionEvent.AXIS_HSCROLL)
                     if (v != 0f || h != 0f) {
-                        WaylandBridge.nativeOnPointerAxis(-h, -v, timeMs, axisSource = 0)
+                        WaylandSurface.nativeOnPointerAxis(-h, -v, timeMs, axisSource = 0)
                     }
                     return true
                 }
@@ -194,7 +194,7 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
                     val y = event.y
                     val w = coordMapper.toWaylandCoords(x, y)
                     coordMapper.setCursorPhysical(x, y)
-                    WaylandBridge.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_POINTER_MOVE, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandBridge.POINTER_ACTION_POINTER_MOVE, timeMs)
                     return true
                 }
             }
