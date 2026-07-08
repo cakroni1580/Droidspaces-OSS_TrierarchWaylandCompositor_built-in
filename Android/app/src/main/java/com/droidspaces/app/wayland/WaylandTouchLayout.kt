@@ -7,9 +7,7 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.widget.FrameLayout
-import androidx.lifecycle.LifecycleOwner
 import com.droidspaces.app.wayland.WaylandSurface
-import com.droidspaces.app.wayland.input.SoftKeyboardView
 import com.droidspaces.app.ui.dialog.MOUSE_MODE_TABLET
 import com.droidspaces.app.ui.dialog.MOUSE_MODE_TOUCHPAD
 
@@ -34,10 +32,8 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
     var lastSurfaceHeight: Int = 0
     var lastAppliedResolutionPercent: Int = -1
     var lastAppliedScalePercent: Int = -1
-    var keyboardSinkView: SoftKeyboardView? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val imeRecovery = WaylandImeRecovery(context) { keyboardSinkView }
     private val cursorPolicy = WaylandCursorVisibilityPolicy(mainHandler)
 
     private val coordMapper = WaylandCoordMapper()
@@ -47,29 +43,6 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
         if (mouseMode == MOUSE_MODE_TOUCHPAD) {
             touchpadController.onTwoFingerTapUpConsumed(event, timeMs)
         }
-    }
-
-    fun setKeyboardWanted(wanted: Boolean) {
-        imeRecovery.setWanted(wanted)
-    }
-
-    fun bindLifecycleOwner(owner: LifecycleOwner?) {
-        imeRecovery.bindLifecycleOwner(owner)
-    }
-
-    /**
-     * Soft keyboard recovery policy ("scheme 1"):
-     *
-     * Once the user explicitly requests the keyboard, we keep it "wanted" while the Wayland view
-     * is on screen and re-issue `showSoftInput()` at key lifecycle boundaries:
-     * - app resumes / window regains focus
-     * - default IME changes (e.g. switching between keyboard apps)
-     *
-     * Rationale: some IMEs hide the current window during switching and the new IME does not
-     * automatically re-show unless the app requests it again.
-     */
-    fun ensureSoftKeyboardVisible() {
-        imeRecovery.ensureVisible()
     }
 
     /**
@@ -85,24 +58,6 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
 
     fun onSurfaceSizeChanged(w: Int, h: Int) {
         coordMapper.setSurfaceSize(w, h)
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        imeRecovery.onAttachedToWindow()
-    }
-
-    override fun onDetachedFromWindow() {
-        super.onDetachedFromWindow()
-        imeRecovery.onDetachedFromWindow()
-        cursorPolicy.cancel()
-        touchpadController.cancel()
-        tabletController.cancel()
-    }
-
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        imeRecovery.onWindowFocusChanged(hasWindowFocus)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
