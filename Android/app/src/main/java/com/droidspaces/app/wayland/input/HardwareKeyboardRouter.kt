@@ -1,4 +1,4 @@
-package app.trierarch.wayland.input
+package com.droidspaces.app.wayland
 
 import android.view.KeyEvent
 import app.trierarch.WaylandBridge
