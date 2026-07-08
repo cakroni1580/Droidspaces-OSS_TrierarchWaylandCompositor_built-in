@@ -2,7 +2,7 @@ package com.droidspaces.app.wayland
 
 import android.view.MotionEvent
 import com.droidspaces.app.wayland.WaylandSurface
-/*import app.trierarch.ui.dialog.MOUSE_MODE_TOUCHPAD*/
+import com.droidspaces.app.ui.dialog.MOUSE_MODE_TOUCHPAD
 
 /**
  * Handles two-finger scroll and two-finger tap -> right click in touchpad mode.
