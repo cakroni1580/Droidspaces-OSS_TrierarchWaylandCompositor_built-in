@@ -89,13 +89,7 @@ object WaylandSurface {
         isDown: Boolean,
         timeMs: Int,
     )
-
-    /**
-     * Release seluruh modifier (Shift/Ctrl/Alt/Meta) apabila
-     * terjadi stuck key.
-     */
-    external fun nativeResetKeyboardState()
-
+    
     /**
      * Send a synthetic pointer-move to establish wl_keyboard.enter.
      */
@@ -119,11 +113,4 @@ object WaylandSurface {
             nativeGetLogicalWidth(),
             nativeGetLogicalHeight(),
         )
-
-    /**
-     * True bila compositor memiliki minimal satu client/toplevel aktif.
-     * Saat ini fallback menggunakan ukuran output; implementasi native
-     * dapat diganti nanti tanpa mengubah API Kotlin.
-     */
-    external fun nativeHasActiveClients(): Boolean
 }
