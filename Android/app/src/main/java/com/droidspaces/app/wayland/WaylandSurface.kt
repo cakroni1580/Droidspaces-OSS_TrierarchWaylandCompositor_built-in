@@ -2,12 +2,6 @@ package com.droidspaces.app.wayland
 
 import android.view.Surface
 
-
-/* Trierarch compatibility aliases */
-const val POINTER_ACTION_DOWN = ACTION_DOWN
-const val POINTER_ACTION_MOVE = ACTION_MOVE
-const val POINTER_ACTION_UP = ACTION_UP
-const val POINTER_ACTION_POINTER_MOVE = ACTION_POINTER_MOVE
 /**
  * JNI surface bridge for the Wayland compositor renderer.
  *
