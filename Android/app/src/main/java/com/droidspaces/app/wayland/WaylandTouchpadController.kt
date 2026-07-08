@@ -54,7 +54,7 @@ internal class WaylandTouchpadController(
                     touchpadButtonDown = true
                     coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
                     val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
-                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_DOWN, coordMapper.nowTimeMs32())
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_DOWN, coordMapper.nowTimeMs32())
                 }
                 holdDragRunnable = holdDrag
                 handler.postDelayed(holdDrag, TOUCHPAD_HOLD_DRAG_MS)
@@ -67,7 +67,7 @@ internal class WaylandTouchpadController(
                 if (touchpadButtonDown) {
                     coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
                     val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
-                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_UP, timeMs)
                     touchpadButtonDown = false
                 }
                 lastX = x
@@ -90,7 +90,7 @@ internal class WaylandTouchpadController(
                 coordMapper.moveCursorBy(dx * POINTER_MOVE_SCALE, dy * POINTER_MOVE_SCALE)
                 val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
                 coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
-                WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_POINTER_MOVE, timeMs)
+                WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_POINTER_MOVE, timeMs)
                 return true
             }
             MotionEvent.ACTION_UP -> {
@@ -100,21 +100,21 @@ internal class WaylandTouchpadController(
                 coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
                 val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
                 if (touchpadButtonDown) {
-                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_UP, timeMs)
                 } else {
                     val totalDx = x - touchStartX
                     val totalDy = y - touchStartY
                     val distSq = totalDx * totalDx + totalDy * totalDy
                     val duration = event.eventTime - touchStartTime
                     if (distSq <= TAP_THRESHOLD * TAP_THRESHOLD && duration <= TOUCHPAD_TAP_MAX_MS) {
-                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_DOWN, timeMs)
-                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_DOWN, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_UP, timeMs)
                     }
                 }
                 touchpadButtonDown = false
                 return true
             }
-            MotionEvent.ACTION_POINTER_UP -> {
+            MotionEvent.POINTER_UP -> {
                 val stayIdx = 1 - event.actionIndex
                 if (event.pointerCount >= 2 && stayIdx in 0 until event.pointerCount) {
                     lastX = event.getX(stayIdx)
@@ -143,7 +143,7 @@ internal class WaylandTouchpadController(
         if (touchpadButtonDown) {
             coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
             val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
-            WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+            WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_UP, timeMs)
             touchpadButtonDown = false
         }
         lastX = event.getX(0)
@@ -161,7 +161,7 @@ internal class WaylandTouchpadController(
         if (touchpadButtonDown) {
             coordMapper.setCursorPhysical(coordMapper.cursorX, coordMapper.cursorY)
             val w = coordMapper.toWaylandCoords(coordMapper.cursorX, coordMapper.cursorY)
-            WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+            WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_UP, timeMs)
             touchpadButtonDown = false
         }
         if (event.pointerCount > 0) {
