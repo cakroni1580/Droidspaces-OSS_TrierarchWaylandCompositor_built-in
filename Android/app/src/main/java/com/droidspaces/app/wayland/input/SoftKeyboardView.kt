@@ -67,15 +67,15 @@ class SoftKeyboardView(context: android.content.Context) : View(context) {
                     commitExecutor.execute {
                         var time = System.currentTimeMillis()
                         repeat(before) {
-                            WaylandBridge.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, 0, true, time)
+                            WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, 0, true, time)
                             time++
-                            WaylandBridge.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, 0, false, time)
+                            WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_DEL, 0, false, time)
                             time++
                         }
                         repeat(after) {
-                            WaylandBridge.nativeOnKeyEvent(KeyEvent.KEYCODE_FORWARD_DEL, 0, true, time)
+                            WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_FORWARD_DEL, 0, true, time)
                             time++
-                            WaylandBridge.nativeOnKeyEvent(KeyEvent.KEYCODE_FORWARD_DEL, 0, false, time)
+                            WaylandSurface.nativeOnKeyEvent(KeyEvent.KEYCODE_FORWARD_DEL, 0, false, time)
                             time++
                         }
                     }
@@ -89,11 +89,11 @@ class SoftKeyboardView(context: android.content.Context) : View(context) {
                 commitExecutor.execute {
                     var time = System.currentTimeMillis()
                     fun keyDown(keyCode: Int) {
-                        WaylandBridge.nativeOnKeyEvent(keyCode, 0, true, time)
+                        WaylandSurface.nativeOnKeyEvent(keyCode, 0, true, time)
                         time++
                     }
                     fun keyUp(keyCode: Int) {
-                        WaylandBridge.nativeOnKeyEvent(keyCode, 0, false, time)
+                        WaylandSurface.nativeOnKeyEvent(keyCode, 0, false, time)
                         time++
                     }
                     fun tap(keyCode: Int) {
