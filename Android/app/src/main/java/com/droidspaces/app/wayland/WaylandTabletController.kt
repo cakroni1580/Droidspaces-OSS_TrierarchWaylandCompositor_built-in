@@ -64,14 +64,14 @@ internal class WaylandTabletController(
                 val distSq = dx * dx + dy * dy
                 coordMapper.setCursorPhysical(x, y)
                 val w = coordMapper.toWaylandCoords(x, y)
-                WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_POINTER_MOVE, timeMs)
+                WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_POINTER_MOVE, timeMs)
                 if (!tabletCommittedToDrag && !tabletLongPressFired &&
                     distSq > TABLET_DRAG_SLOP * TABLET_DRAG_SLOP
                 ) {
                     tabletLongPressRunnable?.let { handler.removeCallbacks(it) }
                     tabletLongPressRunnable = null
                     tabletCommittedToDrag = true
-                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.POINTER_ACTION_DOWN, timeMs)
+                    WaylandSurface.nativeOnPointerEvent(w[0], w[1], WaylandSurface.ACTION_DOWN, timeMs)
                 }
                 return true
             }
@@ -83,15 +83,15 @@ internal class WaylandTabletController(
                     tabletCommittedToDrag -> {
                         coordMapper.setCursorPhysical(x, y)
                         val upW = coordMapper.toWaylandCoords(x, y)
-                        WaylandSurface.nativeOnPointerEvent(upW[0], upW[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(upW[0], upW[1], WaylandSurface.ACTION_UP, timeMs)
                     }
                     else -> {
                         val startW = coordMapper.toWaylandCoords(touchStartX, touchStartY)
                         val upW = coordMapper.toWaylandCoords(x, y)
                         coordMapper.setCursorPhysical(touchStartX, touchStartY)
-                        WaylandSurface.nativeOnPointerEvent(startW[0], startW[1], WaylandSurface.POINTER_ACTION_DOWN, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(startW[0], startW[1], WaylandSurface.ACTION_DOWN, timeMs)
                         coordMapper.setCursorPhysical(x, y)
-                        WaylandSurface.nativeOnPointerEvent(upW[0], upW[1], WaylandSurface.POINTER_ACTION_UP, timeMs)
+                        WaylandSurface.nativeOnPointerEvent(upW[0], upW[1], WaylandSurface.ACTION_UP, timeMs)
                     }
                 }
                 return true
