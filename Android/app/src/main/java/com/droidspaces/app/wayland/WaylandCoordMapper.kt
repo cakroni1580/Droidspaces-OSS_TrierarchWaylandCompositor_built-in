@@ -39,7 +39,7 @@ internal class WaylandCoordMapper {
     fun setCursorPhysical(x: Float, y: Float) {
         cursorX = x
         cursorY = y
-        WaylandBridge.nativeSetCursorPhysical(x, y)
+        WaylandSurface.nativeSetCursorPhysical(x, y)
     }
 
     fun moveCursorBy(dx: Float, dy: Float) {
