@@ -739,12 +739,31 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnPointerEvent(
 JNIEXPORT void JNICALL
 Java_com_droidspaces_app_wayland_WaylandSurface_nativeOnPointerAxis(
         JNIEnv *env, jobject thiz,
-        jfloat delta_x, jfloat delta_y, jint time_ms)
+        jfloat delta_x, jfloat delta_y, jint time_ms, jint axis_source)
 {
     (void)env; (void)thiz;
     if (!g_server) return;
     compositor_pointer_axis_event(g_server, (uint32_t)time_ms,
-                                  (float)delta_x, (float)delta_y, 0 /* finger */);
+                                  (float)delta_x, (float)delta_y, (uint32_t)axis_source);
+}
+
+JNIEXPORT void JNICALL
+Java_com_droidspaces_app_wayland_WaylandSurface_nativeSetCursorPhysical(
+        JNIEnv *env,
+        jobject thiz,
+        jfloat x,
+        jfloat y)
+{
+    (void)env;
+    (void)thiz;
+
+    if (!g_server)
+        return;
+
+    compositor_pointer_set_physical_position(
+            g_server,
+            x,
+            y);
 }
 
 JNIEXPORT void JNICALL
