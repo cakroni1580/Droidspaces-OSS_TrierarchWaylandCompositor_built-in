@@ -7,7 +7,8 @@
  *   - fork a persistent process that runs the daemon's epoll loop on it,
  *   - record the pid and the socket path in the Pids dir so the app can find
  *     and stop it, and
- *   - bind-mount the socket onto the container's /run/display.sock (post-pivot).
+ *   - bind-mount the socket onto the container's /run/display.sock
+ * (post-pivot).
  *
  * The Android consumer app connects to the same socket (via its root fd-helper)
  * and a patched KWin ("producer") inside the container connects to
@@ -84,8 +85,8 @@ static void anland_daemon_child(int out_fd, const char *sock_path) {
     fprintf(stderr, "failed to bind %s\n", sock_path);
     _exit(1);
   }
-  daemon_run(ctx);      /* blocks until SIGTERM-triggered exit via the loop flag */
-  daemon_destroy(ctx);  /* closes clients, unlinks the socket */
+  daemon_run(ctx); /* blocks until SIGTERM-triggered exit via the loop flag */
+  daemon_destroy(ctx); /* closes clients, unlinks the socket */
   _exit(0);
 }
 

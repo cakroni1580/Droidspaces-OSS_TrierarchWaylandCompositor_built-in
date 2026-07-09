@@ -101,34 +101,34 @@ int ds_seccomp_apply_minimal(int privileged_mask) {
 
     if (!(privileged_mask & DS_PRIV_USERNS)) {
 #ifdef __NR_clone3
-    /* 6. Block clone3 */
-    filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-                                                  __NR_clone3, 0, 1);
-    filter[curr++] = (struct sock_filter)BPF_STMT(
-        BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (ENOSYS & SECCOMP_RET_DATA));
+      /* 6. Block clone3 */
+      filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                                    __NR_clone3, 0, 1);
+      filter[curr++] = (struct sock_filter)BPF_STMT(
+          BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (ENOSYS & SECCOMP_RET_DATA));
 #endif
 
-    /* 7. unshare(CLONE_NEWUSER) */
-    filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-                                                  __NR_unshare, 0, 4);
-    filter[curr++] = (struct sock_filter)BPF_STMT(
-        BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
-    filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K,
-                                                  0x10000000, 0, 1);
-    filter[curr++] = (struct sock_filter)BPF_STMT(
-        BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA));
-    filter[curr++] = (struct sock_filter)BPF_STMT(
-        BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr));
+      /* 7. unshare(CLONE_NEWUSER) */
+      filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                                    __NR_unshare, 0, 4);
+      filter[curr++] = (struct sock_filter)BPF_STMT(
+          BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
+      filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K,
+                                                    0x10000000, 0, 1);
+      filter[curr++] = (struct sock_filter)BPF_STMT(
+          BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA));
+      filter[curr++] = (struct sock_filter)BPF_STMT(
+          BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr));
 
-    /* 8. clone(CLONE_NEWUSER) */
-    filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-                                                  __NR_clone, 0, 3);
-    filter[curr++] = (struct sock_filter)BPF_STMT(
-        BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
-    filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K,
-                                                  0x10000000, 0, 1);
-    filter[curr++] = (struct sock_filter)BPF_STMT(
-        BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA));
+      /* 8. clone(CLONE_NEWUSER) */
+      filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+                                                    __NR_clone, 0, 3);
+      filter[curr++] = (struct sock_filter)BPF_STMT(
+          BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0]));
+      filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K,
+                                                    0x10000000, 0, 1);
+      filter[curr++] = (struct sock_filter)BPF_STMT(
+          BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA));
     }
     /*
      * 9. CVE-2026-31431 ("Copy Fail") - mitigation layer 2.

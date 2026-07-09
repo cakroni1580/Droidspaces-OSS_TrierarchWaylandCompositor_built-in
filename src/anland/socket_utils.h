@@ -3,11 +3,11 @@
 
 #include <stddef.h>
 
-int send_fds(int sock, const void *data, size_t data_len,
-             const int *fds, int fd_count);
+int send_fds(int sock, const void *data, size_t data_len, const int *fds,
+             int fd_count);
 
-int recv_fds(int sock, void *data, size_t data_len,
-             int *fds, int fd_count, int *fds_received);
+int recv_fds(int sock, void *data, size_t data_len, int *fds, int fd_count,
+             int *fds_received);
 
 int connect_unix(const char *path);
 

@@ -504,8 +504,8 @@ int start_rootfs(struct ds_config *cfg) {
 
   /* anland display daemon: generate the per-container host socket and start the
    * broker before fork so the socket exists when bind-mounted post-pivot. The
-   * generated cfg->anland_sock is recorded in the Pids dir (not container.config)
-   * by ds_anland_daemon_start. */
+   * generated cfg->anland_sock is recorded in the Pids dir (not
+   * container.config) by ds_anland_daemon_start. */
   if (is_android() && cfg->anland) {
     ds_anland_daemon_start(cfg);
   }

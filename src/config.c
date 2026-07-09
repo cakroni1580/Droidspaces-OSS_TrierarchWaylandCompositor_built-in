@@ -690,7 +690,8 @@ static void ds_config_serialize_known(FILE *f, struct ds_config *cfg) {
         first = 0;
       }
 
-      /// Note that DS_PRIV_USERNS is controlled by allow_userns, not the privileged list, so we don't write it here. 
+      /// Note that DS_PRIV_USERNS is controlled by allow_userns, not the
+      /// privileged list, so we don't write it here.
     }
     fprintf(f, "\n");
   }

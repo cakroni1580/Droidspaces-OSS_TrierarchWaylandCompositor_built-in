@@ -323,10 +323,10 @@ struct ds_port_forward {
 #define DS_PRIV_NOSEC (1 << 2)  /* Minimal seccomp only */
 #define DS_PRIV_SHARED (1 << 3) /* MS_SHARED root propagation */
 #define DS_PRIV_UNFILTERED                                                     \
-  (1 << 4)                  /* No device node blocking (except PTYs)           \
-                             */
-#define DS_PRIV_USERNS  (1 << 5) /* Allow user namespace blocking */
-#define DS_PRIV_FULL (0xFF) /* All above */
+  (1 << 4)                      /* No device node blocking (except PTYs)       \
+                                 */
+#define DS_PRIV_USERNS (1 << 5) /* Allow user namespace blocking */
+#define DS_PRIV_FULL (0xFF)     /* All above */
 
 typedef enum {
   DS_INIT_UNKNOWN = 0,
@@ -371,7 +371,7 @@ struct ds_config {
   int disable_ipv6;        /* --disable-ipv6 */
   int android_storage;     /* --enable-android-storage */
   int selinux_permissive;  /* --selinux-permissive */
-  int userns_allowed;       /* --allow-userns */
+  int userns_allowed;      /* --allow-userns */
   int net_bridgeless;      /* Probe result: no CONFIG_BRIDGE, use PTP NAT */
   int reboot_cycle;        /* 1 if we are in a reboot loop */
   int force_cgroupv1;  /* --force-cgroupv1: use v1 even if v2 is available */
@@ -382,15 +382,15 @@ struct ds_config {
   char prog_name[64];  /* argv[0] for logging */
 
   /* Runtime state */
-  char volatile_dir[PATH_MAX];    /* temporary overlay dir */
-  pid_t container_pid;            /* PID 1 of the container (host view) */
-  pid_t intermediate_pid;         /* intermediate fork pid */
-  pid_t x11_pid;                  /* PID of the Termux-X11 server process */
-  pid_t virgl_pid;                /* PID of the VirGL server process */
-  pid_t pulse_pid;                /* PID of the PulseAudio daemon process */
-  pid_t anland_pid;               /* PID of the anland display daemon process */
-  char anland_sock[PATH_MAX];     /* generated host socket for the anland daemon */
-  int is_img_mount;               /* 1 if rootfs was loop-mounted from .img */
+  char volatile_dir[PATH_MAX]; /* temporary overlay dir */
+  pid_t container_pid;         /* PID 1 of the container (host view) */
+  pid_t intermediate_pid;      /* intermediate fork pid */
+  pid_t x11_pid;               /* PID of the Termux-X11 server process */
+  pid_t virgl_pid;             /* PID of the VirGL server process */
+  pid_t pulse_pid;             /* PID of the PulseAudio daemon process */
+  pid_t anland_pid;            /* PID of the anland display daemon process */
+  char anland_sock[PATH_MAX];  /* generated host socket for the anland daemon */
+  int is_img_mount;            /* 1 if rootfs was loop-mounted from .img */
   char img_mount_point[PATH_MAX]; /* where the .img was mounted */
   ds_init_type_t init_type;       /* detected container PID 1 init family */
   char custom_init[PATH_MAX]; /* --init=PATH override (default: /sbin/init) */
