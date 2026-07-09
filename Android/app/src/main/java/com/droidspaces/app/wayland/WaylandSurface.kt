@@ -14,6 +14,9 @@ import android.view.Surface
  */
 object WaylandSurface {
 
+    const val WM_MODE_NESTED = 0
+    const val WM_MODE_DIRECT = 1
+
     /* Pointer action constants — mirror compositor pointer_input.c */
     const val ACTION_DOWN          = 0
     const val ACTION_MOVE          = 1
@@ -113,4 +116,11 @@ object WaylandSurface {
             nativeGetLogicalWidth(),
             nativeGetLogicalHeight(),
         )
+
+     /**
+      * Switch window-management mode.
+      * [WM_MODE_NESTED]: nested compositor; toplevels are configured fullscreen.
+      * [WM_MODE_DIRECT]: app-window mode; toplevels get windowed configure + drag support.
+      */
+     external fun nativeSetWmMode(mode: Int)  
 }
