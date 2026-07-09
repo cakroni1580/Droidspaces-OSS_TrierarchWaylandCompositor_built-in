@@ -157,7 +157,13 @@ fun ContainerConfigScreen(
         installed = installedContainers,
         context = context
     )
-    val canProceed = netMode != "gateway" || gatewayErrors.isValid
+
+    val collisionContainer = remember(netMode, staticNatIp, installedContainers) {
+        if (netMode != "nat" || staticNatIp.isEmpty()) null
+        else installedContainers.find { it.name != containerName && it.staticNatIp == staticNatIp }
+    }
+
+    val canProceed = (netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null
 
     // Internal UI States
     var showFilePicker by remember { mutableStateOf(false) }
@@ -525,6 +531,15 @@ fun ContainerConfigScreen(
                             isError = !isOctet4Valid,
                             supportingText = { if (!isOctet4Valid) Text(context.getString(R.string.error_octet_range)) },
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                        )
+                    }
+
+                    if (collisionContainer != null) {
+                        Text(
+                            text = context.getString(R.string.error_ip_collision, collisionContainer.name),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
 

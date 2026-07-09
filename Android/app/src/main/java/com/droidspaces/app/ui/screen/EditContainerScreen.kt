@@ -130,6 +130,11 @@ fun EditContainerScreen(
         context = context
     )
 
+    val collisionContainer = remember(netMode, staticNatIp, containerViewModel.containerList) {
+        if (netMode != "nat" || staticNatIp.isEmpty()) null
+        else containerViewModel.containerList.find { it.name != container.name && it.staticNatIp == staticNatIp }
+    }
+
     // Track the "saved" baseline values - updated after each successful save
     var savedHostname by remember { mutableStateOf(container.hostname) }
     var savedNetMode by remember { mutableStateOf(container.netMode) }
@@ -465,7 +470,7 @@ fun EditContainerScreen(
         bottomBar = {
             val btnShape = RoundedCornerShape(20.dp)
             val isReadyToSave = !isSaving && !isSaved && hasChanges && hostnameError == null &&
-                (netMode != "gateway" || gatewayErrors.isValid)
+                (netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null
             val targetBtnColor = when {
                 isSaved -> MaterialTheme.colorScheme.primaryContainer
                 isSaving || isReadyToSave -> MaterialTheme.colorScheme.primary
@@ -719,11 +724,6 @@ fun EditContainerScreen(
                     }
                     val isOctet4Valid = remember(octet4) {
                         octet4.isEmpty() || (octet4.toIntOrNull()?.let { it in Constants.NAT_OCTET_MIN..Constants.NAT_OCTET_MAX } ?: false)
-                    }
-
-                    val collisionContainer = remember(staticNatIp) {
-                        if (staticNatIp.isEmpty()) null
-                        else containerViewModel.containerList.find { it.name != container.name && it.staticNatIp == staticNatIp }
                     }
 
                     Row(
