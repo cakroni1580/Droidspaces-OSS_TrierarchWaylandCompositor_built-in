@@ -814,3 +814,11 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeSetCursorVisible(
     if (!g_server) return;
     compositor_set_cursor_visible(g_server, visible == JNI_TRUE);
 }
+
+/* 0 = WM_MODE_NESTED, 1 = WM_MODE_DIRECT */
+JNIEXPORT void JNICALL Java_com_droidspaces_app_wayland_WaylandSurface_nativeSetWmMode(JNIEnv *env, jobject thiz, jint mode) {
+    (void)env;
+    (void)thiz;
+    if (!g_server) return;
+    compositor_set_wm_mode(g_server, mode == 1 ? WM_MODE_DIRECT : WM_MODE_NESTED);
+}
