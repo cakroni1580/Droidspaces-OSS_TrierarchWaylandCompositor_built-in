@@ -449,18 +449,6 @@ static void apply_output_size(int phys_w, int phys_h, int rp, int sp) {
         lh = (lh + user_scale / 2) / user_scale;
     }
 
-    /* =========================================================
-     * FIX CRITICAL: clamp lebih agresif untuk cegah pointer OOB
-     * ========================================================= */
-
-    /* minimal UI footprint (hindari “too tiny logical surface”) */
-    if (lw < 360) lw = 360;
-    if (lh < 640) lh = 640;
-
-    /* maximal guard (hindari overflow mapping inverse scale) */
-    if (lw > phys_w * 2) lw = phys_w * 2;
-    if (lh > phys_h * 2) lh = phys_h * 2;
-
     compositor_set_output_override(g_server, lw, lh);
     compositor_set_output_size(g_server, lw, lh, (int32_t)phys_w, (int32_t)phys_h);
     compositor_set_output_user_scale(g_server, user_scale);
