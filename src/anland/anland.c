@@ -235,7 +235,7 @@ int ds_setup_anland_socket(struct ds_config *cfg) {
   }
 
   /* Post-pivot: the host socket is reachable under /.old_root. */
-  char src[PATH_MAX];
+  char src[PATH_MAX + 32];
   snprintf(src, sizeof(src), "/.old_root%s", cfg->anland_sock);
   if (access(src, F_OK) != 0) {
     ds_warn("[anland] host socket not found at %s - skipping bind mount", src);
