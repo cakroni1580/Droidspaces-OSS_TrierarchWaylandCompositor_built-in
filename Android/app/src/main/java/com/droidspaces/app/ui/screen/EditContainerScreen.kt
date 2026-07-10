@@ -103,10 +103,12 @@ fun EditContainerScreen(
     var enablePulseaudio by remember { mutableStateOf(container.enablePulseaudio) }
     var enableWayland by remember { mutableStateOf(container.enableWayland) }
     var selinuxPermissive by remember { mutableStateOf(container.selinuxPermissive) }
+    var allowUserns by remember { mutableStateOf(container.allowUserns) }
     var volatileMode by remember { mutableStateOf(container.volatileMode) }
     var bindMounts by remember { mutableStateOf(container.bindMounts) }
     var dnsServers by remember { mutableStateOf(container.dnsServers) }
     var runAtBoot by remember { mutableStateOf(container.runAtBoot) }
+    var enableAnland by remember { mutableStateOf(container.enableAnland) }
     var envFileContent by remember { mutableStateOf(container.envFileContent ?: "") }
     var upstreamInterfaces by remember { mutableStateOf(container.upstreamInterfaces) }
     var portForwards by remember { mutableStateOf(container.portForwards) }
@@ -149,10 +151,12 @@ fun EditContainerScreen(
     var savedEnablePulseaudio by remember { mutableStateOf(container.enablePulseaudio) }
     var savedEnableWayland by remember { mutableStateOf(container.enableWayland) }
     var savedSelinuxPermissive by remember { mutableStateOf(container.selinuxPermissive) }
+    var savedAllowUserns by remember { mutableStateOf(container.allowUserns) }
     var savedVolatileMode by remember { mutableStateOf(container.volatileMode) }
     var savedBindMounts by remember { mutableStateOf(container.bindMounts) }
     var savedDnsServers by remember { mutableStateOf(container.dnsServers) }
     var savedRunAtBoot by remember { mutableStateOf(container.runAtBoot) }
+    var savedEnableAnland by remember { mutableStateOf(container.enableAnland) }
     var savedEnvFileContent by remember { mutableStateOf(container.envFileContent ?: "") }
     var savedUpstreamInterfaces by remember { mutableStateOf(container.upstreamInterfaces) }
     var savedPortForwards by remember { mutableStateOf(container.portForwards) }
@@ -192,10 +196,12 @@ fun EditContainerScreen(
             enablePulseaudio != savedEnablePulseaudio ||
             enableWayland != savedEnableWayland ||
             selinuxPermissive != savedSelinuxPermissive ||
+            allowUserns != savedAllowUserns ||
             volatileMode != savedVolatileMode ||
             bindMounts != savedBindMounts ||
             dnsServers != savedDnsServers ||
             runAtBoot != savedRunAtBoot ||
+            enableAnland != savedEnableAnland ||
             envFileContent != savedEnvFileContent ||
             upstreamInterfaces != savedUpstreamInterfaces ||
             portForwards != savedPortForwards ||
@@ -241,10 +247,12 @@ fun EditContainerScreen(
                     enablePulseaudio = enablePulseaudio,
                     enableWayland = enableWayland,
                     selinuxPermissive = selinuxPermissive,
+                    allowUserns = allowUserns,
                     volatileMode = volatileMode,
                     bindMounts = bindMounts,
                     dnsServers = dnsServers,
                     runAtBoot = runAtBoot,
+                    enableAnland = enableAnland,
                     envFileContent = if (envFileContent.isBlank()) null else envFileContent,
                     upstreamInterfaces = upstreamInterfaces,
                     portForwards = portForwards,
@@ -281,10 +289,12 @@ fun EditContainerScreen(
                         savedEnablePulseaudio = enablePulseaudio
                         savedEnableWayland = enableWayland
                         savedSelinuxPermissive = selinuxPermissive
+                        savedAllowUserns = allowUserns
                         savedVolatileMode = volatileMode
                         savedBindMounts = bindMounts
                         savedDnsServers = dnsServers
                         savedRunAtBoot = runAtBoot
+                        savedEnableAnland = enableAnland
                         savedEnvFileContent = envFileContent
                         savedUpstreamInterfaces = upstreamInterfaces
                         savedPortForwards = portForwards
@@ -926,6 +936,18 @@ fun EditContainerScreen(
             )
 
             ToggleCard(
+                icon = Icons.Default.DesktopWindows,
+                title = context.getString(R.string.enable_anland),
+                description = context.getString(R.string.enable_anland_description),
+                checked = enableAnland,
+                onCheckedChange = {
+                    clearFocus()
+                    enableAnland = it
+                },
+                enabled = true
+            )
+
+            ToggleCard(
                 icon = Icons.Default.Layers,
                 title = context.getString(R.string.enable_virgl),
                 description = context.getString(R.string.enable_virgl_description),
@@ -979,6 +1001,32 @@ fun EditContainerScreen(
                 }
             )
 
+            val isSeccompDisabled = privileged.contains("noseccomp") || privileged.contains("full")
+
+            //use /proc/self/setgroups to detect userns (only exists when CONFIG_USER_NS is enabled)
+            val usernsSupported = remember { java.io.File("/proc/self/setgroups").exists() }
+
+            LaunchedEffect(isSeccompDisabled, usernsSupported) {
+                if (isSeccompDisabled) blockNestedNs = false
+                if (isSeccompDisabled && usernsSupported) allowUserns = true
+                if (!usernsSupported) allowUserns = false
+            }
+
+            ToggleCard(
+                icon = Icons.Default.Groups,
+                title = context.getString(R.string.allow_userns),
+                description = if (usernsSupported)
+                    context.getString(R.string.allow_userns_description)
+                else
+                    context.getString(R.string.allow_userns_description_not_supported),
+                checked = allowUserns,
+                onCheckedChange = {
+                    clearFocus()
+                    allowUserns = it
+                },
+                enabled = !isSeccompDisabled && usernsSupported
+            )
+
             ToggleCard(
                 icon = Icons.Default.AutoDelete,
                 title = context.getString(R.string.volatile_mode),
@@ -1000,11 +1048,6 @@ fun EditContainerScreen(
                     forceCgroupv1 = it
                 }
             )
-
-            val isSeccompDisabled = privileged.contains("noseccomp") || privileged.contains("full")
-            LaunchedEffect(isSeccompDisabled) {
-                if (isSeccompDisabled) blockNestedNs = false
-            }
 
             ToggleCard(
                 icon = Icons.Default.GppBad,

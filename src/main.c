@@ -92,6 +92,9 @@ void print_usage(void) {
       "      --pulse-audio         Configure PulseAudio sound server "
       "support\n"
       "      --wayland             Bridge Wayland compositor socket into container\n\n");
+      "      --anland              Embed the anland display daemon "
+      "(Android)\n\n");
+
   printf(
       C_BOLD
       "Options (Security & Boot):" C_RESET "\n"
@@ -105,7 +108,8 @@ void print_usage(void) {
       "      --cpus=COUNT          CPU limit (e.g. 1.5, 2)\n"
       "      --pids-limit=N        Max number of PIDs\n"
       "      --privileged=TAGS     Relax security: nomask, nocaps, noseccomp, "
-      "shared, unfiltered-dev, full\n\n");
+      "shared, unfiltered-dev, full\n"
+      "      --allow-userns        Allow user namespaces\n\n");
 
   printf(
       C_BOLD
@@ -395,6 +399,7 @@ int main(int argc, char **argv) {
       {"disable-ipv6", no_argument, 0, 'I'},
       {"enable-android-storage", no_argument, 0, 'S'},
       {"selinux-permissive", no_argument, 0, 'P'},
+      {"allow-userns", no_argument, 0, 279},
       {"volatile", no_argument, 0, 'V'},
       {"bind-mount", required_argument, 0, 'B'},
       {"bind", required_argument, 0, 'B'},
@@ -413,6 +418,7 @@ int main(int argc, char **argv) {
       {"virgl", no_argument, 0, 270},
       {"virgl-flags", required_argument, 0, 272},
       {"pulse-audio", no_argument, 0, 273},
+      {"anland", no_argument, 0, 278},
       {"gateway", required_argument, 0, 274},
       {"gateway-container", required_argument, 0, 274},
       {"gateway-net", required_argument, 0, 275},
@@ -678,6 +684,9 @@ int main(int argc, char **argv) {
     case 273:
       cfg.pulseaudio = 1;
       break;
+    case 278:
+      cfg.anland = 1;
+      break;
     case 274:
       safe_strncpy(cfg.gateway_container, optarg,
                    sizeof(cfg.gateway_container));
@@ -703,6 +712,9 @@ int main(int argc, char **argv) {
       break;
     case 'P':
       cfg.selinux_permissive = 1;
+      break;
+    case 279:
+      cfg.userns_allowed = 1;
       break;
     case 'V':
       cfg.volatile_mode = 1;

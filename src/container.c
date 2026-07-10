@@ -184,6 +184,7 @@ void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
     ds_x11_daemon_stop(cfg);
     ds_virgl_daemon_stop(cfg);
     ds_pulse_daemon_stop(cfg);
+    ds_anland_daemon_stop(cfg);
     if (count_running_containers(NULL, 0) == 0) {
       android_optimizations(0);
     }
@@ -501,6 +502,14 @@ int start_rootfs(struct ds_config *cfg) {
 
   if (is_android() && cfg->pulseaudio) {
     ds_pulse_daemon_start(cfg);
+  }
+
+  /* anland display daemon: generate the per-container host socket and start the
+   * broker before fork so the socket exists when bind-mounted post-pivot. The
+   * generated cfg->anland_sock is recorded in the Pids dir (not
+   * container.config) by ds_anland_daemon_start. */
+  if (is_android() && cfg->anland) {
+    ds_anland_daemon_start(cfg);
   }
 
   /* 3. Early pre-flight for volatile mode (before any host changes) */
@@ -1122,7 +1131,7 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
      * inherited only via fork/exec from PID 1 - entering processes arrive via
      * setns() and are NOT children of init, so they inherit nothing. */
     ds_log_silent = 1;
-    ds_seccomp_apply_minimal(cfg->privileged_mask);
+    ds_seccomp_apply_minimal(cfg->privileged_mask, cfg->userns_allowed);
     android_seccomp_setup(
         0, cfg->block_nested_ns && !(cfg->privileged_mask & DS_PRIV_NOSEC),
         cfg->privileged_mask);
@@ -1315,7 +1324,7 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
     /* Apply identical security hardening as internal_boot() and enter_rootfs().
      * Same reasoning: run processes are not children of container PID 1. */
     ds_log_silent = 1;
-    ds_seccomp_apply_minimal(cfg->privileged_mask);
+    ds_seccomp_apply_minimal(cfg->privileged_mask, cfg->userns_allowed);
     android_seccomp_setup(
         0, cfg->block_nested_ns && !(cfg->privileged_mask & DS_PRIV_NOSEC),
         cfg->privileged_mask);
@@ -1620,6 +1629,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     printf("VOLATILE_MODE=%d\n", cfg->volatile_mode);
     printf("FORCE_CGROUP_V1=%d\n", cfg->force_cgroupv1);
     printf("DEADLOCK_SHIELD=%d\n", cfg->block_nested_ns);
+    printf("USERNS_ALLOWED=%d\n", cfg->userns_allowed);
     printf("FOREGROUND_MODE=%d\n", cfg->foreground);
 
     printf("DNS_SERVERS=%s\n", cfg->dns_servers[0] ? cfg->dns_servers : "");
@@ -1847,7 +1857,13 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
-    /* 14. Privileged Mode */
+    /* 14. User namespaces */
+    if (cfg->userns_allowed) {
+      printf("  " C_RED "User namespaces:" C_RESET " enabled\n");
+      feat_count++;
+    }
+
+    /* 15. Privileged Mode */
     if (cfg->privileged_mask > 0) {
       printf("  " C_RED "Privileged mode:" C_RESET " ");
       if (cfg->privileged_mask == DS_PRIV_FULL) {
@@ -1879,19 +1895,19 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
-    /* 15. Bind Mounts */
+    /* 16. Bind Mounts */
     if (cfg->bind_count > 0) {
       printf("  Bind mounts: %d active\n", cfg->bind_count);
       feat_count++;
     }
 
-    /* 16. Custom Init */
+    /* 17. Custom Init */
     if (cfg->custom_init[0]) {
       printf("  " C_RED "Custom Init:" C_RESET " %s\n", cfg->custom_init);
       feat_count++;
     }
 
-    /* 17. Environment Variables */
+    /* 18. Environment Variables */
     if (cfg->env_var_count > 0) {
       printf("  Env variables: %d loaded\n", cfg->env_var_count);
       feat_count++;

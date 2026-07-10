@@ -41,11 +41,13 @@ data class ContainerInfo(
     val enablePulseaudio: Boolean = false,
     val enableWayland: Boolean = false,
     val selinuxPermissive: Boolean = false,
+    val allowUserns: Boolean = false,
     val volatileMode: Boolean = false,
     val bindMounts: List<BindMount> = emptyList(),
     val dnsServers: String = "",
     val runAtBoot: Boolean = false,
     val runAtBootPriority: Int = 0,
+    val enableAnland: Boolean = false,
     val status: ContainerStatus = ContainerStatus.STOPPED,
     val pid: Int? = null,
     val useSparseImage: Boolean = false,
@@ -86,6 +88,7 @@ data class ContainerInfo(
         appendLine("enable_pulseaudio=${if (enablePulseaudio) "1" else "0"}")
         appendLine("enable_wayland=${if (enableWayland) "1" else "0"}")
         appendLine("selinux_permissive=${if (selinuxPermissive) "1" else "0"}")
+        appendLine("allow_userns=${if (allowUserns) "1" else "0"}")
         appendLine("volatile_mode=${if (volatileMode) "1" else "0"}")
         if (bindMounts.isNotEmpty()) {
             appendLine("bind_mounts=${bindMounts.joinToString(",") { "${it.src}:${it.dest}${if (it.ro) ":ro" else ""}" }}")
@@ -106,6 +109,7 @@ data class ContainerInfo(
         if (runAtBoot && runAtBootPriority > 0) {
             appendLine("run_at_boot_priority=$runAtBootPriority")
         }
+        appendLine("enable_anland=${if (enableAnland) "1" else "0"}")
         appendLine("force_cgroupv1=${if (forceCgroupv1) "1" else "0"}")
         appendLine("block_nested_ns=${if (blockNestedNs) "1" else "0"}")
         if (netMode == "nat" && staticNatIp.isNotEmpty()) {
@@ -324,11 +328,13 @@ object ContainerManager {
                 enablePulseaudio = configMap["enable_pulseaudio"] == "1",
                 enableWayland = configMap["enable_wayland"] == "1",
                 selinuxPermissive = configMap["selinux_permissive"] == "1",
+                allowUserns = configMap["allow_userns"] == "1",
                 volatileMode = configMap["volatile_mode"] == "1",
                 bindMounts = bindMounts,
                 dnsServers = configMap["dns_servers"] ?: "",
                 runAtBoot = configMap["run_at_boot"] == "1",
                 runAtBootPriority = configMap["run_at_boot_priority"]?.toIntOrNull() ?: 0,
+                enableAnland = configMap["enable_anland"] == "1",
                 status = ContainerStatus.STOPPED,
                 useSparseImage = useSparseImage,
                 sparseImageSizeGB = sparseImageSizeGB,
@@ -394,6 +400,24 @@ object ContainerManager {
         }
 
         Pair(false, null)
+    }
+
+    /**
+     * Return the anland display-daemon socket path for a running container, or
+     * null if it isn't running / anland isn't active. The native runtime records
+     * the generated per-container socket path in Pids/<name>.anland at start and
+     * removes it on stop, so the presence of a non-empty path also signals that
+     * the anland window can be launched.
+     */
+    suspend fun getAnlandSocket(containerName: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val path = "${Constants.PIDS_BASE_PATH}/$containerName.anland"
+            val result = Shell.cmd("cat \"$path\" 2>/dev/null").exec()
+            val sock = result.out.firstOrNull()?.trim()
+            if (result.isSuccess && !sock.isNullOrEmpty()) sock else null
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**

@@ -293,8 +293,12 @@ int ds_config_load(const char *config_path, struct ds_config *cfg) {
       cfg->pulseaudio = parse_bool(val);
     } else if (strcmp(key, "enable_wayland") == 0) {
       cfg->wayland = parse_bool(val);  
+    } else if (strcmp(key, "enable_anland") == 0) {
+      cfg->anland = parse_bool(val);
     } else if (strcmp(key, "selinux_permissive") == 0) {
       cfg->selinux_permissive = parse_bool(val);
+    } else if (strcmp(key, "allow_userns") == 0) {
+      cfg->userns_allowed = parse_bool(val);
     } else if (strcmp(key, "volatile_mode") == 0) {
       cfg->volatile_mode = parse_bool(val);
     } else if (strcmp(key, "force_cgroupv1") == 0) {
@@ -640,10 +644,12 @@ static void ds_config_serialize_known(FILE *f, struct ds_config *cfg) {
       fprintf(f, "virgl_extra_flags=%s\n", cfg->virgl_extra_flags);
     fprintf(f, "enable_pulseaudio=%d\n", cfg->pulseaudio);
     fprintf(f, "enable_wayland=%d\n", cfg->wayland);
+    fprintf(f, "enable_anland=%d\n", cfg->anland);
   }
   fprintf(f, "enable_hw_access=%d\n", cfg->hw_access);
   fprintf(f, "enable_gpu_mode=%d\n", cfg->gpu_mode);
   fprintf(f, "selinux_permissive=%d\n", cfg->selinux_permissive);
+  fprintf(f, "allow_userns=%d\n", cfg->userns_allowed);
   fprintf(f, "volatile_mode=%d\n", cfg->volatile_mode);
   fprintf(f, "force_cgroupv1=%d\n", cfg->force_cgroupv1);
   fprintf(f, "block_nested_ns=%d\n", cfg->block_nested_ns);

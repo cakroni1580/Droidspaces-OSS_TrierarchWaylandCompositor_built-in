@@ -379,10 +379,12 @@ struct ds_config {
   char *virgl_extra_flags; /* --virgl-flags "..." (heap, NULL if unset) */
   int pulseaudio;          /* --pulse-audio (Android only) */
   int wayland;             /* --wayland (Android only) */
+  int anland;              /* --anland: embed anland display daemon (Android) */
   int volatile_mode;       /* --volatile */
   int disable_ipv6;        /* --disable-ipv6 */
   int android_storage;     /* --enable-android-storage */
   int selinux_permissive;  /* --selinux-permissive */
+  int userns_allowed;      /* --allow-userns */
   int net_bridgeless;      /* Probe result: no CONFIG_BRIDGE, use PTP NAT */
   int reboot_cycle;        /* 1 if we are in a reboot loop */
   int force_cgroupv1;  /* --force-cgroupv1: use v1 even if v2 is available */
@@ -393,13 +395,15 @@ struct ds_config {
   char prog_name[64];  /* argv[0] for logging */
 
   /* Runtime state */
-  char volatile_dir[PATH_MAX];    /* temporary overlay dir */
-  pid_t container_pid;            /* PID 1 of the container (host view) */
-  pid_t intermediate_pid;         /* intermediate fork pid */
-  pid_t x11_pid;                  /* PID of the Termux-X11 server process */
-  pid_t virgl_pid;                /* PID of the VirGL server process */
-  pid_t pulse_pid;                /* PID of the PulseAudio daemon process */
-  int is_img_mount;               /* 1 if rootfs was loop-mounted from .img */
+  char volatile_dir[PATH_MAX]; /* temporary overlay dir */
+  pid_t container_pid;         /* PID 1 of the container (host view) */
+  pid_t intermediate_pid;      /* intermediate fork pid */
+  pid_t x11_pid;               /* PID of the Termux-X11 server process */
+  pid_t virgl_pid;             /* PID of the VirGL server process */
+  pid_t pulse_pid;             /* PID of the PulseAudio daemon process */
+  pid_t anland_pid;            /* PID of the anland display daemon process */
+  char anland_sock[PATH_MAX];  /* generated host socket for the anland daemon */
+  int is_img_mount;            /* 1 if rootfs was loop-mounted from .img */
   char img_mount_point[PATH_MAX]; /* where the .img was mounted */
   ds_init_type_t init_type;       /* detected container PID 1 init family */
   char custom_init[PATH_MAX]; /* --init=PATH override (default: /sbin/init) */
@@ -584,7 +588,7 @@ void android_remount_data_suid(void);
 int android_setup_storage(const char *rootfs_path);
 int android_seccomp_setup(int is_systemd, int block_nested_ns,
                           int privileged_mask);
-int ds_seccomp_apply_minimal(int privileged_mask);
+int ds_seccomp_apply_minimal(int privileged_mask, int userns_allowed);
 
 /* SELinux + Termux privilege helpers */
 int get_selinux_context(const char *path, char *buf, size_t size);
@@ -666,6 +670,14 @@ int setup_hardware_access(struct ds_config *cfg);
 int ds_x11_daemon_start(struct ds_config *cfg);
 void ds_x11_daemon_stop(struct ds_config *cfg);
 int ds_setup_x11_socket(struct ds_config *cfg);
+
+/* ---------------------------------------------------------------------------
+ * anland/anland.c
+ * ---------------------------------------------------------------------------*/
+
+int ds_anland_daemon_start(struct ds_config *cfg);
+void ds_anland_daemon_stop(struct ds_config *cfg);
+int ds_setup_anland_socket(struct ds_config *cfg);
 
 /* ---------------------------------------------------------------------------
  * virgl-android.c
