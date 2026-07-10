@@ -419,7 +419,7 @@ int main(int argc, char **argv) {
       {"gateway-net", required_argument, 0, 275},
       {"gateway-iface", required_argument, 0, 276},
       {"gateway-bridge", required_argument, 0, 277},
-      {"wayland", no_argument, 0, 279},
+      {"wayland", no_argument, 0, 270},
       {"reset", no_argument, 0, 256},
       {"format", no_argument, 0, 265},
       {"memory", required_argument, 0, 266},
@@ -693,7 +693,7 @@ int main(int argc, char **argv) {
     case 277:
       safe_strncpy(cfg.gateway_bridge, optarg, sizeof(cfg.gateway_bridge));
       break;
-    case 279:
+    case 270:
       cfg.wayland = 1;
       break;
     case 'I':
