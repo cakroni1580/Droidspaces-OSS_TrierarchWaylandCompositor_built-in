@@ -90,10 +90,6 @@ void parse_privileged(const char *value, struct ds_config *cfg) {
 
     token = strtok_r(NULL, ",", &saveptr);
   }
-
-  if (cfg->userns_allowed) {
-    cfg->privileged_mask |= DS_PRIV_USERNS;
-  }
 }
 
 static void parse_bind_mounts(const char *value, struct ds_config *cfg) {
@@ -689,9 +685,6 @@ static void ds_config_serialize_known(FILE *f, struct ds_config *cfg) {
         fprintf(f, "%sunfiltered-dev", first ? "" : ",");
         first = 0;
       }
-
-      /// Note that DS_PRIV_USERNS is controlled by allow_userns, not the
-      /// privileged list, so we don't write it here.
     }
     fprintf(f, "\n");
   }

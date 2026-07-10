@@ -323,10 +323,9 @@ struct ds_port_forward {
 #define DS_PRIV_NOSEC (1 << 2)  /* Minimal seccomp only */
 #define DS_PRIV_SHARED (1 << 3) /* MS_SHARED root propagation */
 #define DS_PRIV_UNFILTERED                                                     \
-  (1 << 4)                      /* No device node blocking (except PTYs)       \
-                                 */
-#define DS_PRIV_USERNS (1 << 5) /* Allow user namespace blocking */
-#define DS_PRIV_FULL (0xFF)     /* All above */
+  (1 << 4)                  /* No device node blocking (except PTYs)           \
+                             */
+#define DS_PRIV_FULL (0xFF) /* All above */
 
 typedef enum {
   DS_INIT_UNKNOWN = 0,
@@ -575,7 +574,7 @@ void android_remount_data_suid(void);
 int android_setup_storage(const char *rootfs_path);
 int android_seccomp_setup(int is_systemd, int block_nested_ns,
                           int privileged_mask);
-int ds_seccomp_apply_minimal(int privileged_mask);
+int ds_seccomp_apply_minimal(int privileged_mask, int userns_allowed);
 
 /* SELinux + Termux privilege helpers */
 int get_selinux_context(const char *path, char *buf, size_t size);

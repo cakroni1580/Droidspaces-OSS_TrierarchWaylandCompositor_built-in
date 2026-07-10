@@ -30,7 +30,7 @@
  * Blocks direct host kernel takeover vectors (module loading, kexec).
  * Applied unconditionally to all kernels and all modes.
  */
-int ds_seccomp_apply_minimal(int privileged_mask) {
+int ds_seccomp_apply_minimal(int privileged_mask, int userns_allowed) {
   /* noseccomp: skip everything, 32-bit binaries must work */
   if (privileged_mask & DS_PRIV_NOSEC)
     return 0;
@@ -99,7 +99,7 @@ int ds_seccomp_apply_minimal(int privileged_mask) {
         (struct sock_filter)BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS);
 #endif
 
-    if (!(privileged_mask & DS_PRIV_USERNS)) {
+    if (!userns_allowed) {
 #ifdef __NR_clone3
       /* 6. Block clone3 */
       filter[curr++] = (struct sock_filter)BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
