@@ -59,15 +59,37 @@ internal class WaylandCoordMapper {
 
         val lw = out[0].toFloat()
         val lh = out[1].toFloat()
-        val x = viewX.coerceIn(0f, refW.toFloat())
-        val y = viewY.coerceIn(0f, refH.toFloat())
-        val wx = (x * lw / refW).coerceIn(0f, (lw - 0.5f).coerceAtLeast(0f))
-        val wy = (y * lh / refH).coerceIn(0f, (lh - 0.5f).coerceAtLeast(0f))
+        val x = viewX.coerceIn(
+            0f,
+            (refW - 1).coerceAtLeast(0).toFloat()
+        )
+
+        val y = viewY.coerceIn(
+            0f,
+            (refH - 1).coerceAtLeast(0).toFloat()
+        )
+
+        val wx = (x * lw / refW)
+            .coerceIn(0f, (lw - 0.5f).coerceAtLeast(0f))
+
+        val wy = (y * lh / refH)
+           .coerceIn(0f, (lh - 0.5f).coerceAtLeast(0f))
         return floatArrayOf(wx, wy)
     }
 
     fun nowTimeMs32(): Int = (SystemClock.uptimeMillis() and 0x7FFFFFFFL).toInt()
 
-    private fun referenceWidth(): Int = if (surfaceWidth > 0) surfaceWidth else viewWidth
-    private fun referenceHeight(): Int = if (surfaceHeight > 0) surfaceHeight else viewHeight
+    private fun referenceWidth(): Int =
+        when {
+            viewWidth > 0 -> viewWidth
+            surfaceWidth > 0 -> surfaceWidth
+            else -> 1
+        }
+
+    private fun referenceHeight(): Int =
+        when {
+            viewHeight > 0 -> viewHeight
+            surfaceHeight > 0 -> surfaceHeight
+            else -> 1
+        }
 }
