@@ -2,7 +2,6 @@ package com.droidspaces.app.wayland
 
 import android.os.SystemClock
 import com.droidspaces.app.wayland.WaylandSurface
-import com.droidspaces.app.wayland.WaylandDisplayView
 
 /**
  * Maps Android view coordinates into Trierarch Wayland logical output coordinates.
@@ -82,15 +81,15 @@ internal class WaylandCoordMapper {
 
     private fun referenceWidth(): Int =
         when {
-            viewWidth > 0 -> viewWidth
             surfaceWidth > 0 -> surfaceWidth
+            viewWidth > 0 -> viewWidth
             else -> 1
         }
 
     private fun referenceHeight(): Int =
         when {
-            viewHeight > 0 -> viewHeight
             surfaceHeight > 0 -> surfaceHeight
+            viewHeight > 0 -> viewHeight
             else -> 1
         }
 }
