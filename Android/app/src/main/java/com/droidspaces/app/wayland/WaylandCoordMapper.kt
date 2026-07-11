@@ -2,6 +2,7 @@ package com.droidspaces.app.wayland
 
 import android.os.SystemClock
 import com.droidspaces.app.wayland.WaylandSurface
+import com.droidspaces.app.wayland.WaylandDisplayView
 
 /**
  * Maps Android view coordinates into Trierarch Wayland logical output coordinates.
