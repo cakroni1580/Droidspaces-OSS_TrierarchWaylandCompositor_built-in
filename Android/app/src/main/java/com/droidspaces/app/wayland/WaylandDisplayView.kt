@@ -231,8 +231,13 @@ class WaylandDisplayLayout(
      * Semua routing touch/mouse nantinya dipindahkan ke WaylandTouchLayout
      * tanpa mengubah lifecycle SurfaceView maupun IME.
      * ----------------------------------------------------------------------*/
+    private val coordMapper = WaylandCoordMapper()
+
     private val inputRouter by lazy {
-        WaylandTouchLayout(context)
+        WaylandTouchLayout(
+            context,
+            coordMapper
+        )
     }
 
     init {
@@ -272,7 +277,7 @@ class WaylandDisplayLayout(
                     /* PATCH:
                      * Sinkronkan ukuran Surface dengan mapper Trierarch.
                      */
-                    inputRouter.onSurfaceSizeChanged(w, h)
+                    coordMapper.setSurfaceSize(w, h)
                 }
                 override fun surfaceDestroyed(h: SurfaceHolder) {
                     WaylandSurface.nativeSurfaceDestroyed()
