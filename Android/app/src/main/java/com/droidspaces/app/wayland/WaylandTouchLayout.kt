@@ -24,19 +24,18 @@ import com.droidspaces.app.ui.dialog.MOUSE_MODE_TOUCHPAD
  * - This view is embedded in Compose via [androidx.compose.ui.viewinterop.AndroidView].
  * - It must be safe to call from UI thread only.
  */
-internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
+internal class WaylandTouchLayout(
+    context: Context,
+    private val coordMapper: WaylandCoordMapper
+) : FrameLayout(context) {
     var mouseMode: Int = 0
     var resolutionPercent: Int = 100
     var scalePercent: Int = 100
-    var lastSurfaceWidth: Int = 0
-    var lastSurfaceHeight: Int = 0
     var lastAppliedResolutionPercent: Int = -1
     var lastAppliedScalePercent: Int = -1
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cursorPolicy = WaylandCursorVisibilityPolicy(mainHandler)
-
-    private val coordMapper = WaylandCoordMapper()
     private val touchpadController = WaylandTouchpadController(coordMapper, mainHandler)
     private val tabletController = WaylandTabletController(coordMapper, mainHandler)
     private val twoFingerScroll = WaylandTwoFingerScroll(coordMapper) { event, timeMs ->
@@ -54,10 +53,6 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
      */
     fun applyCursorVisibilityPolicy() {
         cursorPolicy.apply(mouseMode)
-    }
-
-    fun onSurfaceSizeChanged(w: Int, h: Int) {
-        coordMapper.setSurfaceSize(w, h)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -110,10 +105,7 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
         }
 
         if (twoFingerScroll.onTouchEvent(event, mouseMode, timeMs)) {
-            if (event.pointerCount == 1) {
-                // Keep mapper surface size up to date for cursor movement clamping.
-                coordMapper.setSurfaceSize(lastSurfaceWidth, lastSurfaceHeight)
-            }
+            
             return true
         }
         if (twoFingerScroll.didScrollJustEndInTabletMode(mouseMode, event.pointerCount)) return true
@@ -122,7 +114,6 @@ internal class WaylandTouchLayout(context: Context) : FrameLayout(context) {
         if (isTouchpad) {
             cursorPolicy.noteTouchDrivenCursor()
             applyCursorVisibilityPolicy()
-            coordMapper.setSurfaceSize(lastSurfaceWidth, lastSurfaceHeight)
             return touchpadController.onTouchEvent(event, timeMs)
         } else {
             // Tablet mode does not rely on the simulated touchpad cursor.
