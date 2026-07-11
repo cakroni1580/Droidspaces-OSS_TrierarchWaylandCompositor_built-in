@@ -254,25 +254,25 @@ class WaylandDisplayLayout(
                     }, 1000)
                 }
                 override fun surfaceChanged(
-                    h: SurfaceHolder,
-                    fmt: Int,
+                    holder: SurfaceHolder,
+                    format: Int,
                     w: Int,
-                    h2: Int
+                    h: Int
                 ) {
-                    if (w <= 0 || h2 <= 0)
+                    if (w <= 0 || h <= 0)
                         return
                     
                     // ONLY FORWARD RAW SURFACE SIZE
                     WaylandSurface.nativeOutputSizeChanged(
                         w,
-                        h2,
+                        h,
                         resolutionPercent,
                         scalePercent
                     )
                     /* PATCH:
                      * Sinkronkan ukuran Surface dengan mapper Trierarch.
                      */
-                    inputRouter.onSurfaceSizeChanged(w, h2)
+                    inputRouter.onSurfaceSizeChanged(w, h)
                 }
                 override fun surfaceDestroyed(h: SurfaceHolder) {
                     WaylandSurface.nativeSurfaceDestroyed()
@@ -356,9 +356,6 @@ class WaylandDisplayLayout(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
 
-        inputRouter.lastSurfaceWidth = width
-        inputRouter.lastSurfaceHeight = height
-
         inputRouter.resolutionPercent = resolutionPercent
         inputRouter.scalePercent = scalePercent
 
@@ -366,9 +363,6 @@ class WaylandDisplayLayout(
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
-
-        inputRouter.lastSurfaceWidth = width
-        inputRouter.lastSurfaceHeight = height
 
         return inputRouter.onGenericMotionEvent(event)
     }
