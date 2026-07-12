@@ -69,44 +69,29 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
         if (isFullscreen) isFullscreen = false else onNavigateBack()
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .windowInsetsPadding(
+                WindowInsets.statusBars
+                    .union(WindowInsets.navigationBars)
+            )
+    ) {
 
         WaylandDisplayView(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .windowInsetsPadding(
-                    WindowInsets.statusBars
-                      .union(WindowInsets.navigationBars)
-                      .union(WindowInsets.ime)
-               ),
-             onViewReady = { waylandLayout = it }
+                    WindowInsets.ime
+                ),
+            onViewReady = { waylandLayout = it }
         )
-        AnimatedVisibility(
-            visible = isRunning && !imeVisible,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(16.dp)
-        ) {
-            FloatingActionButton(
-                onClick = {
-                    waylandLayout?.showKeyboard()
-                    isKeyboardVisible = true
-                }
-            ) {
-                Icon(
-                    Icons.Default.Keyboard,
-                    contentDescription = "Show keyboard"
-                )
-            }
-        }
+
 
         AnimatedVisibility(
-            visible = isRunning && imeVisible,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .imePadding()
-       ) {
+            visible = isRunning && imeVisible
+        ) {
             WaylandKeyboardBar(
                 isFullscreen = isFullscreen,
                 isKeyboardVisible = isKeyboardVisible,
