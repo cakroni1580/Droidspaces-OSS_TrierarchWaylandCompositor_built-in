@@ -223,6 +223,39 @@ class WaylandDisplayLayout(
     private var resolutionPercent: Int,
     private var scalePercent: Int,
 ) : FrameLayout(context) {
+
+    //pending ime animation-----
+    private var imeAnimating = false
+
+    private var pendingWidth = 0
+    private var pendingHeight = 0
+
+    private val resizeCommit = Runnable {
+        WaylandSurface.nativeOutputSizeChanged(
+            pendingWidth,
+            pendingHeight,
+            resolutionPercent,
+            scalePercent
+        )
+    }
+
+    fun setImeAnimating(animating: Boolean) {
+        imeAnimating = animating
+
+        if (!animating) {
+            removeCallbacks(resizeCommit)
+
+            if (pendingWidth > 0 && pendingHeight > 0) {
+                WaylandSurface.nativeOutputSizeChanged(
+                    pendingWidth,
+                    pendingHeight,
+                    resolutionPercent,
+                    scalePercent
+                )
+            }
+        }
+    }
+    //--------------------
     
     private val imeSink = SoftKeyboardSink(context)
 
@@ -270,12 +303,36 @@ class WaylandDisplayLayout(
                         return
                     
                     // ONLY FORWARD RAW SURFACE SIZE
-                    WaylandSurface.nativeOutputSizeChanged(
+                    /*WaylandSurface.nativeOutputSizeChanged(
                         w,
                         h,
                         resolutionPercent,
                         scalePercent
-                    )
+                    )*/
+
+                    pendingWidth = w
+                    pendingHeight = h
+
+                    if (!imeAnimating) {
+
+                        removeCallbacks(resizeCommit)
+
+                        WaylandSurface.nativeOutputSizeChanged(
+                            w,
+                            h,
+                            resolutionPercent,
+                            scalePercent
+                        )
+
+                    } else {
+
+                        removeCallbacks(resizeCommit)
+
+                           postDelayed(
+                           resizeCommit,
+                           80L
+                        )
+                    }
                     /* PATCH:
                      * Sinkronkan ukuran Surface dengan mapper Trierarch.
                      */
