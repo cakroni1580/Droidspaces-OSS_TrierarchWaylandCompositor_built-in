@@ -28,6 +28,7 @@ import com.droidspaces.app.wayland.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
+import androidx.compose.animation.AnimatedVisibility as ComposeAnimatedVisibility
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,7 +96,7 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
 
 
             // FAB tetap overlay seperti sebelumnya
-            AnimatedVisibility(
+            ComposeAnimatedVisibility(
                 visible = isRunning && !imeVisible,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -115,9 +116,8 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-
         // KeyboardBar sekarang sibling di luar Wayland
-        AnimatedVisibility(
+        ComposeAnimatedVisibility(
             visible = isRunning && imeVisible
         ) {
             WaylandKeyboardBar(
