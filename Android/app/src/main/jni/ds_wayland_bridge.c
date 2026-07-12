@@ -135,7 +135,6 @@ static void crash_handler(
         "window      : %p\n"
         "dispatch    : %d\n"
         "render      : %d\n"
-        "scene_ready : %d\n"
         "logical     : %dx%d\n"
         "PC          : %p\n"
         "LR          : %p\n"
