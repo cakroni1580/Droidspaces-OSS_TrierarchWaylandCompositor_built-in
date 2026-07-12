@@ -32,6 +32,36 @@ import java.util.concurrent.Executors
  *  - Hardware key events go via onKeyDown/Up on the FrameLayout.
  *  - showKeyboard() / hideKeyboard() focus the sink and call showSoftInput on it.
  */
+
+
+/*pending for ime surface changed storm*/
+private var pendingWidth = 0
+private var pendingHeight = 0
+
+private var lastCommittedWidth = -1
+private var lastCommittedHeight = -1
+
+private val resizeCommit = Runnable {
+
+    if (pendingWidth <= 0 || pendingHeight <= 0)
+        return@Runnable
+
+    if (pendingWidth == lastCommittedWidth &&
+        pendingHeight == lastCommittedHeight)
+        return@Runnable
+
+    lastCommittedWidth = pendingWidth
+    lastCommittedHeight = pendingHeight
+
+    WaylandSurface.nativeOutputSizeChanged(
+        pendingWidth,
+        pendingHeight,
+        resolutionPercent,
+        scalePercent
+    )
+}
+/*-------------------*/
+
 @Composable
 fun WaylandDisplayView(
     resolutionPercent: Int = 100,
@@ -267,16 +297,19 @@ class WaylandDisplayLayout(
                     if (w <= 0 || h <= 0)
                         return
                     
-                    // ONLY FORWARD RAW SURFACE SIZE
+                    /*/ ONLY FORWARD RAW SURFACE SIZE
                     WaylandSurface.nativeOutputSizeChanged(
                         w,
                         h,
                         resolutionPercent,
                         scalePercent
-                    )
+                    )*/
                     /* PATCH:
                      * Sinkronkan ukuran Surface dengan mapper Trierarch.
                      */
+                    pendingWidth = w
+                    pendingHeight = h
+                    
                     coordMapper.setSurfaceSize(w, h)
                 }
                 override fun surfaceDestroyed(h: SurfaceHolder) {
