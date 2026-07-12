@@ -28,11 +28,17 @@ import com.droidspaces.app.wayland.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.offset
-import androidx.compose.animation.AnimatedVisibility as ComposeAnimatedVisibility
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WaylandScreen(onNavigateBack: () -> Unit) {
+
+    val density = LocalDensity.current
+
+    val ime = WindowInsets.ime
+    val imeBottomPx = with(density) {
+        ime.getBottom(this)
+    }
 
     val isRunning = WaylandManager.isRunning
     var isFullscreen by remember { mutableStateOf(false) }
@@ -40,8 +46,10 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
     var waylandLayout: WaylandDisplayLayout? by remember { mutableStateOf(null) }
 
     val view = LocalView.current
-    val density = LocalDensity.current
-    val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val imeVisible = imeBottomPx > 0
+    val imeOffsetDp = with(density) {
+        imeBottomPx.toDp()
+    }
 
     val insetsController = remember(view) {
         val activity = view.context as? Activity ?: return@remember null
@@ -70,24 +78,24 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
         if (isFullscreen) isFullscreen = false else onNavigateBack()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(
-                WindowInsets.statusBars
-                    .union(WindowInsets.navigationBars)
-            )
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
 
-        Box(
+        Column(
             modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
+                .windowInsetsPadding(
+                    WindowInsets.statusBars.union(
+                        WindowInsets.navigationBars
+                    )
+                )
         ) {
 
             WaylandDisplayView(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
+                    .fillMaxWidth()
                     .windowInsetsPadding(
                         WindowInsets.ime
                     ),
@@ -95,45 +103,47 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
             )
 
 
-            // FAB tetap overlay seperti sebelumnya
-            ComposeAnimatedVisibility(
-                visible = isRunning && !imeVisible,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
+            AnimatedVisibility(
+                visible = isRunning && imeVisible
             ) {
-                FloatingActionButton(
-                    onClick = {
-                        waylandLayout?.showKeyboard()
-                        isKeyboardVisible = true
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.Keyboard,
-                        contentDescription = "Show keyboard"
-                    )
-                }
+                WaylandKeyboardBar(
+                    isFullscreen = isFullscreen,
+                    isKeyboardVisible = isKeyboardVisible,
+                    onFullscreenToggle = { isFullscreen = !isFullscreen },
+                    onKeyboardToggle = {
+                        if (isKeyboardVisible) {
+                            waylandLayout?.hideKeyboard()
+                        } else {
+                            waylandLayout?.showKeyboard()
+                        }
+                        isKeyboardVisible = !isKeyboardVisible
+                    },
+                    onNavigateBack = onNavigateBack
+                )
             }
         }
 
-        // KeyboardBar sekarang sibling di luar Wayland
-        ComposeAnimatedVisibility(
-            visible = isRunning && imeVisible
+
+        // JANGAN dipindah.
+        // FAB tetap overlay seperti implementasi awal.
+        AnimatedVisibility(
+            visible = isRunning && !imeVisible,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(16.dp)
         ) {
-            WaylandKeyboardBar(
-                isFullscreen = isFullscreen,
-                isKeyboardVisible = isKeyboardVisible,
-                onFullscreenToggle = { isFullscreen = !isFullscreen },
-                onKeyboardToggle = {
-                    if (isKeyboardVisible) {
-                        waylandLayout?.hideKeyboard()
-                    } else {
-                        waylandLayout?.showKeyboard()
-                    }
-                    isKeyboardVisible = !isKeyboardVisible
-                },
-                onNavigateBack = onNavigateBack
-            )
+            FloatingActionButton(
+                onClick = {
+                    waylandLayout?.showKeyboard()
+                    isKeyboardVisible = true
+                }
+            ) {
+                Icon(
+                    Icons.Default.Keyboard,
+                    contentDescription = "Show keyboard"
+                )
+            }
         }
     }
 }
