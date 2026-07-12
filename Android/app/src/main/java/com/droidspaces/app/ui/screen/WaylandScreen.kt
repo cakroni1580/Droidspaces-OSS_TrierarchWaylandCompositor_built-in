@@ -38,8 +38,8 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
     var isKeyboardVisible by remember { mutableStateOf(false) }
     var waylandLayout: WaylandDisplayLayout? by remember { mutableStateOf(null) }
 
-    val view = LocalView.current
-    val imeVisible = imeBottomPx > 0
+    val density = LocalDensity.current
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
 
     val insetsController = remember(view) {
         val activity = view.context as? Activity ?: return@remember null
