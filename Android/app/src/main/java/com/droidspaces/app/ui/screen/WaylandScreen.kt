@@ -87,6 +87,9 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
                     WindowInsets.statusBars
                       .union(WindowInsets.navigationBars)
                       .union(WindowInsets.ime)
+               )
+                .padding(
+                    bottom = if (imeVisible) 52.dp else 0.dp
                ),
              onViewReady = { waylandLayout = it }
         )
