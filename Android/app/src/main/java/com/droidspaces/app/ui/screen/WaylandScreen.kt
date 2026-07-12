@@ -78,50 +78,18 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
         if (isFullscreen) isFullscreen = false else onNavigateBack()
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize()
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
 
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-
-            WaylandDisplayView(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(
-                        WindowInsets.statusBars
-                            .union(WindowInsets.navigationBars)
-                            .union(WindowInsets.ime)
-                    ),
-                onViewReady = {
-                    waylandLayout = it
-                }
-            )
-
-            AnimatedVisibility(
-                visible = isRunning && imeVisible
-            ) {
-                WaylandKeyboardBar(
-                    isFullscreen = isFullscreen,
-                    isKeyboardVisible = isKeyboardVisible,
-                    onFullscreenToggle = {
-                        isFullscreen = !isFullscreen
-                    },
-                    onKeyboardToggle = {
-                        if (isKeyboardVisible) {
-                            waylandLayout?.hideKeyboard()
-                        } else {
-                            waylandLayout?.showKeyboard()
-                        }
-                        isKeyboardVisible = !isKeyboardVisible
-                     },
-                     onNavigateBack = onNavigateBack
-                 )
-             }
-         }
-
+        WaylandDisplayView(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(
+                    WindowInsets.statusBars.union(
+                        WindowInsets.navigationBars
+                    )
+                ),
+             onViewReady = { waylandLayout = it }
+        )
         AnimatedVisibility(
             visible = isRunning && !imeVisible,
             modifier = Modifier
@@ -141,7 +109,6 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
                 )
             }
         }
-    }
 
         AnimatedVisibility(
             visible = isRunning && imeVisible,
