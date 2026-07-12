@@ -86,10 +86,10 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(
-                    WindowInsets.statusBars.union(
-                        WindowInsets.navigationBars
-                    )
+                    WindowInsets.statusBars
+                       .union(WindowInsets.navigationBars)
                 )
+                .imePadding()
         ) {
 
             WaylandDisplayView(
