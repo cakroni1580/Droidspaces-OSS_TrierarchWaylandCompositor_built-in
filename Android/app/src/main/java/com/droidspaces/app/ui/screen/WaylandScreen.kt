@@ -90,23 +90,28 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
                 ),
              onViewReady = { waylandLayout = it }
         )
-        AnimatedVisibility(
-            visible = isRunning && !imeVisible,
+        Box(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
+                .fillMaxSize()
                 .navigationBarsPadding()
-                .padding(16.dp)
         ) {
-            FloatingActionButton(
-                onClick = {
-                    waylandLayout?.showKeyboard()
-                    isKeyboardVisible = true
-                }
+            AnimatedVisibility(
+                visible = isRunning && !imeVisible,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 8.dp)
             ) {
-                Icon(
-                    Icons.Default.Keyboard,
-                    contentDescription = "Show keyboard"
-                )
+                FloatingActionButton(
+                    onClick = {
+                        waylandLayout?.showKeyboard()
+                        isKeyboardVisible = true
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Keyboard,
+                        contentDescription = "Show keyboard"
+                    )
+                }
             }
         }
 
