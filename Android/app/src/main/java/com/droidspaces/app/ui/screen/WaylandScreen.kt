@@ -78,17 +78,45 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
             )
     ) {
 
-        WaylandDisplayView(
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .windowInsetsPadding(
-                    WindowInsets.ime
-                ),
-            onViewReady = { waylandLayout = it }
-        )
+        ) {
+
+            WaylandDisplayView(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(
+                        WindowInsets.ime
+                    ),
+                onViewReady = { waylandLayout = it }
+            )
 
 
+            // FAB tetap overlay seperti sebelumnya
+            AnimatedVisibility(
+                visible = isRunning && !imeVisible,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+            ) {
+                FloatingActionButton(
+                    onClick = {
+                        waylandLayout?.showKeyboard()
+                        isKeyboardVisible = true
+                    }
+                ) {
+                    Icon(
+                        Icons.Default.Keyboard,
+                        contentDescription = "Show keyboard"
+                    )
+                }
+            }
+        }
+
+
+        // KeyboardBar sekarang sibling di luar Wayland
         AnimatedVisibility(
             visible = isRunning && imeVisible
         ) {
