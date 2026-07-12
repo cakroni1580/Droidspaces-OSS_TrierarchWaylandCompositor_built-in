@@ -309,6 +309,11 @@ class WaylandDisplayLayout(
                      */
                     pendingWidth = w
                     pendingHeight = h
+
+                    // IME biasanya menghasilkan resize setiap ±16 ms.
+                    // Commit hanya setelah ukuran stabil.
+                    removeCallbacks(resizeCommit)
+                    postDelayed(resizeCommit, 100)
                     
                     coordMapper.setSurfaceSize(w, h)
                 }
