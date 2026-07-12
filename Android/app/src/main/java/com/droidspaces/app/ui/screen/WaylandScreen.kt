@@ -33,13 +33,6 @@ import androidx.compose.foundation.layout.offset
 @Composable
 fun WaylandScreen(onNavigateBack: () -> Unit) {
 
-    val density = LocalDensity.current
-
-    val ime = WindowInsets.ime
-    val imeBottomPx = with(density) {
-        ime.getBottom(this)
-    }
-
     val isRunning = WaylandManager.isRunning
     var isFullscreen by remember { mutableStateOf(false) }
     var isKeyboardVisible by remember { mutableStateOf(false) }
@@ -47,9 +40,6 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
 
     val view = LocalView.current
     val imeVisible = imeBottomPx > 0
-    val imeOffsetDp = with(density) {
-        imeBottomPx.toDp()
-    }
 
     val insetsController = remember(view) {
         val activity = view.context as? Activity ?: return@remember null
@@ -84,10 +74,10 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(
-                    WindowInsets.statusBars.union(
-                        WindowInsets.navigationBars
-                    )
-                ),
+                    WindowInsets.statusBars
+                      .union(WindowInsets.navigationBars)
+                      .union(WindowInsets.ime)
+               ),
              onViewReady = { waylandLayout = it }
         )
         AnimatedVisibility(
@@ -112,28 +102,24 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
 
         AnimatedVisibility(
             visible = isRunning && imeVisible,
-            modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = imeOffsetDp)
-            ) {
-                WaylandKeyboardBar(
-                    isFullscreen = isFullscreen,
-                    isKeyboardVisible = isKeyboardVisible,
-                    onFullscreenToggle = { isFullscreen = !isFullscreen },
-                    onKeyboardToggle = {
-                        if (isKeyboardVisible) {
-                            waylandLayout?.hideKeyboard()
-                        } else {
-                            waylandLayout?.showKeyboard()
-                        }
-                        isKeyboardVisible = !isKeyboardVisible
-                    },
-                    onNavigateBack = onNavigateBack
-                )
-            }
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .imePadding()
+       ) {
+            WaylandKeyboardBar(
+                isFullscreen = isFullscreen,
+                isKeyboardVisible = isKeyboardVisible,
+                onFullscreenToggle = { isFullscreen = !isFullscreen },
+                onKeyboardToggle = {
+                    if (isKeyboardVisible) {
+                        waylandLayout?.hideKeyboard()
+                    } else {
+                        waylandLayout?.showKeyboard()
+                    }
+                    isKeyboardVisible = !isKeyboardVisible
+                },
+                onNavigateBack = onNavigateBack
+            )
         }
     }
 }
