@@ -95,17 +95,12 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
             WaylandDisplayView(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .windowInsetsPadding(
-                        WindowInsets.ime
-                    ),
+                    .fillMaxWidth(),
                 onViewReady = { waylandLayout = it }
             )
 
 
-            AnimatedVisibility(
-                visible = isRunning && imeVisible
-            ) {
+            if (isRunning && imeVisible) {
                 WaylandKeyboardBar(
                     isFullscreen = isFullscreen,
                     isKeyboardVisible = isKeyboardVisible,
@@ -116,7 +111,7 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
                         } else {
                             waylandLayout?.showKeyboard()
                         }
-                        isKeyboardVisible = !isKeyboardVisible
+                        isKeyboardVisible = !isKeyboardVisible  
                     },
                     onNavigateBack = onNavigateBack
                 )
