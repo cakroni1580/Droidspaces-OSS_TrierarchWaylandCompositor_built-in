@@ -56,6 +56,10 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
         WindowCompat.getInsetsController(activity.window, view)
     }
 
+    LaunchedEffect(imeVisible) {
+        waylandLayout?.setImeAnimating(imeVisible)
+    }
+
     LaunchedEffect(isFullscreen) {
         insetsController?.let { ctrl ->
             if (isFullscreen) {
