@@ -78,45 +78,70 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
         if (isFullscreen) isFullscreen = false else onNavigateBack()
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
 
-        WaylandDisplayView(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(
-                    WindowInsets.statusBars
-                      .union(WindowInsets.navigationBars)
-                      .union(WindowInsets.ime)
-               )
-                .padding(
-                    bottom = if (imeVisible) 52.dp else 0.dp
-               ),
-             onViewReady = { waylandLayout = it }
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .navigationBarsPadding()
+        Column(
+            modifier = Modifier.fillMaxSize()
         ) {
-            AnimatedVisibility(
-                visible = isRunning && !imeVisible,
+
+            WaylandDisplayView(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 8.dp)
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        waylandLayout?.showKeyboard()
-                        isKeyboardVisible = true
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.Keyboard,
-                        contentDescription = "Show keyboard"
-                    )
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(
+                        WindowInsets.statusBars
+                            .union(WindowInsets.navigationBars)
+                            .union(WindowInsets.ime)
+                    ),
+                onViewReady = {
+                    waylandLayout = it
                 }
+            )
+
+            AnimatedVisibility(
+                visible = isRunning && imeVisible
+            ) {
+                WaylandKeyboardBar(
+                    isFullscreen = isFullscreen,
+                    isKeyboardVisible = isKeyboardVisible,
+                    onFullscreenToggle = {
+                        isFullscreen = !isFullscreen
+                    },
+                    onKeyboardToggle = {
+                        if (isKeyboardVisible) {
+                            waylandLayout?.hideKeyboard()
+                        } else {
+                            waylandLayout?.showKeyboard()
+                        }
+                        isKeyboardVisible = !isKeyboardVisible
+                     },
+                     onNavigateBack = onNavigateBack
+                 )
+             }
+         }
+
+        AnimatedVisibility(
+            visible = isRunning && !imeVisible,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(16.dp)
+        ) {
+            FloatingActionButton(
+                onClick = {
+                    waylandLayout?.showKeyboard()
+                    isKeyboardVisible = true
+                }
+            ) {
+                Icon(
+                    Icons.Default.Keyboard,
+                    contentDescription = "Show keyboard"
+                )
             }
         }
+    }
 
         AnimatedVisibility(
             visible = isRunning && imeVisible,
