@@ -58,7 +58,6 @@ static volatile int  g_dispatch_running = 0;
 /* render thread — runs when a Surface is attached; also drives dispatch */
 static pthread_t     g_render_thread;
 static volatile int  g_render_running  = 0;
-static volatile int  g_scene_ready = 0;
 
 static volatile int32_t g_output_width  = 1;
 static volatile int32_t g_output_height = 1;
@@ -151,7 +150,6 @@ static void crash_handler(
         g_window,
         g_dispatch_running,
         g_render_running,
-        g_scene_ready,
         (int)g_output_width,
         (int)g_output_height,
         pc,
@@ -385,9 +383,6 @@ static void *render_loop(void *arg) {
 
        g_wayland_checkpoint = "after_render";
 
-       if (!g_scene_ready)
-           g_scene_ready = 1;
-
        g_wayland_checkpoint = "before_frame_callbacks";
 
        compositor_send_frame_callbacks(srv);
@@ -601,9 +596,6 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeSurfaceCreated(
         start_dispatch();
         return;
     }
-
-    /* FIX: reset scene state setiap EGL recreate */
-    g_scene_ready = 0;   
 
     int pw = 0, ph = 0;
 
