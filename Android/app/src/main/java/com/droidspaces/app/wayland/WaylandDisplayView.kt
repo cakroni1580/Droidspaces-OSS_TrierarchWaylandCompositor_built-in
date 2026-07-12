@@ -373,24 +373,5 @@ class WaylandDisplayLayout(
     }
     // ---- Helpers ----------------------------------------------------------
 
-    private fun toWaylandCoords(viewX: Float, viewY: Float): Pair<Float, Float> {
-        val vw = width.toFloat().coerceAtLeast(1f)
-        val vh = height.toFloat().coerceAtLeast(1f)
-        val lw =
-            WaylandSurface
-                .nativeGetLogicalWidth()
-                .toFloat()
-                .coerceAtLeast(1f)
-
-        val lh =
-            WaylandSurface
-                .nativeGetLogicalHeight()
-                .toFloat()
-                .coerceAtLeast(1f)
-                
-        return (viewX / vw * lw).coerceIn(0f, lw - 0.5f) to
-               (viewY / vh * lh).coerceIn(0f, lh - 0.5f)
-    }
-
     private fun uptimeMs() = (SystemClock.uptimeMillis() and 0x7FFF_FFFFL).toInt()
 }
