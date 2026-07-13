@@ -201,6 +201,7 @@ private fun WaylandKeyboardBar(
                    else Icons.Default.Keyboard,
                    desc = "Toggle keyboard",
                    onClick = onKeyboardToggle
+                )    
             }
         }
     }
