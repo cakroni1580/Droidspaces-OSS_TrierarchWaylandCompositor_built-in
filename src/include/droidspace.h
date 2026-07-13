@@ -692,6 +692,10 @@ void ds_net_derive_handshake(pid_t init_pid, struct ds_config *cfg,
                              struct ds_net_handshake *hs);
 void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid);
 void ds_net_start_route_monitor(void);
+/* Marks route_localnet as required; route monitor re-asserts it every cycle
+ * (same pattern as ip_forward). Called once port-forward rules with localhost
+ * DNAT are installed. Sticky for process lifetime - never cleared. */
+void ds_net_mark_local_forward_active(void);
 /* Gateway self-heal: when the gateway container (re)boots, re-wire its LAN
  * cable to every running client that delegates to it, with no client restart.
  * Called from the gateway container's monitor on each boot cycle. */
