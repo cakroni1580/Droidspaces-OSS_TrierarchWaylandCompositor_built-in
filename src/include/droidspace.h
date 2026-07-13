@@ -383,6 +383,7 @@ struct ds_config {
   int disable_ipv6;        /* --disable-ipv6 */
   int android_storage;     /* --enable-android-storage */
   int selinux_permissive;  /* --selinux-permissive */
+  int userns_allowed;      /* --allow-userns */
   int net_bridgeless;      /* Probe result: no CONFIG_BRIDGE, use PTP NAT */
   int reboot_cycle;        /* 1 if we are in a reboot loop */
   int force_cgroupv1;  /* --force-cgroupv1: use v1 even if v2 is available */
@@ -584,7 +585,7 @@ void android_remount_data_suid(void);
 int android_setup_storage(const char *rootfs_path);
 int android_seccomp_setup(int is_systemd, int block_nested_ns,
                           int privileged_mask);
-int ds_seccomp_apply_minimal(int privileged_mask);
+int ds_seccomp_apply_minimal(int privileged_mask, int userns_allowed);
 
 /* SELinux + Termux privilege helpers */
 int get_selinux_context(const char *path, char *buf, size_t size);
@@ -716,6 +717,10 @@ void ds_net_derive_handshake(pid_t init_pid, struct ds_config *cfg,
                              struct ds_net_handshake *hs);
 void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid);
 void ds_net_start_route_monitor(void);
+/* Marks route_localnet as required; route monitor re-asserts it every cycle
+ * (same pattern as ip_forward). Called once port-forward rules with localhost
+ * DNAT are installed. Sticky for process lifetime - never cleared. */
+void ds_net_mark_local_forward_active(void);
 /* Gateway self-heal: when the gateway container (re)boots, re-wire its LAN
  * cable to every running client that delegates to it, with no client restart.
  * Called from the gateway container's monitor on each boot cycle. */

@@ -254,6 +254,10 @@ static int g_route_monitor_sock = -1;
 static volatile sig_atomic_t g_stop_monitor = 0;
 static pthread_t g_route_monitor_tid;
 static int g_route_monitor_started = 0; /* guarded by g_gw_mutex */
+/* Set once any container installs localhost port-forward DNAT rules.
+ * Sticky - never cleared, since route_localnet=1 is harmless to leave on
+ * and other containers may still depend on it. */
+static volatile sig_atomic_t g_local_forward_active = 0;
 
 /* User-pinned upstream interfaces (--upstream).  When non-empty, the uplink is
  * resolved ONLY from this list (priority order, literals + wildcards) and all
@@ -1944,6 +1948,20 @@ static void *route_monitor_loop(void *arg) {
       }
     }
 
+    /* Same treatment for route_localnet - required for localhost port-forward
+     * DNAT (127.0.0.1:HOST -> container). Android/netd resets this the same
+     * way it resets ip_forward. */
+    if (g_local_forward_active) {
+      char val[4] = {0};
+      if (read_file("/proc/sys/net/ipv4/conf/all/route_localnet", val,
+                    sizeof(val)) > 0 &&
+          val[0] == '0') {
+        ds_log("[NET] Route monitor: route_localnet was disabled - "
+               "re-enabling...");
+        write_file("/proc/sys/net/ipv4/conf/all/route_localnet", "1\n");
+      }
+    }
+
     /* 1.5-second heartbeat: aggressively re-asserts ip_forward and covers
      * devices with broken netlink notifications. */
     int pr = poll(&pfd, 1, 1500);
@@ -2068,6 +2086,8 @@ void ds_net_stop_route_monitor(void) {
     pthread_mutex_unlock(&g_gw_mutex);
   }
 }
+
+void ds_net_mark_local_forward_active(void) { g_local_forward_active = 1; }
 
 void ds_net_start_route_monitor(void) {
   if (!is_android())

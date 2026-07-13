@@ -41,6 +41,7 @@ data class ContainerInfo(
     val enablePulseaudio: Boolean = false,
     val enableWayland: Boolean = false,
     val selinuxPermissive: Boolean = false,
+    val allowUserns: Boolean = false,
     val volatileMode: Boolean = false,
     val bindMounts: List<BindMount> = emptyList(),
     val dnsServers: String = "",
@@ -86,6 +87,7 @@ data class ContainerInfo(
         appendLine("enable_pulseaudio=${if (enablePulseaudio) "1" else "0"}")
         appendLine("enable_wayland=${if (enableWayland) "1" else "0"}")
         appendLine("selinux_permissive=${if (selinuxPermissive) "1" else "0"}")
+        appendLine("allow_userns=${if (allowUserns) "1" else "0"}")
         appendLine("volatile_mode=${if (volatileMode) "1" else "0"}")
         if (bindMounts.isNotEmpty()) {
             appendLine("bind_mounts=${bindMounts.joinToString(",") { "${it.src}:${it.dest}${if (it.ro) ":ro" else ""}" }}")
@@ -324,6 +326,7 @@ object ContainerManager {
                 enablePulseaudio = configMap["enable_pulseaudio"] == "1",
                 enableWayland = configMap["enable_wayland"] == "1",
                 selinuxPermissive = configMap["selinux_permissive"] == "1",
+                allowUserns = configMap["allow_userns"] == "1",
                 volatileMode = configMap["volatile_mode"] == "1",
                 bindMounts = bindMounts,
                 dnsServers = configMap["dns_servers"] ?: "",

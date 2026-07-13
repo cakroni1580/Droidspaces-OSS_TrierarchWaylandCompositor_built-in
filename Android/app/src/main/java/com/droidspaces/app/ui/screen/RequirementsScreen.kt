@@ -177,7 +177,10 @@ CONFIG_NF_NAT_IPV4=y
 CONFIG_IP_NF_NAT=y
 
 # Disable this on older kernels to make internet work
-CONFIG_ANDROID_PARANOID_NETWORK=n""",
+CONFIG_ANDROID_PARANOID_NETWORK=n
+
+# Fix for docker unsafe procfs error
+CONFIG_USER_NS=y""",
                     guideUrl = "https://github.com/ravindu644/Droidspaces-OSS/blob/main/Documentation/Kernel-Configuration.md#non-gki",
                     snackbarHostState = snackbarHostState
                 )
@@ -206,6 +209,9 @@ CONFIG_DEVTMPFS=y
 CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
 
 # --- Below configs are optional but recommended ---
+
+# Fix for docker unsafe procfs error
+CONFIG_USER_NS=y
 
 # UFW support
 CONFIG_NETFILTER_XT_TARGET_REJECT=y

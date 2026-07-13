@@ -1256,7 +1256,7 @@ static int pf_state_remove(const char *container_ip) {
                to_dest, cont_port_str) != 5)
       continue;
 
-    /* Delete PREROUTING DNAT - mirror the variant that was inserted */
+    /* Delete PREROUTING DNAT + FORWARD ACCEPT - mirror the variant inserted */
     if (strcmp(variant, "addrtype") == 0) {
       char *del[] = {"iptables",    "-t",         "nat",   "-D",
                      "PREROUTING",  "-p",         proto,   "-m",
@@ -1264,21 +1264,47 @@ static int pf_state_remove(const char *container_ip) {
                      host_port_str, "-j",         "DNAT",  "--to-destination",
                      to_dest,       NULL};
       run_command_quiet(del);
-    } else {
+
+      char cont_ip_buf[INET_ADDRSTRLEN];
+      safe_strncpy(cont_ip_buf, container_ip, sizeof(cont_ip_buf));
+      char *del_fwd[] = {"iptables",    "-D", "FORWARD",   "-p",
+                         proto,         "-d", cont_ip_buf, "--dport",
+                         cont_port_str, "-j", "ACCEPT",    NULL};
+      run_command_quiet(del_fwd);
+    } else if (strcmp(variant, "basic") == 0) {
       char *del[] = {"iptables",    "-t", "nat",  "-D",
                      "PREROUTING",  "-p", proto,  "--dport",
                      host_port_str, "-j", "DNAT", "--to-destination",
                      to_dest,       NULL};
       run_command_quiet(del);
-    }
 
-    /* Delete FORWARD ACCEPT */
-    char cont_ip_buf[INET_ADDRSTRLEN];
-    safe_strncpy(cont_ip_buf, container_ip, sizeof(cont_ip_buf));
-    char *del_fwd[] = {"iptables",    "-D", "FORWARD",   "-p",
-                       proto,         "-d", cont_ip_buf, "--dport",
-                       cont_port_str, "-j", "ACCEPT",    NULL};
-    run_command_quiet(del_fwd);
+      char cont_ip_buf[INET_ADDRSTRLEN];
+      safe_strncpy(cont_ip_buf, container_ip, sizeof(cont_ip_buf));
+      char *del_fwd[] = {"iptables",    "-D", "FORWARD",   "-p",
+                         proto,         "-d", cont_ip_buf, "--dport",
+                         cont_port_str, "-j", "ACCEPT",    NULL};
+      run_command_quiet(del_fwd);
+    } else if (strcmp(variant, "local_out") == 0) {
+      /* Localhost OUTPUT DNAT (127.0.0.1:host_port -> to_dest) */
+      char *del[] = {"iptables",    "-t",
+                     "nat",         "-D",
+                     "OUTPUT",      "-p",
+                     proto,         "-o",
+                     "lo",          "--dport",
+                     host_port_str, "-j",
+                     "DNAT",        "--to-destination",
+                     to_dest,       NULL};
+      run_command_quiet(del);
+    } else if (strcmp(variant, "local_post") == 0) {
+      /* Localhost POSTROUTING MASQUERADE for return traffic */
+      char cont_ip_buf[INET_ADDRSTRLEN];
+      safe_strncpy(cont_ip_buf, container_ip, sizeof(cont_ip_buf));
+      char *del[] = {"iptables",    "-t",      "nat",         "-D",
+                     "POSTROUTING", "-p",      proto,         "-d",
+                     cont_ip_buf,   "--dport", cont_port_str, "-j",
+                     "MASQUERADE",  NULL};
+      run_command_quiet(del);
+    }
   }
 
   fclose(f);
@@ -1338,6 +1364,14 @@ int ds_ipt_add_portforwards(struct ds_config *cfg, const char *container_ip) {
   /* Probe once before the loop - avoids reopening /proc/net/ip_tables_matches
    * for every port forward entry. */
   int use_addrtype = addrtype_available();
+
+  /* Every port-forward rule below also gets a matching localhost DNAT
+   * (OUTPUT chain, -o lo) so 127.0.0.1:HOST reaches the container the same
+   * way LAN peers do. That requires route_localnet=1 (kernel drops loopback
+   * destined/sourced packets otherwise). Enable once here; the route monitor
+   * re-asserts it for the process lifetime (Android/netd resets it). */
+  write_file("/proc/sys/net/ipv4/conf/all/route_localnet", "1");
+  ds_net_mark_local_forward_active();
 
   for (int i = 0; i < cfg->port_forward_count; i++) {
     struct ds_port_forward *pf = &cfg->port_forwards[i];
@@ -1419,6 +1453,48 @@ int ds_ipt_add_portforwards(struct ds_config *cfg, const char *container_ip) {
     if (inserted_variant)
       pf_state_append(state_f, inserted_variant, pf->proto, host_port_str,
                       to_dest, cont_port_str);
+
+    /* Localhost forwarding: 127.0.0.1:<host_port> -> <container_ip>:<cont_port>
+     * Same proto/single-port/range coverage as the LAN-facing rules above -
+     * host_port_str/cont_port_str/to_dest are already formatted for ranges
+     * (START:END / START-END) by pf_fmt_ports, so this works identically for
+     * tcp, udp, single ports, and symmetric/asymmetric-width ranges.
+     *
+     * OUTPUT DNAT rewrites packets a local process sends to lo:host_port so
+     * they target the container. POSTROUTING MASQUERADE rewrites the source
+     * back to the container's gateway IP so return traffic routes correctly
+     * (without it the container sees the real 127.0.0.1 source and replies
+     * are dropped/misrouted). */
+    char *lo_dnat[] = {
+        "iptables", "-t",          "nat",     "-I",   "OUTPUT",
+        "1",        "-p",          pf->proto, "-o",   "lo",
+        "--dport",  host_port_str, "-j",      "DNAT", "--to-destination",
+        to_dest,    NULL};
+    int lo_ok = (run_command_log(lo_dnat) == 0);
+    if (!lo_ok)
+      ds_warn("portforward: localhost OUTPUT DNAT failed for port %s",
+              host_port_str);
+
+    char *lo_masq[] = {"iptables",    "-t",
+                       "nat",         "-I",
+                       "POSTROUTING", "1",
+                       "-p",          pf->proto,
+                       "-d",          (char *)(uintptr_t)container_ip,
+                       "--dport",     cont_port_str,
+                       "-j",          "MASQUERADE",
+                       NULL};
+    int masq_ok = (run_command_quiet(lo_masq) == 0);
+    if (!masq_ok)
+      ds_warn("portforward: localhost POSTROUTING MASQUERADE failed for "
+              "port %s",
+              cont_port_str);
+
+    if (lo_ok)
+      pf_state_append(state_f, "local_out", pf->proto, host_port_str, to_dest,
+                      cont_port_str);
+    if (masq_ok)
+      pf_state_append(state_f, "local_post", pf->proto, host_port_str, to_dest,
+                      cont_port_str);
   }
 
   if (state_f)
@@ -1507,6 +1583,26 @@ int ds_ipt_remove_portforwards(struct ds_config *cfg) {
                        "ACCEPT",
                        NULL};
     run_command_quiet(del_fwd);
+
+    /* Localhost OUTPUT DNAT */
+    char *del_lo[] = {"iptables",    "-t",
+                      "nat",         "-D",
+                      "OUTPUT",      "-p",
+                      pf->proto,     "-o",
+                      "lo",          "--dport",
+                      host_port_str, "-j",
+                      "DNAT",        "--to-destination",
+                      to_dest,       NULL};
+    run_command_quiet(del_lo);
+
+    /* Localhost POSTROUTING MASQUERADE */
+    char *del_masq[] = {
+        "iptables",   "-t",          "nat",
+        "-D",         "POSTROUTING", "-p",
+        pf->proto,    "-d",          (char *)(uintptr_t)container_ip,
+        "--dport",    cont_port_str, "-j",
+        "MASQUERADE", NULL};
+    run_command_quiet(del_masq);
   }
 
   /* Pass 3: iptables-save shell sweep (fallback)
@@ -1538,6 +1634,29 @@ int ds_ipt_remove_portforwards(struct ds_config *cfg) {
              container_ip);
     char *sh_fwd[] = {"sh", "-c", cmd, NULL};
     run_command_quiet(sh_fwd);
+
+    /* Remove localhost OUTPUT DNAT rules whose --to-destination targets
+     * this IP (127.0.0.1:HOST -> container_ip:PORT). */
+    snprintf(cmd, sizeof(cmd),
+             "iptables-save -t nat | grep ' -A OUTPUT ' | "
+             "grep -- '-o lo ' | grep -- '--to-destination %s:' | "
+             "sed 's/ -A / -D /' | "
+             "while IFS= read -r rule; do iptables -t nat $rule; done",
+             container_ip);
+    char *sh_lo[] = {"sh", "-c", cmd, NULL};
+    run_command_quiet(sh_lo);
+
+    /* Remove localhost POSTROUTING MASQUERADE rules whose -d + --dport
+     * target this IP. Filtered on --dport too so the general uplink
+     * MASQUERADE rule (whole subnet, no -d/--dport) is never touched. */
+    snprintf(cmd, sizeof(cmd),
+             "iptables-save -t nat | grep ' -A POSTROUTING ' | "
+             "grep -- ' -d %s/32 ' | grep -- '--dport' | "
+             "grep ' -j MASQUERADE' | sed 's/ -A / -D /' | "
+             "while IFS= read -r rule; do iptables -t nat $rule; done",
+             container_ip);
+    char *sh_masq[] = {"sh", "-c", cmd, NULL};
+    run_command_quiet(sh_masq);
   }
 
   return 0;
