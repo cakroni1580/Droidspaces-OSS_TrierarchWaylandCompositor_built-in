@@ -117,7 +117,6 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
                         }
                         isKeyboardVisible = !isKeyboardVisible  
                     },
-                    onNavigateBack = onNavigateBack
                 )
             }
         }
@@ -155,7 +154,6 @@ private fun WaylandKeyboardBar(
     isKeyboardVisible: Boolean,
     onFullscreenToggle: () -> Unit,
     onKeyboardToggle: () -> Unit,
-    onNavigateBack: () -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -177,34 +175,10 @@ private fun WaylandKeyboardBar(
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
 
-                IconButton(
-                    onClick = onNavigateBack,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                VerticalDivider(
-                    modifier = Modifier.height(26.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
                 WlTextKey("ESC", KeyEvent.KEYCODE_ESCAPE)
                 WlTextKey("TAB", KeyEvent.KEYCODE_TAB)
                 WlTextKey("CTRL", KeyEvent.KEYCODE_CTRL_LEFT)
                 WlTextKey("ALT", KeyEvent.KEYCODE_ALT_LEFT)
-
-                WlIconKey(
-                    icon = if (isKeyboardVisible)
-                        Icons.Default.KeyboardHide
-                    else Icons.Default.Keyboard,
-                    desc = "Toggle keyboard",
-                    onClick = onKeyboardToggle
-                )
 
                 VerticalDivider(
                     modifier = Modifier.height(26.dp),
@@ -215,6 +189,18 @@ private fun WaylandKeyboardBar(
                 WlIconKey(Icons.Default.KeyboardArrowDown, "↓", KeyEvent.KEYCODE_DPAD_DOWN)
                 WlIconKey(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "←", KeyEvent.KEYCODE_DPAD_LEFT)
                 WlIconKey(Icons.AutoMirrored.Filled.KeyboardArrowRight, "→", KeyEvent.KEYCODE_DPAD_RIGHT)
+
+                VerticalDivider(
+                    modifier = Modifier.height(26.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                WlIconKey(
+                   icon = if (isKeyboardVisible)
+                       Icons.Default.KeyboardHide
+                   else Icons.Default.Keyboard,
+                   desc = "Toggle keyboard",
+                   onClick = onKeyboardToggle
             }
         }
     }
