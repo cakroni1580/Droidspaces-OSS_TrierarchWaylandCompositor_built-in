@@ -330,7 +330,7 @@ class WaylandDisplayLayout(
 
                            postDelayed(
                            resizeCommit,
-                           80L
+                           50L
                         )
                     }
                     /* PATCH:
