@@ -24,22 +24,22 @@ class WaylandActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+            val themeState = rememberThemeState()
 
-        val themeState = rememberThemeState()
-
-        DroidspacesTheme(
-            darkTheme = themeState.darkTheme,
-            dynamicColor = themeState.useDynamicColor,
-            amoledMode = themeState.amoledMode,
-            themePalette = themeState.themePalette
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
+            DroidspacesTheme(
+                darkTheme = themeState.darkTheme,
+                dynamicColor = themeState.useDynamicColor,
+                amoledMode = themeState.amoledMode,
+                themePalette = themeState.themePalette
             ) {
-                WaylandScreen(
-                    onNavigateBack = { finish() }
-                )
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    WaylandScreen(
+                        onNavigateBack = { finish() }
+                    )
+                }
             }
         }
     }
