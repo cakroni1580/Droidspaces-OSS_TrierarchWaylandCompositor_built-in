@@ -105,8 +105,6 @@ sealed class Screen(val route: String) {
     data object Terminal : Screen("terminal/{containerName}") {
         fun createRoute(containerName: String) = "terminal/${Uri.encode(containerName)}"
     }
-
-    data object WaylandDisplay : Screen("wayland_display")
 }
 
 @Composable
@@ -672,19 +670,6 @@ fun DroidspacesNavigation(
                     navController.popBackStack()
                     sharedContainerViewModel.refresh()
                 }
-            )
-        }
-
-        // Wayland display — global single compositor, no container arg needed
-        composable(
-            route = Screen.WaylandDisplay.route,
-            enterTransition = defaultEnterTransition,
-            exitTransition = defaultExitTransition,
-            popEnterTransition = defaultEnterTransition,
-            popExitTransition = defaultExitTransition,
-        ) {
-            com.droidspaces.app.ui.screen.WaylandScreen(
-                onNavigateBack = { navController.popBackStack() }
             )
         }
     }
