@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.File
+import android.app.NotificationManager
 
 /**
  * Global Wayland compositor lifecycle manager.
@@ -58,6 +59,8 @@ object WaylandManager {
         if (!isAvailable || isRunning) return
         nativeStart(runtimeDir(context), SOCKET_NAME)
         isRunning = true
+
+        WaylandNotification.show(context)
     }
     
     fun restart(context: Context) {
@@ -71,6 +74,8 @@ object WaylandManager {
 
         nativeStart(runtimeDir(context), SOCKET_NAME)
         isRunning = true
+
+        WaylandNotification.show(context)
     }
     /**
      * Stop the compositor.
@@ -80,6 +85,8 @@ object WaylandManager {
         if (!isRunning) return
         nativeStop()
         isRunning = false
+
+        WaylandNotification.hide()
     }
 
     /**
