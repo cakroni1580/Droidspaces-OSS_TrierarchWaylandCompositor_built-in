@@ -18,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -404,19 +405,41 @@ private fun ProcdServiceCard(
                             ) {
                                 Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.MoreVert, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                             }
-                            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                                DropdownMenuItem(
-                                    text = { Text(context.getString(R.string.restart_service)) },
-                                    leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                                    onClick = { showMenu = false; onAction(context.getString(R.string.restart_service)) { ContainerProcdManager.restartService(containerName, service.name) } }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(context.getString(R.string.reload_service)) },
-                                    leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                                    onClick = { showMenu = false; onAction(context.getString(R.string.reload_service)) { ContainerProcdManager.reloadService(containerName, service.name) } }
-                                )
+                                val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                                val dropdownColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
+                                MaterialTheme(
+                                    colorScheme = MaterialTheme.colorScheme.copy(
+                                        surface = dropdownColor,
+                                        surfaceContainer = dropdownColor,
+                                        surfaceTint = Color.Transparent
+                                    ),
+                                    shapes = MaterialTheme.shapes.copy(
+                                        extraSmall = RoundedCornerShape(20.dp)
+                                    )
+                                ) {
+                                    DropdownMenu(
+                                        expanded = showMenu,
+                                        onDismissRequest = { showMenu = false },
+                                        modifier = Modifier
+                                            .border(
+                                                width = 1.dp,
+                                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                                                shape = RoundedCornerShape(20.dp)
+                                            )
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text(context.getString(R.string.restart_service)) },
+                                            leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                                            onClick = { showMenu = false; onAction(context.getString(R.string.restart_service)) { ContainerProcdManager.restartService(containerName, service.name) } }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(context.getString(R.string.reload_service)) },
+                                            leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                                            onClick = { showMenu = false; onAction(context.getString(R.string.reload_service)) { ContainerProcdManager.reloadService(containerName, service.name) } }
+                                        )
+                                    }
+                                }
                             }
-                        }
                     }
                 }
             }

@@ -1,5 +1,7 @@
 package com.droidspaces.app.ui.component
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,6 +10,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -30,9 +35,9 @@ fun <T> DsDropdown(
     var expanded by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    val fieldShape = RoundedCornerShape(16.dp)
+    val fieldShape = RoundedCornerShape(20.dp)
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
         focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -63,32 +68,52 @@ fun <T> DsDropdown(
                 .menuAnchor()
                 .fillMaxWidth()
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { 
-                expanded = false
-                focusManager.clearFocus()
-            }
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val dropdownColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer
+        
+        MaterialTheme(
+            colorScheme = MaterialTheme.colorScheme.copy(
+                surface = dropdownColor,
+                surfaceContainer = dropdownColor,
+                surfaceTint = Color.Transparent
+            ),
+            shapes = MaterialTheme.shapes.copy(
+                extraSmall = RoundedCornerShape(20.dp)
+            )
         ) {
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(displayName(option), fontWeight = FontWeight.Medium) },
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                        focusManager.clearFocus()
-                    },
-                    leadingIcon = if (option == selected) {
-                        {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    } else null
-                )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { 
+                    expanded = false
+                    focusManager.clearFocus()
+                },
+                modifier = Modifier
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(20.dp)
+                    )
+            ) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(displayName(option), fontWeight = FontWeight.Medium) },
+                        onClick = {
+                            onSelect(option)
+                            expanded = false
+                            focusManager.clearFocus()
+                        },
+                        leadingIcon = if (option == selected) {
+                            {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        } else null
+                    )
+                }
             }
         }
     }

@@ -24,6 +24,7 @@ fun SwitchItem(
     val stateAlpha = Modifier.alpha(if (enabled) 1f else 0.5f)
 
     ListItem(
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
         modifier = Modifier
             .toggleable(
                 value = checked,
@@ -52,7 +53,7 @@ fun SwitchItem(
             Switch(
                 checked = checked,
                 enabled = enabled,
-                onCheckedChange = onCheckedChange,
+                onCheckedChange = null,
                 interactionSource = interactionSource,
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
