@@ -4,7 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.droidspaces.app.ui.screen.WaylandScreen
-import com.droidspaces.app.ui.theme.AppTheme
+import com.droidspaces.app.ui.theme.DroidspacesTheme
+import com.droidspaces.app.ui.theme.rememberThemeState
 
 /*
  * PATCH:
