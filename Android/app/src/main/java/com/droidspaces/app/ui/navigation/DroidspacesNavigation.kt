@@ -262,9 +262,9 @@ fun DroidspacesNavigation(
                     navController.navigate(Screen.Terminal.createRoute(containerName))
                 },
                 onNavigateToWaylandDisplay = {
-                    context.startActivity(
-                        Intent(context, WaylandActivity::class.java)
-                    )
+                    Intent(context, WaylandActivity::class.java).apply {
+                       addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                    }
                 }
             )
         }
