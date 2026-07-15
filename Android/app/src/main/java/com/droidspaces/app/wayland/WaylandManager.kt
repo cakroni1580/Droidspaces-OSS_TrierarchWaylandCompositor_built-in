@@ -81,7 +81,7 @@ object WaylandManager {
      * Stop the compositor.
      * No-op if not running.
      */
-    fun stop() {
+    fun stop(context: Context) {
         if (!isRunning) return
         nativeStop()
         isRunning = false
