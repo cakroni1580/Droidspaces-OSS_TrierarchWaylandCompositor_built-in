@@ -203,6 +203,7 @@
     <string name="wayland_compositor_stopped">Stopped — tap to start</string>
     <string name="wayland_open_display">Open Display</string>
     <string name="wayland_open_display_summary">View compositor output in fullscreen</string>
+    <string name="wayland_app_name">Droidspaces Wayland</string>
     <string name="tx11_extra_flags_label">Termux:X11 Extra Flags</string>
     <string name="tx11_extra_flags_placeholder">e.g. -dpi 160 -force-sysvshm</string>
     <string name="enable_virgl">Configure VirGL 3D Acceleration</string>
