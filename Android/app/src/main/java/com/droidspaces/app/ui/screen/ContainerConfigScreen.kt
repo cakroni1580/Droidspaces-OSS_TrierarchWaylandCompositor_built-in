@@ -68,6 +68,7 @@ fun ContainerConfigScreen(
     initialEnablePulseaudio: Boolean = false,
     initialEnableWayland: Boolean = false,
     initialSelinuxPermissive: Boolean = false,
+    initialAllowUserns: Boolean = false,
     initialVolatileMode: Boolean = false,
     initialBindMounts: List<BindMount> = emptyList(),
     initialDnsServers: String = "",
@@ -99,6 +100,7 @@ fun ContainerConfigScreen(
         enablePulseaudio: Boolean,
         enableWayland: Boolean,
         selinuxPermissive: Boolean,
+        allowUserns: Boolean,
         volatileMode: Boolean,
         bindMounts: List<BindMount>,
         dnsServers: String,
@@ -130,6 +132,7 @@ fun ContainerConfigScreen(
     var enablePulseaudio by remember { mutableStateOf(initialEnablePulseaudio) }
     var enableWayland by remember { mutableStateOf(initialEnableWayland) }
     var selinuxPermissive by remember { mutableStateOf(initialSelinuxPermissive) }
+    var allowUserns by remember { mutableStateOf(initialAllowUserns) }
     var volatileMode by remember { mutableStateOf(initialVolatileMode) }
     var bindMounts by remember { mutableStateOf(initialBindMounts) }
     var dnsServers by remember { mutableStateOf(initialDnsServers) }
@@ -333,7 +336,7 @@ fun ContainerConfigScreen(
                             .clickable(
                                 enabled = canProceed,
                                 onClick = {
-                                    onNext(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, enableWayland, selinuxPermissive, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, if (envFileContent.isBlank()) null else envFileContent, upstreamInterfaces, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
+                                    onNext(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, enableWayland, selinuxPermissive, allowUserns, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, if (envFileContent.isBlank()) null else envFileContent, upstreamInterfaces, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
                                 },
                                 indication = androidx.compose.material.ripple.rememberRipple(bounded = true),
                                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -716,6 +719,27 @@ fun ContainerConfigScreen(
                 onCheckedChange = { selinuxPermissive = it }
             )
 
+            val isSeccompDisabled = privileged.contains("noseccomp") || privileged.contains("full")
+            val usernsSupported = remember { java.io.File("/proc/self/setgroups").exists() }
+
+            LaunchedEffect(isSeccompDisabled, usernsSupported) {
+                if (isSeccompDisabled) blockNestedNs = false
+                if (isSeccompDisabled && usernsSupported) allowUserns = true
+                if (!usernsSupported) allowUserns = false
+            }
+
+            ToggleCard(
+                icon = Icons.Default.Groups,
+                title = context.getString(R.string.allow_userns),
+                description = if (usernsSupported)
+                    context.getString(R.string.allow_userns_description)
+                else
+                    context.getString(R.string.allow_userns_description_not_supported),
+                checked = allowUserns,
+                onCheckedChange = { allowUserns = it },
+                enabled = !isSeccompDisabled && usernsSupported
+            )
+
             ToggleCard(
                 icon = Icons.Default.AutoDelete,
                 title = context.getString(R.string.volatile_mode),
@@ -731,11 +755,6 @@ fun ContainerConfigScreen(
                 checked = forceCgroupv1,
                 onCheckedChange = { forceCgroupv1 = it }
             )
-
-            val isSeccompDisabled = privileged.contains("noseccomp") || privileged.contains("full")
-            LaunchedEffect(isSeccompDisabled) {
-                if (isSeccompDisabled) blockNestedNs = false
-            }
 
             ToggleCard(
                 icon = Icons.Default.GppBad,

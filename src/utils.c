@@ -32,11 +32,12 @@ void safe_strncpy(char *dst, const char *src, size_t size) {
 
 /* Append comma-separated interface names/wildcards from `val` to ifaces[],
  * trimming surrounding whitespace and skipping empty or over-long (>= IFNAMSIZ)
- * tokens.  Duplicates are kept - a pinned list is priority-ordered and
- * first-match-wins, so a repeat is a harmless re-check.  *count is advanced up
- * to `max`; the return value is the number of tokens dropped because the array
- * was already full (0 = all fit), letting the caller warn or fail as it likes.
- */
+ * tokens.  Exact duplicates (already present in ifaces[0..*count)) are
+ * silently skipped, mirroring the bind-mount/port-forward de-dup so re-parsing
+ * the same list (e.g. on container restart) is a no-op instead of growing the
+ * array.  *count is advanced up to `max`; the return value is the number of
+ * tokens dropped because the array was already full (0 = all fit), letting
+ * the caller warn or fail as it likes. */
 int ds_parse_iface_csv(const char *val, char ifaces[][IFNAMSIZ], int *count,
                        int max) {
   char copy[1024];
@@ -51,6 +52,15 @@ int ds_parse_iface_csv(const char *val, char ifaces[][IFNAMSIZ], int *count,
     while (end > tok && (*end == ' ' || *end == '\t'))
       *end-- = '\0';
     if (!tok[0] || strlen(tok) >= IFNAMSIZ)
+      continue;
+    int dup = 0;
+    for (int i = 0; i < *count; i++) {
+      if (strcmp(ifaces[i], tok) == 0) {
+        dup = 1;
+        break;
+      }
+    }
+    if (dup)
       continue;
     if (*count >= max) {
       dropped++;
