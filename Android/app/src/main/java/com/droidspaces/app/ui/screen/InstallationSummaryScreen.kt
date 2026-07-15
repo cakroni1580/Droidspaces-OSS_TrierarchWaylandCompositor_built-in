@@ -171,6 +171,7 @@ fun InstallationSummaryScreen(
                     if (config.enableVirgl) SummaryItem(stringResource(R.string.enable_virgl), stringResource(R.string.enabled_legend), Icons.Default.Layers)
                     if (config.enablePulseaudio) SummaryItem(stringResource(R.string.enable_pulseaudio), stringResource(R.string.enabled_legend), Icons.AutoMirrored.Filled.VolumeUp)
                     if (config.selinuxPermissive) SummaryItem(stringResource(R.string.selinux_permissive), stringResource(R.string.enabled_legend), Icons.Default.Security)
+                    if (config.allowUserns) SummaryItem(stringResource(R.string.allow_userns), stringResource(R.string.enabled_legend), Icons.Default.Groups)
                     if (config.volatileMode) SummaryItem(stringResource(R.string.volatile_mode), stringResource(R.string.enabled_legend), Icons.Default.AutoDelete)
                     if (config.runAtBoot) SummaryItem(stringResource(R.string.run_at_boot), stringResource(R.string.enabled_legend), Icons.Default.PowerSettingsNew)
                     if (config.forceCgroupv1) SummaryItem(stringResource(R.string.force_cgroupv1), stringResource(R.string.enabled_legend), Icons.Default.Layers)
@@ -207,7 +208,7 @@ fun InstallationSummaryScreen(
 
                     if (!config.enableAndroidStorage &&
                         !config.enableHwAccess && !config.enableGpuMode && !config.selinuxPermissive &&
-                        !config.volatileMode && config.bindMounts.isEmpty() &&
+                        !config.allowUserns && !config.volatileMode && config.bindMounts.isEmpty() &&
                         !config.runAtBoot && !config.disableIPv6 &&
                         !config.enableTermuxX11 && !config.enableVirgl && !config.enablePulseaudio &&
                         !config.forceCgroupv1 && !config.blockNestedNs &&

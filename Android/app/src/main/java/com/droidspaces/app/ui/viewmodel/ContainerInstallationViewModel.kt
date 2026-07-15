@@ -57,6 +57,9 @@ class ContainerInstallationViewModel : ViewModel() {
     var selinuxPermissive: Boolean by mutableStateOf(false)
         private set
 
+    var allowUserns: Boolean by mutableStateOf(false)
+        private set
+
     var volatileMode: Boolean by mutableStateOf(false)
         private set
 
@@ -137,6 +140,7 @@ class ContainerInstallationViewModel : ViewModel() {
         virglExtraFlags: String,
         enablePulseaudio: Boolean,
         selinuxPermissive: Boolean,
+        allowUserns: Boolean,
         volatileMode: Boolean,
         bindMounts: List<BindMount>,
         dnsServers: String,
@@ -165,6 +169,7 @@ class ContainerInstallationViewModel : ViewModel() {
         this.virglExtraFlags = virglExtraFlags
         this.enablePulseaudio = enablePulseaudio
         this.selinuxPermissive = selinuxPermissive
+        this.allowUserns = allowUserns
         this.volatileMode = volatileMode
         this.bindMounts = bindMounts
         this.dnsServers = dnsServers
@@ -206,6 +211,7 @@ class ContainerInstallationViewModel : ViewModel() {
             virglExtraFlags = virglExtraFlags,
             enablePulseaudio = enablePulseaudio,
             selinuxPermissive = selinuxPermissive,
+            allowUserns = allowUserns,
             volatileMode = volatileMode,
             bindMounts = bindMounts,
             dnsServers = dnsServers,
@@ -243,6 +249,7 @@ class ContainerInstallationViewModel : ViewModel() {
         virglExtraFlags = ""
         enablePulseaudio = false
         selinuxPermissive = false
+        allowUserns = false
         volatileMode = false
         bindMounts = emptyList()
         dnsServers = ""
