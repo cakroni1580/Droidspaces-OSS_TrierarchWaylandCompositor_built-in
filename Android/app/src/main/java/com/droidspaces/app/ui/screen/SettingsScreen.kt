@@ -244,7 +244,7 @@ fun SettingsScreen(
                     enabled = isRootAvailable,
                     onCheckedChange = { checked ->
                         if (checked) WaylandManager.start(context)
-                        else WaylandManager.stop()
+                        else WaylandManager.stop(context)
                         prefsManager.isWaylandCompositorEnabled = checked
                     }
                 )
