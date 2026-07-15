@@ -51,6 +51,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import com.droidspaces.app.util.Constants
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -65,6 +66,7 @@ fun ContainerConfigScreen(
     initialEnableVirgl: Boolean = false,
     initialVirglExtraFlags: String = "",
     initialEnablePulseaudio: Boolean = false,
+    initialEnableWayland: Boolean = false,
     initialSelinuxPermissive: Boolean = false,
     initialAllowUserns: Boolean = false,
     initialVolatileMode: Boolean = false,
@@ -96,6 +98,7 @@ fun ContainerConfigScreen(
         enableVirgl: Boolean,
         virglExtraFlags: String,
         enablePulseaudio: Boolean,
+        enableWayland: Boolean,
         selinuxPermissive: Boolean,
         allowUserns: Boolean,
         volatileMode: Boolean,
@@ -127,6 +130,7 @@ fun ContainerConfigScreen(
     var enableVirgl by remember { mutableStateOf(initialEnableVirgl) }
     var virglExtraFlags by remember { mutableStateOf(initialVirglExtraFlags) }
     var enablePulseaudio by remember { mutableStateOf(initialEnablePulseaudio) }
+    var enableWayland by remember { mutableStateOf(initialEnableWayland) }
     var selinuxPermissive by remember { mutableStateOf(initialSelinuxPermissive) }
     var allowUserns by remember { mutableStateOf(initialAllowUserns) }
     var volatileMode by remember { mutableStateOf(initialVolatileMode) }
@@ -332,7 +336,7 @@ fun ContainerConfigScreen(
                             .clickable(
                                 enabled = canProceed,
                                 onClick = {
-                                    onNext(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, selinuxPermissive, allowUserns, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, if (envFileContent.isBlank()) null else envFileContent, upstreamInterfaces, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
+                                    onNext(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, enableWayland, selinuxPermissive, allowUserns, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, if (envFileContent.isBlank()) null else envFileContent, upstreamInterfaces, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
                                 },
                                 indication = androidx.compose.material.ripple.rememberRipple(bounded = true),
                                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -688,6 +692,15 @@ fun ContainerConfigScreen(
                 description = context.getString(R.string.enable_pulseaudio_description),
                 checked = enablePulseaudio,
                 onCheckedChange = { enablePulseaudio = it },
+                enabled = true
+            )
+
+            if (Constants.isArm64) ToggleCard(
+                icon = Icons.Default.DesktopWindows,
+                title = context.getString(R.string.enable_wayland),
+                description = context.getString(R.string.enable_wayland_description),
+                checked = enableWayland,
+                onCheckedChange = { enableWayland = it },
                 enabled = true
             )
 

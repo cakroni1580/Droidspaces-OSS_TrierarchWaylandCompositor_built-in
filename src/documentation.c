@@ -363,6 +363,7 @@ static void print_page(int page, const char *bin) {
     printf("%sAndroid-specific Features:%s\n", bold, reset);
     printf("  --enable-android-storage  Mounts /storage/emulated/0\n");
     printf("  --termux-x11              Setups Termux:X11 socket\n\n");
+    printf("  --wayland                 Bridges Wayland compositor socket (requires Droidspaces app compositor)\n\n");
 
     printf("%sSystem Integration:%s\n", bold, reset);
     printf("  --selinux-permissive      Set host SELinux to permissive\n");

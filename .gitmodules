@@ -1,6 +1,9 @@
 [submodule "external/busybox"]
 	path = external/busybox
 	url = https://github.com/Droidspaces/busybox-droidspaces.git
+[submodule "third_party/trierarch"]
+	path = third_party/trierarch
+	url = https://github.com/cakroni1580/trierarch
 [submodule "external/www"]
 	path = external/www
 	url = https://github.com/Droidspaces/webui.git

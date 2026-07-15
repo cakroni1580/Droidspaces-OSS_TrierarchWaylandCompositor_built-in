@@ -39,6 +39,8 @@ import com.droidspaces.app.ui.screen.OpenRCScreen
 import com.droidspaces.app.ui.screen.ContainerTerminalScreen
 import com.droidspaces.app.ui.viewmodel.ContainerInstallationViewModel
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
+import android.content.Intent
+import com.droidspaces.app.WaylandActivity
 import com.droidspaces.app.util.ContainerManager
 import com.droidspaces.app.util.FilePickerUtils
 import androidx.compose.ui.Alignment
@@ -103,6 +105,8 @@ sealed class Screen(val route: String) {
     data object Terminal : Screen("terminal/{containerName}") {
         fun createRoute(containerName: String) = "terminal/${Uri.encode(containerName)}"
     }
+    
+    data object WaylandDisplay : Screen("wayland_display")
 }
 
 @Composable
@@ -258,6 +262,13 @@ fun DroidspacesNavigation(
                 },
                 onNavigateToTerminal = { containerName ->
                     navController.navigate(Screen.Terminal.createRoute(containerName))
+                },
+                onNavigateToWaylandDisplay = {
+                    context.startActivity(
+                        Intent(context, WaylandActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        } 
+                    )
                 }
             )
         }
@@ -316,6 +327,7 @@ fun DroidspacesNavigation(
                 initialEnableVirgl = viewModel.enableVirgl,
                 initialVirglExtraFlags = viewModel.virglExtraFlags,
                 initialEnablePulseaudio = viewModel.enablePulseaudio,
+                initialEnableWayland = viewModel.enableWayland,
                 initialSelinuxPermissive = viewModel.selinuxPermissive,
                 initialAllowUserns = viewModel.allowUserns,
                 initialVolatileMode = viewModel.volatileMode,
@@ -336,7 +348,7 @@ fun DroidspacesNavigation(
                 initialGatewayBridge = viewModel.gatewayBridge,
                 containerName = viewModel.containerName,
                 installedContainers = sharedContainerViewModel.containerList,
-                onNext = { netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, selinuxPermissive, allowUserns, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, envFileContent, upstreamInterfaces, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge ->
+                onNext = { netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, enableWayland, selinuxPermissive, allowUserns, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, forceCgroupv1, blockNestedNs, privileged, envFileContent, upstreamInterfaces, portForwards, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge ->
                     viewModel.setConfig(netMode, disableIPv6, enableAndroidStorage, enableHwAccess, enableGpuMode, enableTermuxX11, tx11ExtraFlags, enableVirgl, virglExtraFlags, enablePulseaudio, selinuxPermissive, allowUserns, volatileMode, bindMounts, dnsServers, runAtBoot, customInit, staticNatIp, envFileContent, upstreamInterfaces, portForwards, forceCgroupv1, blockNestedNs, privileged, gatewayContainer, gatewayNet, gatewayIface, gatewayBridge)
                     navController.navigate(Screen.SparseImageConfig.route)
                 },
@@ -663,6 +675,19 @@ fun DroidspacesNavigation(
                     navController.popBackStack()
                     sharedContainerViewModel.refresh()
                 }
+            )
+        }
+        
+        // Wayland display — global single compositor, no container arg needed
+        composable(
+            route = Screen.WaylandDisplay.route,
+            enterTransition = defaultEnterTransition,
+            exitTransition = defaultExitTransition,
+            popEnterTransition = defaultEnterTransition,
+            popExitTransition = defaultExitTransition,
+        ) {
+            com.droidspaces.app.ui.screen.WaylandScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }

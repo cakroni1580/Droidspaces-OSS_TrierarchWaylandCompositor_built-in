@@ -37,6 +37,25 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WaylandActivity"
+            android:exported="true"
+            android:theme="@style/AppTheme"
+
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/wayland_app_name"
+
+            android:taskAffinity="com.droidspaces.wayland"
+            android:launchMode="singleTask"
+            android:alwaysRetainTaskState="true"
+            android:excludeFromRecents="false"
+
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:windowSoftInputMode="adjustResize">
+
+        </activity>
+
         <service
             android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
             android:enabled="false"

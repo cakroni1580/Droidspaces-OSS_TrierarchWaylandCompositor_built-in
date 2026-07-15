@@ -54,6 +54,9 @@ class ContainerInstallationViewModel : ViewModel() {
     var enablePulseaudio: Boolean by mutableStateOf(false)
         private set
 
+    var enableWayland: Boolean by mutableStateOf(false)
+        private set
+
     var selinuxPermissive: Boolean by mutableStateOf(false)
         private set
 
@@ -139,6 +142,7 @@ class ContainerInstallationViewModel : ViewModel() {
         enableVirgl: Boolean,
         virglExtraFlags: String,
         enablePulseaudio: Boolean,
+        enableWayland: Boolean,
         selinuxPermissive: Boolean,
         allowUserns: Boolean,
         volatileMode: Boolean,
@@ -168,6 +172,7 @@ class ContainerInstallationViewModel : ViewModel() {
         this.enableVirgl = enableVirgl
         this.virglExtraFlags = virglExtraFlags
         this.enablePulseaudio = enablePulseaudio
+        this.enableWayland = enableWayland
         this.selinuxPermissive = selinuxPermissive
         this.allowUserns = allowUserns
         this.volatileMode = volatileMode
@@ -210,6 +215,7 @@ class ContainerInstallationViewModel : ViewModel() {
             enableVirgl = enableVirgl,
             virglExtraFlags = virglExtraFlags,
             enablePulseaudio = enablePulseaudio,
+            enableWayland = enableWayland,
             selinuxPermissive = selinuxPermissive,
             allowUserns = allowUserns,
             volatileMode = volatileMode,
@@ -248,6 +254,7 @@ class ContainerInstallationViewModel : ViewModel() {
         enableVirgl = false
         virglExtraFlags = ""
         enablePulseaudio = false
+        enableWayland = false
         selinuxPermissive = false
         allowUserns = false
         volatileMode = false

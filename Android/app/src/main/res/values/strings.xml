@@ -145,6 +145,7 @@
     <string name="x11_option">X11</string>
     <string name="virgl_option">VirGL</string>
     <string name="pulseaudio_option">PulseAudio</string>
+    <string name="wayland_option">Wayland</string>
     <string name="selinux_permissive_option">SELinux Permissive</string>
     <string name="volatile_option">Volatile</string>
     <string name="cgroup_v1_option">Cgroup V1</string>
@@ -196,6 +197,13 @@
     <string name="termux_x11_description">Enable X11 socket mounting for Termux:X11</string>
     <string name="enable_pulseaudio">Configure PulseAudio</string>
     <string name="enable_pulseaudio_description">Enable audio support via PulseAudio</string>
+    <string name="enable_wayland">Configure Wayland</string>
+    <string name="enable_wayland_description">Bridge Wayland compositor socket into container (requires compositor in Droidspaces app)</string>
+    <string name="wayland_compositor">Wayland Compositor</string>
+    <string name="wayland_compositor_stopped">Stopped — tap to start</string>
+    <string name="wayland_open_display">Open Display</string>
+    <string name="wayland_open_display_summary">View compositor output in fullscreen</string>
+    <string name="wayland_app_name">Droidspaces Wayland</string>
     <string name="tx11_extra_flags_label">Termux:X11 Extra Flags</string>
     <string name="tx11_extra_flags_placeholder">e.g. -dpi 160 -force-sysvshm</string>
     <string name="enable_virgl">Configure VirGL 3D Acceleration</string>

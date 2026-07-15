@@ -24,7 +24,12 @@ import com.droidspaces.app.ui.component.RunningContainerCard
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
 import com.droidspaces.app.ui.viewmodel.SystemStatsViewModel
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.droidspaces.app.R
+import com.droidspaces.app.util.Constants
+import com.droidspaces.app.wayland.WaylandManager
 
 /**
  * Control Panel screen - shows system stats and running containers.
@@ -40,6 +45,7 @@ fun ControlPanelScreen(
     containerViewModel: ContainerViewModel,
     onNavigateToContainerDetails: (String) -> Unit = {},
     onNavigateToTerminal: (String) -> Unit = {},
+    onNavigateToWaylandDisplay: () -> Unit = {},
     emptyStateBottomInset: Dp = 0.dp,
 ) {
     val context = LocalContext.current
@@ -93,6 +99,11 @@ fun ControlPanelScreen(
                             .padding(top = 8.dp, bottom = 120.dp), // Clear floating tab bar
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        // Wayland display card — shown on arm64 when compositor is running
+                        if (Constants.isArm64 && WaylandManager.isRunning) {
+                            WaylandDisplayCard(onClick = onNavigateToWaylandDisplay)
+                        }
+                        
                         runningContainers.forEach { container ->
                             RunningContainerCard(
                                 container = container,
@@ -118,3 +129,67 @@ fun ControlPanelScreen(
     }
 }
 
+@Composable
+private fun WaylandDisplayCard(onClick: () -> Unit) {
+    val cardShape = RoundedCornerShape(20.dp)
+    Surface(
+        onClick   = onClick,
+        shape     = cardShape,
+        color     = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+        border    = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+        modifier  = Modifier.fillMaxWidth(),
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier            = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment   = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // Pulsing dot + icon
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+            ) {
+                Icon(
+                    imageVector        = Icons.Default.DesktopWindows,
+                    contentDescription = null,
+                    tint               = MaterialTheme.colorScheme.primary,
+                    modifier           = Modifier.padding(10.dp).size(22.dp),
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "Wayland Display",
+                    style      = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    // Live indicator dot
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(6.dp),
+                    ) {}
+                    Text(
+                        "Compositor active — tap to open",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                    )
+                }
+            }
+
+            Icon(
+                imageVector        = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint               = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                modifier           = Modifier.size(20.dp),
+            )
+        }
+    }
+}
