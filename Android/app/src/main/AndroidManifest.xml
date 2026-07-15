@@ -49,6 +49,7 @@
         android:taskAffinity="com.droidspaces.wayland"
         android:launchMode="singleTask"
         android:documentLaunchMode="always"
+        android:alwaysRetainTaskState="true"
         android:excludeFromRecents="false"
 
         android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
