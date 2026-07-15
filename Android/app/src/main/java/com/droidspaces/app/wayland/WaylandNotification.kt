@@ -59,8 +59,8 @@ object WaylandNotification {
             .notify(NOTIFICATION_ID, notification)
     }
 
-    fun hide() {
-        NotificationManagerCompat.from(App.instance)
+    fun hide(context: Context) {
+        NotificationManagerCompat.from(context)
             .cancel(NOTIFICATION_ID)
     }
 }
