@@ -86,7 +86,7 @@ object WaylandManager {
         nativeStop()
         isRunning = false
 
-        WaylandNotification.hide()
+        WaylandNotification.hide(context)
     }
 
     /**
