@@ -39,6 +39,8 @@ import com.droidspaces.app.ui.screen.OpenRCScreen
 import com.droidspaces.app.ui.screen.ContainerTerminalScreen
 import com.droidspaces.app.ui.viewmodel.ContainerInstallationViewModel
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
+import android.content.Intent
+import com.droidspaces.app.WaylandActivity
 import com.droidspaces.app.util.ContainerManager
 import com.droidspaces.app.util.FilePickerUtils
 import androidx.compose.ui.Alignment
@@ -262,7 +264,9 @@ fun DroidspacesNavigation(
                     navController.navigate(Screen.Terminal.createRoute(containerName))
                 },
                 onNavigateToWaylandDisplay = {
-                    navController.navigate(Screen.WaylandDisplay.route)
+                    context.startActivity(
+                        Intent(context, WaylandActivity::class.java)
+                    )
                 }
             )
         }
