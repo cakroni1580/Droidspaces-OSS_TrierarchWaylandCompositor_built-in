@@ -8,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.droidspaces.app.ui.screen.WaylandScreen
+import com.droidspaces.app.ui.theme.DroidspacesTheme
+import com.droidspaces.app.ui.theme.rememberThemeState
 
 /*
  * Dedicated launcher Activity for Wayland.
@@ -22,19 +24,22 @@ class WaylandActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            ThemeWrapper {
 
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    WaylandScreen(
-                        onNavigateBack = {
-                            finish()
-                        }
-                    )
-                }
+        val themeState = rememberThemeState()
 
+        DroidspacesTheme(
+            darkTheme = themeState.darkTheme,
+            dynamicColor = themeState.useDynamicColor,
+            amoledMode = themeState.amoledMode,
+            themePalette = themeState.themePalette
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                WaylandScreen(
+                    onNavigateBack = { finish() }
+                )
             }
         }
     }
