@@ -49,8 +49,23 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
     // ALT → X
     // CTRL → C
     // CTRL → ALT → T
+    // Modifier keys that remain held until tapped again.
     var ctrlLocked by remember { mutableStateOf(false) }
     var altLocked by remember { mutableStateOf(false) }
+
+    // Always release modifiers when the Wayland screen leaves composition.
+    // Prevents stale CTRL/ALT state after Activity back/navigation.
+    DisposableEffect(Unit) {
+        onDispose {
+            if (ctrlLocked) {
+                sendModifierKey(KeyEvent.KEYCODE_CTRL_LEFT, false)
+            }
+
+            if (altLocked) {
+                sendModifierKey(KeyEvent.KEYCODE_ALT_LEFT, false)
+            }
+        }
+    }
 
     val view = LocalView.current
     val imeVisible = imeBottomPx > 0
