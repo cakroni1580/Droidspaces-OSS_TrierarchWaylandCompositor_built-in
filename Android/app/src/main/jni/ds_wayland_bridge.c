@@ -769,11 +769,6 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeEnsureFocus(
     (void)thiz;
 
     if (!g_server) return;
-
-    int32_t w = 0, h = 0;
-    compositor_get_output_size(g_server, &w, &h);
-    if (w <= 0 || h <= 0) return;
-
     if (!compositor_has_toplevel_client(g_server))
         return;
 
