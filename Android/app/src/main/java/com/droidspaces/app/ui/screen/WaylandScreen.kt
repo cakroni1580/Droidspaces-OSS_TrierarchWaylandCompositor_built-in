@@ -44,6 +44,13 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
     var isFullscreen by remember { mutableStateOf(false) }
     var isKeyboardVisible by remember { mutableStateOf(false) }
     var waylandLayout: WaylandDisplayLayout? by remember { mutableStateOf(null) }
+    // Modifier keys that remain held until tapped again.
+    // Required for sequences such as:
+    // ALT → X
+    // CTRL → C
+    // CTRL → ALT → T
+    var ctrlLocked by remember { mutableStateOf(false) }
+    var altLocked by remember { mutableStateOf(false) }
 
     val view = LocalView.current
     val imeVisible = imeBottomPx > 0
@@ -106,17 +113,33 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
 
             if (isRunning && imeVisible) {
                 WaylandKeyboardBar(
-                    isFullscreen = isFullscreen,
-                    isKeyboardVisible = isKeyboardVisible,
-                    onFullscreenToggle = { isFullscreen = !isFullscreen },
-                    onKeyboardToggle = {
-                        if (isKeyboardVisible) {
-                            waylandLayout?.hideKeyboard()
-                        } else {
-                            waylandLayout?.showKeyboard()
-                        }
-                        isKeyboardVisible = !isKeyboardVisible  
-                    },
+                   isFullscreen = isFullscreen,
+                   isKeyboardVisible = isKeyboardVisible,
+                   ctrlLocked = ctrlLocked,
+                   altLocked = altLocked,
+                   onFullscreenToggle = { isFullscreen = !isFullscreen },
+                   onKeyboardToggle = {
+                       if (isKeyboardVisible) {
+                           waylandLayout?.hideKeyboard()
+                       } else {
+                           waylandLayout?.showKeyboard()
+                       }
+                       isKeyboardVisible = !isKeyboardVisible
+                   },
+                   onCtrlToggle = {
+                      ctrlLocked = !ctrlLocked
+                      sendModifierKey(
+                           KeyEvent.KEYCODE_CTRL_LEFT,
+                           ctrlLocked
+                      )
+                   },
+                   onAltToggle = {
+                      altLocked = !altLocked
+                      sendModifierKey(
+                           KeyEvent.KEYCODE_ALT_LEFT,
+                           altLocked
+                      )
+                   },
                 )
             }
         }
@@ -152,8 +175,12 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
 private fun WaylandKeyboardBar(
     isFullscreen: Boolean,
     isKeyboardVisible: Boolean,
+    ctrlLocked: Boolean,
+    altLocked: Boolean,
     onFullscreenToggle: () -> Unit,
     onKeyboardToggle: () -> Unit,
+    onCtrlToggle: () -> Unit,
+    onAltToggle: () -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -177,8 +204,17 @@ private fun WaylandKeyboardBar(
 
                 WlTextKey("ESC", KeyEvent.KEYCODE_ESCAPE)
                 WlTextKey("TAB", KeyEvent.KEYCODE_TAB)
-                WlTextKey("CTRL", KeyEvent.KEYCODE_CTRL_LEFT)
-                WlTextKey("ALT", KeyEvent.KEYCODE_ALT_LEFT)
+                WlModifierKey(
+                    label = "CTRL",
+                    locked = ctrlLocked,
+                    onClick = onCtrlToggle
+                )
+
+                WlModifierKey(
+                    label = "ALT",
+                    locked = altLocked,
+                    onClick = onAltToggle
+                )
 
                 VerticalDivider(
                     modifier = Modifier.height(26.dp),
@@ -208,6 +244,40 @@ private fun WaylandKeyboardBar(
 }
 
 // ── Key button helpers ───────────────────────────────────────────────────────
+
+@Composable
+private fun RowScope.WlModifierKey(
+    label: String,
+    locked: Boolean,
+    onClick: () -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight(),
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(0.dp),
+        colors = ButtonDefaults.textButtonColors(
+            containerColor = if (locked) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                androidx.compose.ui.graphics.Color.Transparent
+            },
+            contentColor = if (locked) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            }
+        )
+    ) {
+        Text(
+            text = if (locked) "$label •" else label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
 
 @Composable
 private fun RowScope.WlTextKey(label: String, keyCode: Int) {
@@ -249,6 +319,20 @@ private fun sendKey(keyCode: Int) {
     WaylandSurface.nativeEnsureFocus(t)
     WaylandSurface.nativeOnKeyEvent(keyCode, true, t)
     WaylandSurface.nativeOnKeyEvent(keyCode, false, t + 1)
+}
+
+private fun sendModifierKey(
+    keyCode: Int,
+    pressed: Boolean
+) {
+    val t = (SystemClock.uptimeMillis() and 0x7FFF_FFFFL).toInt()
+
+    WaylandSurface.nativeEnsureFocus(t)
+    WaylandSurface.nativeOnKeyEvent(
+        keyCode,
+        pressed,
+        t
+    )
 }
 
 // ── Compositor-off placeholder ───────────────────────────────────────────────
