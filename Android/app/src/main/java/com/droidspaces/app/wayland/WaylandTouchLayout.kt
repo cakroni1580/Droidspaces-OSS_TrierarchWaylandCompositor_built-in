@@ -29,10 +29,6 @@ internal class WaylandTouchLayout(
     private val coordMapper: WaylandCoordMapper
 ) : FrameLayout(context) {
     var mouseMode: Int = 0
-    var resolutionPercent: Int = 100
-    var scalePercent: Int = 100
-    var lastAppliedResolutionPercent: Int = -1
-    var lastAppliedScalePercent: Int = -1
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val cursorPolicy = WaylandCursorVisibilityPolicy(mainHandler)
