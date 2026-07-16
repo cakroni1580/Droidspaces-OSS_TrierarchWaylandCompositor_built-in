@@ -378,12 +378,6 @@ class WaylandDisplayLayout(
     fun updateParams(rp: Int, sp: Int) {
         resolutionPercent = rp
         scalePercent = sp
-        // ONLY STORE POLICY
-        /* PATCH:
-         * Sinkronkan policy input dengan renderer.
-         */
-        inputRouter.resolutionPercent = rp
-        inputRouter.scalePercent = sp 
     }
 
     /** Show soft keyboard — focus the IME sink and call showSoftInput on it. */
