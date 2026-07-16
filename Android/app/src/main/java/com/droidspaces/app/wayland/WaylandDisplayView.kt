@@ -420,10 +420,6 @@ class WaylandDisplayLayout(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-
-        inputRouter.resolutionPercent = resolutionPercent
-        inputRouter.scalePercent = scalePercent
-
         return inputRouter.onTouchEvent(event)
     }
 
