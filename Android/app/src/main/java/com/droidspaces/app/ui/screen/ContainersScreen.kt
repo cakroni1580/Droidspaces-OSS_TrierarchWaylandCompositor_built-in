@@ -18,6 +18,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.SnackbarHost
@@ -978,6 +981,8 @@ private fun UninstallConfirmationDialog(
 ) {
     val context = LocalContext.current
     val dialogShape = RoundedCornerShape(24.dp)
+    var confirmText by remember { mutableStateOf("") }
+    val isConfirmed = confirmText == containerName
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1008,10 +1013,38 @@ private fun UninstallConfirmationDialog(
                     )
                 }
                 Text(
-                    text = context.getString(R.string.uninstall_container_message, containerName),
+                    text = buildAnnotatedString {
+                        val template = context.getString(R.string.uninstall_container_message)
+                        val parts = template.split("%1\$s")
+                        append(parts.getOrElse(0) { "" })
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(containerName) }
+                        append(parts.getOrElse(1) { "" })
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = context.getString(R.string.type_container_name_to_confirm),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = confirmText,
+                        onValueChange = { confirmText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(containerName) },
+                        singleLine = true,
+                        isError = confirmText.isNotEmpty() && !isConfirmed,
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            focusedBorderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+                        )
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1028,9 +1061,9 @@ private fun UninstallConfirmationDialog(
                         }
                     }
                     Surface(
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(onClick = onConfirm),
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable(enabled = isConfirmed, onClick = onConfirm),
                         shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.error,
+                        color = if (isConfirmed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
                         tonalElevation = 0.dp
                     ) {
                         Box(modifier = Modifier.padding(14.dp), contentAlignment = Alignment.Center) {
@@ -1038,7 +1071,7 @@ private fun UninstallConfirmationDialog(
                                 context.getString(R.string.uninstall),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onError
+                                color = if (isConfirmed) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
                             )
                         }
                     }

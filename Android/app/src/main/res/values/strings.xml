@@ -86,6 +86,7 @@
     <string name="amoled_mode_description">Pure black background for OLED displays</string>
     <string name="dynamic_color">Apply System\'s Default Color Palette</string>
     <string name="dynamic_color_description">Use Android 12+ Monet theming (Material You)</string>
+    <string name="accent_color">Accent Color</string>
     <string name="daemon_mode">Daemon Mode</string>
     <string name="daemon_mode_description">Run Droidspaces as a persistent system-level daemon to bypass seccomp blocks from Magisk/APatch, GrapheneOS, etc. This enables high-privilege operations by fetching and running commands from userspace (Reboot required).</string>
     <string name="symlink_integration">Integrate Droidspaces to the system path</string>
@@ -123,6 +124,7 @@
     <string name="uninstall_container_title">Uninstall Container?</string>
     <string name="uninstall_container_message">This will permanently delete container \"%1$s\" and all its data. This action cannot be undone.\n\nIf the container is running, it will be stopped first.</string>
     <string name="uninstall">Uninstall</string>
+    <string name="type_container_name_to_confirm">Type the container name exactly to confirm:</string>
     <string name="cancel">Cancel</string>
     <string name="view_logs">View logs</string>
     <string name="edit_container_configuration">Edit Container Configuration</string>
@@ -600,4 +602,5 @@
     <string name="repo_custom_url_empty">URL cannot be empty</string>
     <string name="repo_custom_url_invalid">URL must start with https://</string>
     <string name="repo_no_custom">No custom repositories subscribed yet.</string>
+    <string name="debugging_section">Debugging</string>
 </resources>

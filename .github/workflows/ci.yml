@@ -120,16 +120,27 @@ jobs:
     - name: Generate Telegram Message
       if: github.event_name != 'pull_request'
       run: |
-        EVENT_TYPE="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' && 'Official Release' || 'Git Push' }}"
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event.inputs.create_release }}" = "true" ]; then
+            EVENT_TYPE="Official Release"
+          else
+            EVENT_TYPE="Manual Trigger"
+          fi
+        else
+          EVENT_TYPE="Git Push"
+        fi
         COMMIT_MSG=$(git log -1 --pretty=format:%s)
+        COMMIT_SHA=$(git log -1 --pretty=format:%h)
+        COMMIT_AUTHOR=$(git log -1 --pretty=format:%an)
         {
           echo "TELEGRAM_MESSAGE<<EOF"
           echo "**Droidspaces Build Successful**"
           echo ""
           echo "**Repository:** [${{ github.repository }}](https://github.com/${{ github.repository }})"
           echo "**Branch:** ${{ github.ref_name }}"
-          echo "**Author:** [${{ github.actor }}](https://github.com/${{ github.actor }})"
+          echo "**Author:** $COMMIT_AUTHOR"
           echo "**Event:** $EVENT_TYPE"
+          echo "**Commit SHA:** [$COMMIT_SHA](https://github.com/${{ github.repository }}/commit/${{ github.sha }})"
           echo ""
           echo "**Commit Message:**"
           echo ""
