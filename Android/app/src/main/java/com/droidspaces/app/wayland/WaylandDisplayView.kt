@@ -78,8 +78,13 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
         // TYPE_CLASS_TEXT: required so all IMEs (Samsung, Gboard, SwiftKey) show reliably.
         // The sink never displays text — it only forwards events to Wayland.
-        outAttrs.inputType  = EditorInfo.TYPE_CLASS_TEXT
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
+        outAttrs.inputType =
+           EditorInfo.TYPE_CLASS_TEXT or
+           EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+
+       outAttrs.imeOptions =
+          EditorInfo.IME_FLAG_NO_FULLSCREEN or
+          EditorInfo.IME_FLAG_NO_EXTRACT_UI
         val connection = object : BaseInputConnection(this, true) {
             override fun closeConnection() {
                 if (activeInputConnection === this) {
@@ -99,16 +104,11 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
 
             // Composing text: forward each update immediately so keystrokes aren't lost
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                if (!text.isNullOrEmpty()) commitText(text, newCursorPosition)
                 return true
             }
 
             // Flush residual composing buffer on IME commit/dismiss
             override fun finishComposingText(): Boolean {
-                val pending = getEditable()
-                if (!pending.isNullOrEmpty()) {
-                    commitText(pending.toString(), 1)
-                }
                 super.finishComposingText()
                 getEditable()?.clear()
                 return true
