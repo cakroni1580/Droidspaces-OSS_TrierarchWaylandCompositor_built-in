@@ -76,6 +76,10 @@ object ContainerInstaller {
 
             logger.i("Tarball copied: ${tempTarball.absolutePath}")
 
+            // Step 3.5: Verify the tarball is actually a Linux rootfs before we
+            // extract anything, so users can't install arbitrary archives.
+            validateRootfsTarball(context, tempTarball, logger)
+
             // Step 4: Extract tarball (either to directory or sparse image)
             if (config.useSparseImage) {
                 SparseImageInstaller.extract(
@@ -241,6 +245,62 @@ object ContainerInstaller {
     }
 
 
+
+    /**
+     * Inspect the tarball (without extracting) to confirm it contains a Linux
+     * rootfs, so users can't install arbitrary archives (photo backups, source
+     * zips, etc.). Throws on a confirmed-invalid archive; a validator that fails
+     * to load is treated as non-fatal (warn and continue).
+     */
+    private suspend fun validateRootfsTarball(
+        context: Context,
+        tarball: File,
+        logger: ContainerLogger
+    ) {
+        logger.i("Inspecting tarball to verify it is a Linux rootfs...")
+
+        // Copy validator script from assets
+        val scriptFile = File("${context.cacheDir}/validate_rootfs.sh")
+        try {
+            context.assets.open("validate_rootfs.sh").use { inputStream ->
+                FileOutputStream(scriptFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+        } catch (e: Exception) {
+            // Don't block installation if the validator itself can't be loaded.
+            logger.w("Warning: Failed to load rootfs validator, skipping check: ${e.message}")
+            return
+        }
+
+        try {
+            // Make script executable
+            val chmodResult = Shell.cmd("chmod 755 \"${scriptFile.absolutePath}\" 2>&1").exec()
+            if (!chmodResult.isSuccess) {
+                logger.w("Warning: Failed to make validator executable, skipping check")
+                return
+            }
+
+            val result = Shell.cmd(
+                "BUSYBOX_PATH=$BUSYBOX_PATH \"${scriptFile.absolutePath}\" \"${tarball.absolutePath}\" 2>&1"
+            ).exec()
+
+            if (!result.isSuccess) {
+                val reason = result.out
+                    .map { it.trim() }
+                    .firstOrNull { it.isNotEmpty() }
+                    ?: "selected file does not look like a Linux rootfs"
+                logger.e(reason)
+                throw Exception(reason)
+            }
+        } finally {
+            try {
+                scriptFile.delete()
+            } catch (e: Exception) {
+                logger.w("Warning: Failed to clean up validator script: ${e.message}")
+            }
+        }
+    }
 
     /**
      * Apply post-extraction fixes to the rootfs (both sparse and directory modes).
