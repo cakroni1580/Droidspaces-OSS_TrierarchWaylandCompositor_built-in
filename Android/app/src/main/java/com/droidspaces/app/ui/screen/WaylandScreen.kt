@@ -141,6 +141,9 @@ fun WaylandScreen(onNavigateBack: () -> Unit) {
                        }
                        isKeyboardVisible = !isKeyboardVisible
                    },
+                   onPaste = {
+                       waylandLayout?.pasteClipboard()
+                   }, 
                    onCtrlToggle = {
                       ctrlLocked = !ctrlLocked
                       sendModifierKey(
@@ -194,6 +197,7 @@ private fun WaylandKeyboardBar(
     altLocked: Boolean,
     onFullscreenToggle: () -> Unit,
     onKeyboardToggle: () -> Unit,
+    onPaste: () -> Unit,
     onCtrlToggle: () -> Unit,
     onAltToggle: () -> Unit,
 ) {
@@ -229,6 +233,17 @@ private fun WaylandKeyboardBar(
                     label = "ALT",
                     locked = altLocked,
                     onClick = onAltToggle
+                )
+
+                VerticalDivider(
+                    modifier = Modifier.height(26.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+
+                WlIconKey(
+                    icon = Icons.Default.ContentPaste,
+                    desc = "Paste",
+                    onClick = onPaste
                 )
 
                 VerticalDivider(
