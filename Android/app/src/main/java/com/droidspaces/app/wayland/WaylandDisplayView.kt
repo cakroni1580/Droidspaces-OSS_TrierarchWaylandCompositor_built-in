@@ -62,6 +62,8 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
         Thread(r, "WaylandCommitExecutor").apply { isDaemon = true }
     }
 
+    private var activeInputConnection: InputConnection? = null
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
@@ -78,6 +80,7 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
         // The sink never displays text — it only forwards events to Wayland.
         outAttrs.inputType  = EditorInfo.TYPE_CLASS_TEXT
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
+        val connection = object : BaseInputConnection(this, true) {
         return object : BaseInputConnection(this, true) {
 
             // Hardware-style key events from IME (Backspace, Enter, arrows)
@@ -170,7 +173,52 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
                 return true
             }
         }
+        activeInputConnection = connection
+        return connection
     }
+
+     fun pasteClipboard(): Boolean {
+        val connection = activeInputConnection
+            ?: return false
+
+        val clipboard =
+            context.getSystemService(
+                Context.CLIPBOARD_SERVICE
+            ) as? android.content.ClipboardManager
+                ?: return false
+
+        if (!clipboard.hasPrimaryClip()) {
+            return false
+        }
+
+        val clip = clipboard.primaryClip
+            ?: return false
+
+        if (clip.itemCount <= 0) {
+            return false
+        }
+
+        val text = clip
+            .getItemAt(0)
+            .coerceToText(context)
+            ?.toString()
+            ?: return false
+
+        if (text.isEmpty()) {
+            return false
+        }
+
+        /*
+         * PENTING:
+         * Jangan memanggil nativeOnText().
+         *
+         * commitText() ini masuk ke implementasi commitText()
+         * yang sudah ada di class ini.
+         */
+        connection.commitText(text, 1)
+
+        return true
+    }   
 
     // ASCII → (Android KEYCODE, needsShift)
     private fun asciiToKeyCode(c: Char): Pair<Int, Boolean> = when (val code = c.code) {
@@ -391,6 +439,10 @@ class WaylandDisplayLayout(
     fun hideKeyboard() {
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(imeSink.windowToken, 0)
+    }
+
+    fun pasteClipboard(): Boolean {
+        return imeSink.pasteClipboard()
     }
 
     // ---- Hardware keyboard ------------------------------------------------
