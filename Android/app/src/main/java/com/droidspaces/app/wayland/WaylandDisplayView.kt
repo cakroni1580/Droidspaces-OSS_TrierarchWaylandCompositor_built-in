@@ -81,7 +81,6 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
         outAttrs.inputType  = EditorInfo.TYPE_CLASS_TEXT
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN
         val connection = object : BaseInputConnection(this, true) {
-        return object : BaseInputConnection(this, true) {
 
             // Hardware-style key events from IME (Backspace, Enter, arrows)
             override fun sendKeyEvent(event: KeyEvent): Boolean {
