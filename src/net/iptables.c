@@ -283,6 +283,58 @@ static void fixup_jump_targets(unsigned char *blob, unsigned int blob_sz,
 }
 
 /* ---------------------------------------------------------------------------
+ * Internal: fixup_jump_targets_removed
+ *
+ * Removal twin of fixup_jump_targets.  After rules are deleted the surviving
+ * entries shift to lower offsets, but every xt_standard_target with a
+ * non-negative verdict (= absolute byte offset = chain jump) still holds its
+ * OLD offset.  Re-base each by the number of bytes removed before that offset:
+ * old_offsets[k] gives an entry's old start, removed_before[k] the bytes
+ * removed before it.  Without this the kernel's mark_source_chains() validator
+ * can no longer resolve the shifted jump (xt_find_jump_offset fails) and
+ * rejects the whole table replace with ELOOP.
+ * ---------------------------------------------------------------------------*/
+
+static void fixup_jump_targets_removed(unsigned char *blob,
+                                       unsigned int blob_sz,
+                                       const unsigned int *old_offsets,
+                                       const unsigned int *removed_before,
+                                       unsigned int nents) {
+  unsigned int off = 0;
+
+  while (off < blob_sz) {
+    struct ipt_entry *e = (struct ipt_entry *)(blob + off);
+
+    if (e->next_offset < sizeof(*e) || off + e->next_offset > blob_sz)
+      break;
+
+    if (e->target_offset + sizeof(struct xt_standard_target) <=
+        e->next_offset) {
+      struct xt_entry_target *t =
+          (struct xt_entry_target *)((uint8_t *)e + e->target_offset);
+
+      if (t->u.user.name[0] == '\0' &&
+          t->u.target_size ==
+              (uint16_t)XT_ALIGN(sizeof(struct xt_standard_target))) {
+        struct xt_standard_target *st = (struct xt_standard_target *)t;
+        if (st->verdict >= 0) {
+          /* Jump target: find the tracked entry that started at this old
+           * offset and subtract the bytes removed before it. */
+          for (unsigned int k = 0; k < nents; k++) {
+            if (old_offsets[k] == (unsigned int)st->verdict) {
+              st->verdict -= (int)removed_before[k];
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    off += e->next_offset;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Internal: insert_rule_at_hook
  *
  * Inserts new_rule at the very beginning of the given hook's chain.
@@ -581,6 +633,12 @@ static int remove_matching_rules(int fd, const char *table_name,
       ret = 0; /* nothing to do */
       break;
     }
+
+    /* Re-base surviving jump verdicts for the bytes just removed; without this
+     * the kernel rejects the table replace with ELOOP (see
+     * fixup_jump_targets_removed). */
+    fixup_jump_targets_removed(new_blob, new_sz, old_offsets, removed_before,
+                               ei + 1);
 
     /* Build ipt_replace */
     size_t replace_sz = sizeof(struct ipt_replace) + new_sz;
