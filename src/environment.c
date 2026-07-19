@@ -104,7 +104,20 @@ void ds_env_boot_setup(struct ds_config *cfg) {
     setenv("KWIN_COMPOSE", "Q", 1);
     setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
     setenv("LIBGL_ALWAYS_SOFTWARE", "0", 1);
-    ds_log("[Environment] Wayland environment loaded");
+    ds_log("[Environment] QT_QPA_PLATFORM=%s",
+           getenv("QT_QPA_PLATFORM"));
+    ds_log("[Environment] XDG_SESSION_TYPE=%s",
+           getenv("XDG_SESSION_TYPE"));
+    ds_log("[Environment] XDG_RUNTIME_DIR=%s",
+           getenv("XDG_RUNTIME_DIR"));
+    ds_log("[Environment] WAYLAND_DISPLAY=%s",
+           getenv("WAYLAND_DISPLAY"));
+    ds_log("[Environment] KWIN_COMPOSE=%s",
+           getenv("KWIN_COMPOSE"));
+    ds_log("[Environment] KWIN_OPENGL_INTERFACE=%s",
+           getenv("KWIN_OPENGL_INTERFACE"));
+    ds_log("[Environment] LIBGL_ALWAYS_SOFTWARE=%s",
+           getenv("LIBGL_ALWAYS_SOFTWARE"));
   }
 }
 
