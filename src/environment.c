@@ -87,21 +87,6 @@ void ds_env_boot_setup(struct ds_config *cfg) {
     setenv("GALLIUM_DRIVER", "virpipe", 1);
   if (is_android() && cfg->pulseaudio)
     setenv("PULSE_SERVER", "unix:" DS_PULSE_SOCKET, 1);
-
-  /*
-   * Wayland session environment.
-   *
-   * Only load these variables when the Wayland compositor bridge is enabled.
-   */
-  if (is_android() && cfg->wayland) {
-    setenv("QT_QPA_PLATFORM", "wayland", 1);
-    setenv("XDG_SESSION_TYPE", "wayland", 1);
-    setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
-    setenv("WAYLAND_DISPLAY", "wayland-1", 1);
-    setenv("KWIN_COMPOSE", "Q", 1);
-    setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
-    setenv("LIBGL_ALWAYS_SOFTWARE", "0", 1);
-  }
 }
 
 void ds_env_save(const char *path, struct ds_config *cfg) {
