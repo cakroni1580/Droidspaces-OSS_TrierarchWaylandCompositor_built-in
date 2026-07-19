@@ -30,6 +30,24 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
     return -1;
   }
 
+  if (mkdir("/run/droidspaces", 0700) < 0 && errno != EEXIST) {
+    ds_warn("[Wayland] failed to create /run/droidspaces: %s",
+            strerror(errno));
+    return -1;
+  }
+
+  if (chmod("/run/droidspaces", 0700) < 0) {
+    ds_warn("[Wayland] failed to chmod /run/droidspaces: %s",
+            strerror(errno));
+    return -1;
+  }
+
+  if (chown("/run/droidspaces", 0, 0) < 0) {
+    ds_warn("[Wayland] failed to chown /run/droidspaces: %s",
+            strerror(errno));
+    return -1;
+  }
+
   /* Stage under /run/droidspaces - immune to user-runtime-dir@0 overmounts.
    * XDG_RUNTIME_DIR and WAYLAND_DISPLAY are set per-user by the rootfs side. */
   if (ds_bind_mount_socket(DS_WL_HOST_SOCKET_OLDROOT, DS_WL_CONTAINER_SOCKET,
@@ -38,10 +56,6 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
 
   ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET_OLDROOT,
          DS_WL_CONTAINER_SOCKET);
-
-  mkdir("/run/droidspaces", 0700);
-  chmod("/run/droidspaces", 0700);
-  chown("/run/droidspaces", 0, 0);
 
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
