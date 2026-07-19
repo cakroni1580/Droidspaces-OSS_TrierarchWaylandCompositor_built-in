@@ -93,6 +93,9 @@ void ds_env_boot_setup(struct ds_config *cfg) {
    *
    * Only load these variables when the Wayland compositor bridge is enabled.
    */
+  ds_log("[Environment] wayland=%d android=%d",
+       cfg->wayland, is_android());
+  
   if (is_android() && cfg->wayland) {
     setenv("QT_QPA_PLATFORM", "wayland", 1);
     setenv("XDG_SESSION_TYPE", "wayland", 1);
@@ -101,6 +104,7 @@ void ds_env_boot_setup(struct ds_config *cfg) {
     setenv("KWIN_COMPOSE", "Q", 1);
     setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
     setenv("LIBGL_ALWAYS_SOFTWARE", "0", 1);
+    ds_log("[Environment] Wayland environment loaded");
   }
 }
 
