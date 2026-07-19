@@ -86,44 +86,9 @@ static int socketd_send_response(int fd, enum ds_socketd_status status,
 }
 
 static int socketd_peer_authorized(int fd) {
-#ifdef SO_PEERCRED
-  struct ucred cred;
-  socklen_t cred_len = sizeof(cred);
-  memset(&cred, 0, sizeof(cred));
-
-  if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) < 0)
-    return 0;
-  if (cred_len != sizeof(cred))
-    return 0;
-
-  /*
-   * The abstract backend socket has no filesystem permissions, so enforce the
-   * same local authorization model used by the main Droidspaces daemon: root or
-   * members of the dedicated 'droidspaces' group may connect.
-   */
-  if (cred.uid == 0)
-    return 1;
-
-  struct group *gr = getgrnam(DS_SOCKETD_GROUP);
-  struct passwd *pw = getpwuid(cred.uid);
-  if (!gr || !pw)
-    return 0;
-
-  int ngroups = 64;
-  gid_t groups[64];
-  if (getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups) < 0)
-    return 0;
-
-  for (int i = 0; i < ngroups; i++) {
-    if (groups[i] == gr->gr_gid)
-      return 1;
-  }
-
-  return 0;
-#else
-  (void)fd;
-  return 0;
-#endif
+  /* Shared with the main daemon: root or a 'droidspaces' group member, and only
+   * from our own PID namespace (the abstract socket has no filesystem ACL). */
+  return ds_peer_authorized(fd, DS_SOCKETD_GROUP);
 }
 
 static int socketd_discard_payload(int fd, uint32_t len) {
@@ -145,6 +110,17 @@ static int socketd_read_payload(int fd, void *buf, uint32_t expected_len,
   return socketd_read_exact(fd, buf, expected_len);
 }
 
+/* Drain a payload the current opcode does not consume; on a short read reply
+ * BAD_REQUEST.  Returns 0 to continue, -1 if the caller should stop handling
+ * the connection. */
+static int socketd_drain_payload(int conn, uint32_t payload_len) {
+  if (payload_len > 0 && socketd_discard_payload(conn, payload_len) < 0) {
+    socketd_send_response(conn, DS_SOCKETD_STATUS_BAD_REQUEST, NULL, 0);
+    return -1;
+  }
+  return 0;
+}
+
 /*
  * Wire-format 64-bit host -> network conversion.
  *
@@ -161,8 +137,8 @@ static uint64_t socketd_hton64(uint64_t value) {
 #endif
 }
 static uint64_t socketd_ntoh64(uint64_t value) {
-  return socketd_hton64(
-      value); // The byte swap is symmetric. Could be an alias via __attribute__
+  /* Network<->host 64-bit swap is symmetric, so this just forwards. */
+  return socketd_hton64(value);
 }
 
 static int socketd_read_proc_start_ticks(pid_t pid,
@@ -549,35 +525,43 @@ static void socketd_pack_inspect_record(
     socketd_pack_port_record(&record->ports[i], &cfg->port_forwards[i]);
 }
 
+/* Ensure *records_inout has room for one more elem_size element, doubling the
+ * capacity (min 16) with wrap and DS_SOCKETD_MAX_PAYLOAD bounds checks and
+ * zero-filling the newly grown tail.  Returns 0 on success, -1 on failure. */
+static int socketd_grow_array(void **records_inout, size_t *count_inout,
+                              size_t *capacity_inout, size_t elem_size) {
+  if (!records_inout || !count_inout || !capacity_inout || elem_size == 0)
+    return -1;
+
+  if (*count_inout < *capacity_inout)
+    return 0;
+
+  size_t old_capacity = *capacity_inout;
+  size_t new_capacity = old_capacity == 0 ? 16u : old_capacity * 2u;
+  if (new_capacity < old_capacity)
+    return -1;
+  if (new_capacity > DS_SOCKETD_MAX_PAYLOAD / elem_size)
+    return -1;
+
+  void *grown = realloc(*records_inout, new_capacity * elem_size);
+  if (!grown)
+    return -1;
+
+  memset((char *)grown + old_capacity * elem_size, 0,
+         (new_capacity - old_capacity) * elem_size);
+
+  *records_inout = grown;
+  *capacity_inout = new_capacity;
+  return 0;
+}
+
 static int socketd_append_container_record(
     struct ds_socketd_container_record **records_inout, size_t *count_inout,
     size_t *capacity_inout, const struct ds_socketd_container_record *record) {
-  if (!records_inout || !count_inout || !capacity_inout || !record)
+  if (!record ||
+      socketd_grow_array((void **)records_inout, count_inout, capacity_inout,
+                         sizeof(**records_inout)) < 0)
     return -1;
-
-  if (*count_inout >= *capacity_inout) {
-    size_t old_capacity = *capacity_inout;
-    size_t new_capacity = old_capacity == 0 ? 16u : old_capacity * 2u;
-
-    if (new_capacity < old_capacity)
-      return -1;
-
-    if (new_capacity >
-        DS_SOCKETD_MAX_PAYLOAD / sizeof(struct ds_socketd_container_record)) {
-      return -1;
-    }
-
-    struct ds_socketd_container_record *grown =
-        realloc(*records_inout, new_capacity * sizeof(*grown));
-    if (!grown)
-      return -1;
-
-    memset(grown + old_capacity, 0,
-           (new_capacity - old_capacity) * sizeof(*grown));
-
-    *records_inout = grown;
-    *capacity_inout = new_capacity;
-  }
 
   (*records_inout)[*count_inout] = *record;
   (*count_inout)++;
@@ -620,32 +604,10 @@ static int
 socketd_append_image_record(struct ds_socketd_image_record **records_inout,
                             size_t *count_inout, size_t *capacity_inout,
                             const struct ds_socketd_image_record *record) {
-  if (!records_inout || !count_inout || !capacity_inout || !record)
+  if (!record ||
+      socketd_grow_array((void **)records_inout, count_inout, capacity_inout,
+                         sizeof(**records_inout)) < 0)
     return -1;
-
-  if (*count_inout >= *capacity_inout) {
-    size_t old_capacity = *capacity_inout;
-    size_t new_capacity = old_capacity == 0 ? 16u : old_capacity * 2u;
-
-    if (new_capacity < old_capacity)
-      return -1;
-
-    if (new_capacity >
-        DS_SOCKETD_MAX_PAYLOAD / sizeof(struct ds_socketd_image_record)) {
-      return -1;
-    }
-
-    struct ds_socketd_image_record *grown =
-        realloc(*records_inout, new_capacity * sizeof(*grown));
-    if (!grown)
-      return -1;
-
-    memset(grown + old_capacity, 0,
-           (new_capacity - old_capacity) * sizeof(*grown));
-
-    *records_inout = grown;
-    *capacity_inout = new_capacity;
-  }
 
   (*records_inout)[*count_inout] = *record;
   (*count_inout)++;
@@ -655,32 +617,10 @@ socketd_append_image_record(struct ds_socketd_image_record **records_inout,
 static int socketd_append_core_event_record(
     struct ds_socketd_core_event_record **records_inout, size_t *count_inout,
     size_t *capacity_inout, const struct ds_socketd_core_event_record *record) {
-  if (!records_inout || !count_inout || !capacity_inout || !record)
+  if (!record ||
+      socketd_grow_array((void **)records_inout, count_inout, capacity_inout,
+                         sizeof(**records_inout)) < 0)
     return -1;
-
-  if (*count_inout >= *capacity_inout) {
-    size_t old_capacity = *capacity_inout;
-    size_t new_capacity = old_capacity == 0 ? 16u : old_capacity * 2u;
-
-    if (new_capacity < old_capacity)
-      return -1;
-
-    if (new_capacity >
-        DS_SOCKETD_MAX_PAYLOAD / sizeof(struct ds_socketd_core_event_record)) {
-      return -1;
-    }
-
-    struct ds_socketd_core_event_record *grown =
-        realloc(*records_inout, new_capacity * sizeof(*grown));
-    if (!grown)
-      return -1;
-
-    memset(grown + old_capacity, 0,
-           (new_capacity - old_capacity) * sizeof(*grown));
-
-    *records_inout = grown;
-    *capacity_inout = new_capacity;
-  }
 
   (*records_inout)[*count_inout] = *record;
   (*count_inout)++;
@@ -822,6 +762,10 @@ static enum ds_socketd_status socketd_read_lifecycle_request(
     return DS_SOCKETD_STATUS_BAD_REQUEST;
   }
 
+  /* The wire format does not guarantee target[] is NUL-terminated; force it
+   * before safe_strncpy() (which calls strlen) so a client sending 256
+   * non-zero bytes cannot make strlen read past the fixed-size field. */
+  req_out->target[sizeof(req_out->target) - 1] = '\0';
   safe_strncpy(target_out, req_out->target, target_size);
   if (!target_out[0])
     return DS_SOCKETD_STATUS_BAD_REQUEST;
@@ -990,23 +934,10 @@ static void socketd_handle_conn(int conn) {
     return;
   }
 
-  /*
-   * The currently implemented opcodes do not consume payloads, but draining
-   * a well-sized payload keeps the framing strict and future-proofs callers.
-   */
-#if 0
-  if (payload_len > 0 && socketd_discard_payload(conn, payload_len) < 0) {
-    socketd_send_response(conn, DS_SOCKETD_STATUS_BAD_REQUEST, NULL, 0);
-    return;
-  }
-#endif // deprecated
-
   switch ((enum ds_socketd_opcode)opcode) {
   case DS_SOCKETD_OP_PING: {
-    if (payload_len > 0 && socketd_discard_payload(conn, payload_len) < 0) {
-      socketd_send_response(conn, DS_SOCKETD_STATUS_BAD_REQUEST, NULL, 0);
+    if (socketd_drain_payload(conn, payload_len) < 0)
       return;
-    }
 
     static const char pong[] = "PONG";
     socketd_send_response(conn, DS_SOCKETD_STATUS_OK, pong,
@@ -1015,10 +946,8 @@ static void socketd_handle_conn(int conn) {
   }
 
   case DS_SOCKETD_OP_CAPABILITIES: {
-    if (payload_len > 0 && socketd_discard_payload(conn, payload_len) < 0) {
-      socketd_send_response(conn, DS_SOCKETD_STATUS_BAD_REQUEST, NULL, 0);
+    if (socketd_drain_payload(conn, payload_len) < 0)
       return;
-    }
 
     uint32_t caps_be =
         htonl(DS_SOCKETD_CAP_PROTOCOL_V1 | DS_SOCKETD_CAP_PING |
@@ -1033,10 +962,8 @@ static void socketd_handle_conn(int conn) {
   }
 
   case DS_SOCKETD_OP_INFO: {
-    if (payload_len > 0 && socketd_discard_payload(conn, payload_len) < 0) {
-      socketd_send_response(conn, DS_SOCKETD_STATUS_BAD_REQUEST, NULL, 0);
+    if (socketd_drain_payload(conn, payload_len) < 0)
       return;
-    }
 
     uint32_t installed_count = 0;
     if (socketd_count_installed_containers(&installed_count) < 0) {
@@ -1228,10 +1155,8 @@ static void socketd_handle_conn(int conn) {
   }
 
   case DS_SOCKETD_OP_LIST_IMAGES: {
-    if (payload_len > 0 && socketd_discard_payload(conn, payload_len) < 0) {
-      socketd_send_response(conn, DS_SOCKETD_STATUS_BAD_REQUEST, NULL, 0);
+    if (socketd_drain_payload(conn, payload_len) < 0)
       return;
-    }
 
     size_t capacity = 16;
     struct ds_socketd_image_record *records =
@@ -1315,6 +1240,9 @@ static void socketd_handle_conn(int conn) {
       return;
     }
 
+    /* Force NUL-termination of the wire field before safe_strncpy()'s strlen
+     * to avoid an out-of-bounds read past the fixed-size target[]. */
+    inspect_req.target[sizeof(inspect_req.target) - 1] = '\0';
     char target[DS_SOCKETD_RECORD_NAME_MAX];
     safe_strncpy(target, inspect_req.target, sizeof(target));
     if (!target[0]) {
@@ -1436,11 +1364,9 @@ static void socketd_handle_conn(int conn) {
 
 static int socketd_bridge_loop(void) {
   struct sockaddr_un addr;
-  int server = socket(AF_UNIX, SOCK_STREAM, 0);
+  int server = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (server < 0)
     return -1;
-
-  fcntl(server, F_SETFD, FD_CLOEXEC);
 
   socklen_t addr_len = socketd_backend_addr(&addr);
   if (bind(server, (struct sockaddr *)&addr, addr_len) < 0) {
@@ -1457,7 +1383,7 @@ static int socketd_bridge_loop(void) {
          DS_SOCKETD_BACKEND_SOCK_NAME);
 
   for (;;) {
-    int conn = accept(server, NULL, NULL);
+    int conn = accept4(server, NULL, NULL, SOCK_CLOEXEC);
     if (conn < 0) {
       if (errno == EINTR)
         continue;
@@ -1465,7 +1391,6 @@ static int socketd_bridge_loop(void) {
       continue;
     }
 
-    fcntl(conn, F_SETFD, FD_CLOEXEC);
     socketd_set_conn_timeouts(conn);
     socketd_handle_conn(conn);
     close(conn);

@@ -806,6 +806,15 @@ static void daemonize(int foreground) {
   if (chdir("/") < 0) { /* ignore */
   }
 
+  /* Scrub dynamic-linker and field-splitting env vars before serving requests
+   * and re-exec'ing droidspaces as root, so a value inherited from the launcher
+   * cannot influence the privileged process (defense-in-depth; container init
+   * additionally receives a clearenv() in ds_env_boot_setup). */
+  unsetenv("LD_PRELOAD");
+  unsetenv("LD_LIBRARY_PATH");
+  unsetenv("LD_AUDIT");
+  unsetenv("IFS");
+
   if (!foreground) {
     /* redirect standard streams */
     int dn = open("/dev/null", O_RDONLY);
@@ -988,15 +997,26 @@ int ds_daemon_run(int foreground, char **argv) {
             strerror(errno));
 #endif
 
-  /* Write PID file so the Android app can signal us */
+  /* Write PID file so the Android app can signal us.  The daemon runs with
+   * umask 0, so create it 0644 explicitly (not the fopen default 0666): a
+   * world-writable pidfile would let any local user overwrite it and redirect
+   * the app's signals (SIGUSR2/kill) to an arbitrary PID.  O_NOFOLLOW guards
+   * against a symlink planted in the workspace dir; no O_EXCL so a restart can
+   * replace a stale pidfile. */
   {
     char pid_path[PATH_MAX];
     snprintf(pid_path, sizeof(pid_path), "%s/droidspacesd.pid",
              get_workspace_dir());
-    FILE *pf = fopen(pid_path, "w");
-    if (pf) {
-      fprintf(pf, "%d\n", getpid());
-      fclose(pf);
+    int pfd = open(pid_path,
+                   O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0644);
+    if (pfd >= 0) {
+      FILE *pf = fdopen(pfd, "w");
+      if (pf) {
+        fprintf(pf, "%d\n", getpid());
+        fclose(pf);
+      } else {
+        close(pfd);
+      }
     }
   }
 
@@ -1050,45 +1070,18 @@ int ds_daemon_run(int foreground, char **argv) {
     }
 
     /*
-     * authenticate the peer: only root or members of the 'droidspaces' group
-     * may connect. abstract socket has no filesystem permissions, so we
-     * enforce this via SO_PEERCRED + getgrouplist() -- same model as Docker's
+     * Authenticate the peer via the shared authorizer: only root or members of
+     * the 'droidspaces' group, and only from our own PID namespace (the
+     * abstract socket has no filesystem permissions).  Same model as Docker's
      * unix group.
      */
-    {
-#define DS_GROUP "droidspaces"
-      struct ucred cred;
-      socklen_t clen = sizeof(cred);
-      if (getsockopt(conn, SOL_SOCKET, SO_PEERCRED, &cred, &clen) < 0) {
-        close(conn);
-        continue;
-      }
-
-      int allowed = (cred.uid == 0);
-      if (!allowed) {
-        struct group *gr = getgrnam(DS_GROUP);
-        struct passwd *pw = getpwuid(cred.uid);
-        if (gr && pw) {
-          int ngroups = 64;
-          gid_t groups[64];
-          getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups);
-          for (int i = 0; i < ngroups; i++) {
-            if (groups[i] == gr->gr_gid) {
-              allowed = 1;
-              break;
-            }
-          }
-        }
-      }
-
-      if (!allowed) {
-        const char *msg = "permission denied: only root or '" DS_GROUP
-                          "' group members may connect.";
-        send_frame(conn, MSG_ERR, msg, (uint32_t)strlen(msg));
-        send_exit(conn, 1);
-        close(conn);
-        continue;
-      }
+    if (!ds_peer_authorized(conn, "droidspaces")) {
+      const char *msg = "permission denied: only root or 'droidspaces' group "
+                        "members may connect.";
+      send_frame(conn, MSG_ERR, msg, (uint32_t)strlen(msg));
+      send_exit(conn, 1);
+      close(conn);
+      continue;
     }
 
     pid_t h = fork();

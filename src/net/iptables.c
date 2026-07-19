@@ -283,6 +283,58 @@ static void fixup_jump_targets(unsigned char *blob, unsigned int blob_sz,
 }
 
 /* ---------------------------------------------------------------------------
+ * Internal: fixup_jump_targets_removed
+ *
+ * Removal twin of fixup_jump_targets.  After rules are deleted the surviving
+ * entries shift to lower offsets, but every xt_standard_target with a
+ * non-negative verdict (= absolute byte offset = chain jump) still holds its
+ * OLD offset.  Re-base each by the number of bytes removed before that offset:
+ * old_offsets[k] gives an entry's old start, removed_before[k] the bytes
+ * removed before it.  Without this the kernel's mark_source_chains() validator
+ * can no longer resolve the shifted jump (xt_find_jump_offset fails) and
+ * rejects the whole table replace with ELOOP.
+ * ---------------------------------------------------------------------------*/
+
+static void fixup_jump_targets_removed(unsigned char *blob,
+                                       unsigned int blob_sz,
+                                       const unsigned int *old_offsets,
+                                       const unsigned int *removed_before,
+                                       unsigned int nents) {
+  unsigned int off = 0;
+
+  while (off < blob_sz) {
+    struct ipt_entry *e = (struct ipt_entry *)(blob + off);
+
+    if (e->next_offset < sizeof(*e) || off + e->next_offset > blob_sz)
+      break;
+
+    if (e->target_offset + sizeof(struct xt_standard_target) <=
+        e->next_offset) {
+      struct xt_entry_target *t =
+          (struct xt_entry_target *)((uint8_t *)e + e->target_offset);
+
+      if (t->u.user.name[0] == '\0' &&
+          t->u.target_size ==
+              (uint16_t)XT_ALIGN(sizeof(struct xt_standard_target))) {
+        struct xt_standard_target *st = (struct xt_standard_target *)t;
+        if (st->verdict >= 0) {
+          /* Jump target: find the tracked entry that started at this old
+           * offset and subtract the bytes removed before it. */
+          for (unsigned int k = 0; k < nents; k++) {
+            if (old_offsets[k] == (unsigned int)st->verdict) {
+              st->verdict -= (int)removed_before[k];
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    off += e->next_offset;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Internal: insert_rule_at_hook
  *
  * Inserts new_rule at the very beginning of the given hook's chain.
@@ -468,8 +520,13 @@ static int remove_matching_rules(int fd, const char *table_name,
 
   while (max_retries-- > 0) {
     unsigned char *new_blob = malloc(cur_info.size);
-    if (!new_blob)
+    if (!new_blob) {
+      /* On an EAGAIN refetch iteration cur_base owns a get_table() blob; free
+       * it before bailing so the early return does not leak it. */
+      if (cur_base)
+        free(cur_base);
       return -ENOMEM;
+    }
 
     /* Allocate per-entry tracking arrays */
     unsigned int *old_offsets =
@@ -554,7 +611,7 @@ static int remove_matching_rules(int fd, const char *table_name,
           ei++;
           continue;
         }
-        ds_log("[IPT] remove: dropping '%s' rule at offset %u", target_label(t),
+        ds_log("[IPT] remove: matched '%s' rule at offset %u", target_label(t),
                offset);
         cumulative_gone += e->next_offset;
         removed_count++;
@@ -576,6 +633,12 @@ static int remove_matching_rules(int fd, const char *table_name,
       ret = 0; /* nothing to do */
       break;
     }
+
+    /* Re-base surviving jump verdicts for the bytes just removed; without this
+     * the kernel rejects the table replace with ELOOP (see
+     * fixup_jump_targets_removed). */
+    fixup_jump_targets_removed(new_blob, new_sz, old_offsets, removed_before,
+                               ei + 1);
 
     /* Build ipt_replace */
     size_t replace_sz = sizeof(struct ipt_replace) + new_sz;
@@ -671,6 +734,10 @@ static int remove_matching_rules(int fd, const char *table_name,
       continue;
     }
 
+    ds_warn(
+        "[IPT] remove: table replace on '%s' failed (%s) - caller will fall "
+        "back to the iptables binary",
+        table_name, strerror(err));
     break;
   }
 
@@ -707,7 +774,7 @@ static int should_use_raw_api(void) {
 
 static int open_raw_socket(void) {
   probe_iptables_modules();
-  int fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+  int fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
   if (fd < 0)
     ds_log("[IPT] Failed to open raw socket: %s", strerror(errno));
   return fd;
@@ -1095,69 +1162,75 @@ int ds_ipt_remove_ds_rules(void) {
   uint32_t ds_src, ds_mask;
   parse_cidr(DS_DEFAULT_SUBNET, &ds_src, &ds_mask);
 
-  /* 1. NAT table: remove our MASQUERADE rule */
-  if (fd >= 0) {
-    struct ipt_getinfo info;
-    unsigned char *base = NULL;
-    if (get_table(fd, "nat", &info, &base) == 0) {
-      remove_matching_rules(fd, "nat", &info, ENTRIES_BLOB(base),
-                            NF_INET_POST_ROUTING, ds_src, ds_mask, NULL, 0);
-      free(base);
-    }
+  /* Binary `iptables -D` forms.  Used when there is no raw socket, and as a
+   * fallback whenever a raw-socket table replace fails to commit: the binary
+   * deletes reliably (taking the xtables lock), so the rule is actually removed
+   * rather than merely logged as removed. */
+  char *del_masq[] = {"iptables",
+                      "-t",
+                      "nat",
+                      "-D",
+                      "POSTROUTING",
+                      "-s",
+                      DS_DEFAULT_SUBNET,
+                      "!",
+                      "-d",
+                      DS_DEFAULT_SUBNET,
+                      "-j",
+                      "MASQUERADE",
+                      NULL};
+  char *del_fwd_in[] = {"iptables",    "-D", "FORWARD", "-i",
+                        DS_NAT_BRIDGE, "-j", "ACCEPT",  NULL};
+  char *del_fwd_out[] = {"iptables",    "-D", "FORWARD", "-o",
+                         DS_NAT_BRIDGE, "-j", "ACCEPT",  NULL};
+  char *del_inp[] = {"iptables",    "-D", "INPUT",  "-i",
+                     DS_NAT_BRIDGE, "-j", "ACCEPT", NULL};
 
-    /* 2. Filter table: remove our bridge FORWARD -i rule */
-    base = NULL;
-    if (get_table(fd, "filter", &info, &base) == 0) {
-      remove_matching_rules(fd, "filter", &info, ENTRIES_BLOB(base),
-                            NF_INET_FORWARD, 0, 0, DS_NAT_BRIDGE,
-                            DS_IPT_MATCH_IN);
-      free(base);
-    }
+  struct ds_ipt_del_target {
+    const char *table;
+    unsigned int hook;
+    uint32_t src;
+    uint32_t mask;
+    const char *iface;
+    unsigned int iface_flags;
+    char **binary_del;
+  } targets[] = {
+      {"nat", NF_INET_POST_ROUTING, ds_src, ds_mask, NULL, 0, del_masq},
+      {"filter", NF_INET_FORWARD, 0, 0, DS_NAT_BRIDGE, DS_IPT_MATCH_IN,
+       del_fwd_in},
+      {"filter", NF_INET_FORWARD, 0, 0, DS_NAT_BRIDGE, DS_IPT_MATCH_OUT,
+       del_fwd_out},
+      {"filter", NF_INET_LOCAL_IN, 0, 0, DS_NAT_BRIDGE, DS_IPT_MATCH_IN,
+       del_inp},
+  };
 
-    /* 3. Filter table: remove our bridge FORWARD -o rule */
-    base = NULL;
-    if (get_table(fd, "filter", &info, &base) == 0) {
-      remove_matching_rules(fd, "filter", &info, ENTRIES_BLOB(base),
-                            NF_INET_FORWARD, 0, 0, DS_NAT_BRIDGE,
-                            DS_IPT_MATCH_OUT);
-      free(base);
+  for (size_t i = 0; i < sizeof(targets) / sizeof(targets[0]); i++) {
+    /* rc < 0 means "not removed via the raw path" (no socket, or the kernel
+     * rejected the table replace) -> use the binary.  rc == 0 means the raw
+     * path committed the delete, or nothing matched. */
+    int rc = -1;
+    if (fd >= 0) {
+      struct ipt_getinfo info;
+      unsigned char *base = NULL;
+      if (get_table(fd, targets[i].table, &info, &base) == 0) {
+        rc = remove_matching_rules(fd, targets[i].table, &info,
+                                   ENTRIES_BLOB(base), targets[i].hook,
+                                   targets[i].src, targets[i].mask,
+                                   targets[i].iface, targets[i].iface_flags);
+        free(base);
+      }
     }
-
-    /* 4. Filter table: remove our bridge INPUT rule */
-    base = NULL;
-    if (get_table(fd, "filter", &info, &base) == 0) {
-      remove_matching_rules(fd, "filter", &info, ENTRIES_BLOB(base),
-                            NF_INET_LOCAL_IN, 0, 0, DS_NAT_BRIDGE,
-                            DS_IPT_MATCH_IN);
-      free(base);
+    if (rc < 0) {
+      if (fd >= 0)
+        ds_log("[IPT] remove: raw delete failed for %s/hook%u - using the "
+               "iptables binary",
+               targets[i].table, targets[i].hook);
+      run_command_quiet(targets[i].binary_del);
     }
-    close(fd);
-  } else {
-    /* Binary fallback for cleanup */
-    char *del_masq[] = {"iptables",
-                        "-t",
-                        "nat",
-                        "-D",
-                        "POSTROUTING",
-                        "-s",
-                        DS_DEFAULT_SUBNET,
-                        "!",
-                        "-d",
-                        DS_DEFAULT_SUBNET,
-                        "-j",
-                        "MASQUERADE",
-                        NULL};
-    run_command_quiet(del_masq);
-    char *del_fwd_in[] = {"iptables",    "-D", "FORWARD", "-i",
-                          DS_NAT_BRIDGE, "-j", "ACCEPT",  NULL};
-    run_command_quiet(del_fwd_in);
-    char *del_fwd_out[] = {"iptables",    "-D", "FORWARD", "-o",
-                           DS_NAT_BRIDGE, "-j", "ACCEPT",  NULL};
-    run_command_quiet(del_fwd_out);
-    char *del_inp[] = {"iptables",    "-D", "INPUT",  "-i",
-                       DS_NAT_BRIDGE, "-j", "ACCEPT", NULL};
-    run_command_quiet(del_inp);
   }
+
+  if (fd >= 0)
+    close(fd);
 
   /* 3. MSS clamp: binary only */
   {
@@ -1612,7 +1685,18 @@ int ds_ipt_remove_portforwards(struct ds_config *cfg) {
    * process crashed before the file could be written.
    * We intentionally avoid this path in the normal case: parsing iptables-save
    * output through a shell is slower and depends on the host having sh(1). */
-  if (!had_state) {
+  /* Defense-in-depth: container_ip is already validated to 172.28.x.x at every
+   * ingest point, but Pass 3 is the only path that interpolates it into a shell
+   * command.  Re-validate it as a plain IPv4 literal and skip the sweep
+   * otherwise, so no shell metacharacter can ever reach sh -c. */
+  struct in_addr ip_check;
+  int ip_ok = (inet_pton(AF_INET, container_ip, &ip_check) == 1);
+  if (!had_state && !ip_ok)
+    ds_warn("Skipping iptables-save shell sweep: container IP '%s' is not a "
+            "valid IPv4 literal",
+            container_ip);
+
+  if (!had_state && ip_ok) {
     char cmd[512];
 
     /* Remove PREROUTING DNAT rules whose --to-destination targets this IP */

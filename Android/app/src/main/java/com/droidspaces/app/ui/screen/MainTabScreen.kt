@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -45,25 +48,18 @@ enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.v
 }
 
 /**
- * Main tab screen with optimized state management.
- *
- * Key improvements:
- * 1. Uses AppStateViewModel for backend status (persists across navigation)
- * 2. No redundant state variables (refreshCounter, shouldTriggerAnimatedRefresh removed)
- * 3. Single coroutine scope for all operations
- * 4. Proper recomposition boundaries
- *
- * This fixes the "settings back button glitch" by NOT re-checking backend on navigation.
  * Backend is only checked on:
  * 1. Cold app start
  * 2. Pull-to-refresh
  * 3. Post-installation (when returning from installation flow)
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MainTabScreen(
     containerViewModel: ContainerViewModel,
     skipInitialRefresh: Boolean = false,
+    requestedTab: TabItem? = null,
+    onRequestedTabConsumed: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     onNavigateToInstallation: () -> Unit = {},
     onNavigateToContainerInstallation: (android.net.Uri) -> Unit = {},
@@ -80,15 +76,28 @@ fun MainTabScreen(
     // containerViewModel is now passed as parameter to ensure sharing
 
 
-    // Tab selection - survives configuration changes
-    var selectedTab by rememberSaveable { mutableStateOf(TabItem.Home) }
+    val tabs = remember { TabItem.values() }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+    val selectedTab = tabs[pagerState.currentPage]
+
+    // Jump to the tab requested by a launcher shortcut, then clear the request.
+    LaunchedEffect(requestedTab) {
+        val target = requestedTab ?: return@LaunchedEffect
+        val index = tabs.indexOf(target)
+        if (index >= 0) {
+            pagerState.scrollToPage(index)
+        }
+        onRequestedTabConsumed()
+    }
 
     // Track which container has its action drawer expanded (hoisted for global collapse)
     var expandedContainerName by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Handle back press - return to Home tab if not already there
     BackHandler(enabled = selectedTab != TabItem.Home) {
-        selectedTab = TabItem.Home
+        scope.launch {
+            pagerState.scrollToPage(tabs.indexOf(TabItem.Home))
+        }
     }
 
     // Track if we've already triggered initial load in this session
@@ -283,19 +292,27 @@ fun MainTabScreen(
         // visible region above the bar instead of behind it.
         var bottomBarHeight by remember { mutableStateOf(0.dp) }
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-            ) {
-                when (selectedTab) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                when (tabs[page]) {
                     TabItem.Home -> {
                         HomeTabContent(
                             droidspacesStatus = droidspacesStatus,
                             isChecking = isChecking,
                             isRootAvailable = appStateViewModel.isRootAvailable,
                             onNavigateToInstallation = onNavigateToInstallation,
-                            onNavigateToContainers = { selectedTab = TabItem.Containers },
-                            onNavigateToControlPanel = { selectedTab = TabItem.ControlPanel },
+                            onNavigateToContainers = {
+                                scope.launch {
+                                    pagerState.scrollToPage(tabs.indexOf(TabItem.Containers))
+                                }
+                            },
+                            onNavigateToControlPanel = {
+                                scope.launch {
+                                    pagerState.scrollToPage(tabs.indexOf(TabItem.ControlPanel))
+                                }
+                            },
                             containerCount = containerCount,
                             runningCount = runningCount,
                             onRefresh = { performRefresh(TabItem.Home) }
@@ -341,8 +358,10 @@ fun MainTabScreen(
             ) {
                 MainBottomBar(
                     selectedTab = selectedTab,
-                    onTabSelected = { 
-                        selectedTab = it
+                    onTabSelected = { tab ->
+                        scope.launch {
+                            pagerState.scrollToPage(tabs.indexOf(tab))
+                        }
                         expandedContainerName = null
                     }
                 )

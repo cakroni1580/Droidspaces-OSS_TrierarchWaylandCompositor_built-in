@@ -449,6 +449,15 @@ int ds_config_load(const char *config_path, struct ds_config *cfg) {
          * Returns 1 on success, 0 on parse/range error. */
         int valid = 1;
 
+        /* Only tcp/udp are valid protocols; the CLI --port path rejects
+         * anything else, so mirror that here instead of storing a bogus proto
+         * that would later be handed to iptables. */
+        if (strcmp(pf->proto, "tcp") != 0 && strcmp(pf->proto, "udp") != 0) {
+          ds_warn("config: invalid protocol '%s' in port_forwards - skipping",
+                  pf->proto);
+          valid = 0;
+        }
+
         /* Host side */
         {
           char *dash = strchr(host_side, '-');
@@ -609,6 +618,10 @@ void ds_config_free(struct ds_config *cfg) {
   free_config_binds(cfg);
   free_config_env_vars(cfg);
   free_config_unknown_lines(cfg);
+  free(cfg->tx11_extra_flags);
+  cfg->tx11_extra_flags = NULL;
+  free(cfg->virgl_extra_flags);
+  cfg->virgl_extra_flags = NULL;
 }
 
 static void ds_config_serialize_known(FILE *f, struct ds_config *cfg) {
@@ -808,10 +821,7 @@ int ds_config_save(const char *config_path, struct ds_config *cfg) {
       }
       free(buf_cfg);
       free(buf_disk);
-      free_config_binds(&disk_cfg);
-      free_config_unknown_lines(&disk_cfg);
-      free(disk_cfg.tx11_extra_flags);
-      free(disk_cfg.virgl_extra_flags);
+      ds_config_free(&disk_cfg);
 
       if (is_equal) {
         if (!cfg->config_file_existed) {
@@ -822,13 +832,26 @@ int ds_config_save(const char *config_path, struct ds_config *cfg) {
     }
   }
 
+  /* Step 2: Write all configurations to a temporary file.  Use mkstemp (random
+   * name + O_EXCL) with an explicit 0644 mode: the daemon runs with umask 0, so
+   * a plain fopen would leave container.config world-writable, and a
+   * predictable "<path>.tmp" could be pre-planted as a symlink. */
   char temp_path[PATH_MAX];
-  snprintf(temp_path, sizeof(temp_path), "%s.tmp", config_path);
-
-  /* Step 2: Write all configurations to temporary file */
-  FILE *f_out = fopen(temp_path, "we");
-  if (!f_out)
+  int tn = snprintf(temp_path, sizeof(temp_path), "%s.XXXXXX", config_path);
+  if (tn < 0 || tn >= (int)sizeof(temp_path))
     return -1;
+  int tfd = mkstemp(temp_path);
+  if (tfd < 0)
+    return -1;
+  (void)fcntl(tfd, F_SETFD, FD_CLOEXEC);
+  if (fchmod(tfd, 0644) < 0) { /* best effort; config is world-readable 0644 */
+  }
+  FILE *f_out = fdopen(tfd, "w");
+  if (!f_out) {
+    close(tfd);
+    unlink(temp_path);
+    return -1;
+  }
 
   ds_config_serialize_known(f_out, cfg);
 

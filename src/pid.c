@@ -191,6 +191,25 @@ static void get_container_name_from_pidfile(const char *pidfile, char *name,
     *dot = '\0';
 }
 
+/* Resolve a scanned pidfile dirent into tmp_cfg->container_name / ->pidfile. */
+static void resolve_scanned_container(const char *dirent_name,
+                                      struct ds_config *tmp_cfg) {
+  char clean_name[256];
+  get_container_name_from_pidfile(dirent_name, clean_name, sizeof(clean_name));
+  safe_strncpy(tmp_cfg->container_name, clean_name,
+               sizeof(tmp_cfg->container_name));
+  resolve_pidfile_from_name(clean_name, tmp_cfg->pidfile,
+                            sizeof(tmp_cfg->pidfile));
+}
+
+/* Remove a stale container's pidfile and its sidecar metadata (.mount/.init).
+ */
+static void prune_stale_pidfile(const char *pidfile) {
+  unlink(pidfile);
+  remove_mount_path(pidfile);
+  remove_init_type(pidfile);
+}
+
 int count_running_containers(char *first_name, size_t size) {
   DIR *d = opendir(get_pids_dir());
   if (!d)
@@ -202,26 +221,16 @@ int count_running_containers(char *first_name, size_t size) {
   while ((ent = readdir(d)) != NULL) {
     if (is_pid_file(ent->d_name)) {
       struct ds_config tmp_cfg = {0};
-      char clean_name[256];
-      get_container_name_from_pidfile(ent->d_name, clean_name,
-                                      sizeof(clean_name));
-
-      safe_strncpy(tmp_cfg.container_name, clean_name,
-                   sizeof(tmp_cfg.container_name));
-      resolve_pidfile_from_name(clean_name, tmp_cfg.pidfile,
-                                sizeof(tmp_cfg.pidfile));
+      resolve_scanned_container(ent->d_name, &tmp_cfg);
 
       pid_t pid;
       if (is_container_running(&tmp_cfg, &pid)) {
         if (count == 0 && first_name && size > 0) {
-          safe_strncpy(first_name, clean_name, size);
+          safe_strncpy(first_name, tmp_cfg.container_name, size);
         }
         count++;
       } else if (pid == 0 && access(tmp_cfg.pidfile, F_OK) == 0) {
-        /* Explicit pruning during scan */
-        unlink(tmp_cfg.pidfile);
-        remove_mount_path(tmp_cfg.pidfile);
-        remove_init_type(tmp_cfg.pidfile);
+        prune_stale_pidfile(tmp_cfg.pidfile);
       }
     }
   }
@@ -453,14 +462,7 @@ int show_containers(struct ds_config *cfg) {
   while ((ent = readdir(d)) != NULL) {
     if (is_pid_file(ent->d_name)) {
       struct ds_config tmp_cfg = {0};
-      char clean_name[128];
-      get_container_name_from_pidfile(ent->d_name, clean_name,
-                                      sizeof(clean_name));
-
-      safe_strncpy(tmp_cfg.container_name, clean_name,
-                   sizeof(tmp_cfg.container_name));
-      resolve_pidfile_from_name(clean_name, tmp_cfg.pidfile,
-                                sizeof(tmp_cfg.pidfile));
+      resolve_scanned_container(ent->d_name, &tmp_cfg);
 
       pid_t pid;
       if (is_container_running(&tmp_cfg, &pid)) {
@@ -481,7 +483,7 @@ int show_containers(struct ds_config *cfg) {
           containers = tmp;
         }
 
-        safe_strncpy(containers[count].name, clean_name,
+        safe_strncpy(containers[count].name, tmp_cfg.container_name,
                      sizeof(containers[count].name));
         containers[count].pid = pid;
         size_t nlen = strlen(containers[count].name);
@@ -489,10 +491,7 @@ int show_containers(struct ds_config *cfg) {
           max_name_len = nlen;
         count++;
       } else if (pid == 0 && access(tmp_cfg.pidfile, F_OK) == 0) {
-        /* Explicit pruning during scan */
-        unlink(tmp_cfg.pidfile);
-        remove_mount_path(tmp_cfg.pidfile);
-        remove_init_type(tmp_cfg.pidfile);
+        prune_stale_pidfile(tmp_cfg.pidfile);
       }
     }
   }
@@ -678,7 +677,22 @@ int ds_metadata_sync(pid_t pid) {
     build_proc_root_path(pid, "/run/droidspaces/mount", path, sizeof(path));
     if (read_file(path, mount, sizeof(mount)) >= 0) {
       mount[strcspn(mount, "\n")] = '\0';
-      save_mount_path(pidfile, mount);
+      /* This marker is read from inside the container's own root, so a
+       * compromised container could plant an arbitrary path; it later feeds
+       * unmount_rootfs_img()/umount2() on the host.  A legitimate image mount
+       * is deterministically DS_IMG_MOUNT_ROOT_UNIVERSAL/<sanitized-name>
+       * (find_available_mountpoint), so require an exact match and ignore
+       * anything else -- this also prevents pointing at another container's
+       * mount. */
+      char expected_mount[PATH_MAX];
+      snprintf(expected_mount, sizeof(expected_mount), "%s/%s",
+               DS_IMG_MOUNT_ROOT_UNIVERSAL, safe_name);
+      if (strcmp(mount, expected_mount) == 0)
+        save_mount_path(pidfile, mount);
+      else if (mount[0])
+        ds_warn("Ignoring unexpected mount marker '%s' from container %d "
+                "(expected %s)",
+                mount, pid, expected_mount);
     }
   }
 

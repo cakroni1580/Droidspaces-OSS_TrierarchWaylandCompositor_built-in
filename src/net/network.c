@@ -253,7 +253,9 @@ static pthread_mutex_t g_gw_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int g_route_monitor_sock = -1;
 static volatile sig_atomic_t g_stop_monitor = 0;
 static pthread_t g_route_monitor_tid;
-static int g_route_monitor_started = 0; /* guarded by g_gw_mutex */
+static int g_route_monitor_started = 0; /* loop active; guarded by g_gw_mutex */
+static int g_route_monitor_needs_join = 0; /* thread created, not yet joined;
+                                              guarded by g_gw_mutex */
 /* Set once any container installs localhost port-forward DNAT rules.
  * Sticky - never cleared, since route_localnet=1 is harmless to leave on
  * and other containers may still depend on it. */
@@ -271,7 +273,7 @@ static int g_upstream_count = 0;
  * On Android, the active data interface has IFF_RUNNING set; an interface
  * that is physically present but not carrying data loses IFF_RUNNING. */
 static int iface_is_running(const char *ifname) {
-  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
   if (fd < 0)
     return 0;
   struct ifreq ifr;
@@ -649,7 +651,7 @@ static void ds_net_setup_android_routing(ds_nl_ctx_t *ctx) {
  * ---------------------------------------------------------------------------*/
 
 int ds_net_disable_tx_checksum(const char *ifname) {
-  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
   if (fd < 0)
     return -errno;
 
@@ -1897,7 +1899,7 @@ static void *route_monitor_loop(void *arg) {
 
   ds_log("[NET] Uplink route monitor started (automatic detection)");
 
-  int sock = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+  int sock = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
   if (sock < 0) {
     ds_warn("[NET] Route monitor: failed to open netlink socket: %s",
             strerror(errno));
@@ -1970,6 +1972,8 @@ static void *route_monitor_loop(void *arg) {
         break;
       if (errno == EINTR)
         continue;
+      ds_warn("[NET] Route monitor: poll failed (%s) - stopping",
+              strerror(errno));
       break;
     }
 
@@ -1979,12 +1983,30 @@ static void *route_monitor_loop(void *arg) {
     }
 
     ssize_t len = recv(sock, buf, sizeof(buf), 0);
-    if (len <= 0) {
+    if (len < 0) {
       if (g_stop_monitor)
         break;
-      if (len < 0 && (errno == EINTR || errno == EAGAIN))
+      if (errno == EINTR || errno == EAGAIN)
         continue;
+      if (errno == ENOBUFS) {
+        /* The netlink multicast receive buffer overflowed during an event
+         * burst (e.g. a container reboot tearing down and recreating veths).
+         * The kernel dropped notifications but the socket is still valid:
+         * resync by reprobing the uplink and keep monitoring, rather than
+         * treating a recoverable condition as fatal and killing the thread. */
+        do_uplink_reprobe();
+        continue;
+      }
+      ds_warn("[NET] Route monitor: recv failed (%s) - stopping",
+              strerror(errno));
       break;
+    }
+    if (len == 0) {
+      /* Only our own shutdown() during stop yields a 0-length read; keep
+       * monitoring otherwise instead of exiting. */
+      if (g_stop_monitor)
+        break;
+      continue;
     }
 
     int should_reprobe = 0;
@@ -2028,7 +2050,10 @@ static void *route_monitor_loop(void *arg) {
           struct rtattr *rta = RTM_RTA(rtm);
           int rlen = (int)RTM_PAYLOAD(h);
           for (; RTA_OK(rta, rlen); rta = RTA_NEXT(rta, rlen)) {
-            if (rta->rta_type == RTA_OIF)
+            /* RTA_OK bounds only the declared length; require a full 4-byte
+             * payload before dereferencing (defensive; kernel-sourced). */
+            if (rta->rta_type == RTA_OIF &&
+                RTA_PAYLOAD(rta) >= (int)sizeof(int))
               oif = *(int *)RTA_DATA(rta);
           }
           char evname[IFNAMSIZ] = {0};
@@ -2060,6 +2085,11 @@ static void *route_monitor_loop(void *arg) {
   pthread_mutex_lock(&g_gw_mutex);
   close(sock);
   g_route_monitor_sock = -1;
+  /* Mark the loop inactive so a later ds_net_start_route_monitor() (e.g. the
+   * next reboot cycle) spawns a fresh thread instead of no-op'ing on a stale
+   * flag.  needs_join stays set: this thread has exited but is still joinable,
+   * and start/stop will reap it. */
+  g_route_monitor_started = 0;
   pthread_mutex_unlock(&g_gw_mutex);
 
   ds_log("[NET] Uplink route monitor stopped");
@@ -2068,18 +2098,21 @@ static void *route_monitor_loop(void *arg) {
 
 void ds_net_stop_route_monitor(void) {
   pthread_mutex_lock(&g_gw_mutex);
-  int started = g_route_monitor_started;
+  /* Gate the join on needs_join, not started: a thread that self-exited on a
+   * fatal error has started==0 but is still joinable and must be reaped. */
+  int needs_join = g_route_monitor_needs_join;
   pthread_t tid = g_route_monitor_tid;
   g_stop_monitor = 1;
   if (g_route_monitor_sock >= 0)
     shutdown(g_route_monitor_sock, SHUT_RDWR);
+  g_route_monitor_needs_join = 0;
   pthread_mutex_unlock(&g_gw_mutex);
 
   /* Join so the monitor is fully stopped before cleanup removes the shared
    * MASQUERADE / FIB policy rules - otherwise an in-flight do_uplink_reprobe()
    * could re-add a rule we just deleted, or rewrite ip_forward after teardown.
    */
-  if (started) {
+  if (needs_join) {
     pthread_join(tid, NULL);
     pthread_mutex_lock(&g_gw_mutex);
     g_route_monitor_started = 0;
@@ -2095,21 +2128,36 @@ void ds_net_start_route_monitor(void) {
 
   pthread_mutex_lock(&g_gw_mutex);
   /* Idempotent: exactly one monitor thread per process.  setup_veth_host_side
-   * calls this on every boot cycle (including reboots, which never stop the
-   * monitor); without this guard each reboot would spawn another thread, all
-   * racing the same FIB policy rule.  The monitor tracks the host uplink, which
-   * is independent of the container PID, so a single instance rightly persists
-   * across the container's reboots.  Joinable (default attr) so stop can join.
+   * calls this on every boot cycle (including reboots); the monitor tracks the
+   * host uplink, which is independent of the container PID, so a single live
+   * instance rightly persists across the container's reboots.
    */
   if (g_route_monitor_started) {
     pthread_mutex_unlock(&g_gw_mutex);
     return;
   }
+  /* Not running.  A previous thread may have self-exited on a fatal error
+   * without being joined (needs_join==1, started==0); reap it before spawning
+   * a replacement so its resources are freed and g_route_monitor_tid is not
+   * overwritten while still joinable.  Join outside the mutex (the pattern stop
+   * uses) - the exiting thread takes g_gw_mutex on its way out. */
+  int reap = g_route_monitor_needs_join;
+  pthread_t old_tid = g_route_monitor_tid;
+  g_route_monitor_needs_join = 0;
+  pthread_mutex_unlock(&g_gw_mutex);
+
+  if (reap)
+    pthread_join(old_tid, NULL);
+
+  pthread_mutex_lock(&g_gw_mutex);
   g_stop_monitor = 0;
-  if (pthread_create(&g_route_monitor_tid, NULL, route_monitor_loop, NULL) != 0)
+  if (pthread_create(&g_route_monitor_tid, NULL, route_monitor_loop, NULL) !=
+      0) {
     ds_warn("[NET] Failed to start route monitor thread: %s", strerror(errno));
-  else
+  } else {
     g_route_monitor_started = 1;
+    g_route_monitor_needs_join = 1;
+  }
   pthread_mutex_unlock(&g_gw_mutex);
 }
 

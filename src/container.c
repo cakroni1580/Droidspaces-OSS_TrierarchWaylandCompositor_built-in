@@ -746,9 +746,9 @@ int start_rootfs(struct ds_config *cfg) {
       ds_error("Container failed to boot correctly.");
       /* If pid is still alive, we might want to kill it, but monitor usually
        * handles this. Let's just return error so parent doesn't report
-       * success.
-       */
-      ds_config_free(cfg);
+       * success.  Teardown (including ds_config_free) is owned by the single
+       * cleanup: block below - freeing here would leave cleanup reading a
+       * freed cfg and then double-free it. */
       goto cleanup;
     }
 
@@ -877,20 +877,27 @@ int stop_rootfs_with_timeout(struct ds_config *cfg, int skip_unmount,
           .sleeptime = 3,
       };
 
-      int fd = open(initctl, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+      int fd = open(initctl, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
       if (fd < 0) {
         /* Fallback: try /dev/initctl (historical path, used by Slackware) */
         snprintf(initctl, sizeof(initctl), "/proc/%d/root/dev/initctl", pid);
-        fd = open(initctl, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+        fd = open(initctl, O_WRONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
       }
 
-      if (fd >= 0) {
+      /* Only write into an actual FIFO.  The container fully controls
+       * /run/initctl inside its own root: O_NOFOLLOW rejects a symlink at the
+       * final component, and the S_ISFIFO check rejects a regular file the
+       * container may have planted to capture the host-written init_request. */
+      struct stat ictl_st;
+      if (fd >= 0 && fstat(fd, &ictl_st) == 0 && S_ISFIFO(ictl_st.st_mode)) {
         if (write(fd, &req, sizeof(req)) != (ssize_t)sizeof(req))
           ds_warn("sysvinit: short write to initctl, falling back to SIGPWR");
         close(fd);
       } else {
-        ds_warn("sysvinit: cannot open initctl (tried /run and /dev), falling "
-                "back to SIGPWR");
+        if (fd >= 0)
+          close(fd);
+        ds_warn("sysvinit: cannot open initctl FIFO (tried /run and /dev), "
+                "falling back to SIGPWR");
         kill(pid, SIGPWR);
       }
       break;
@@ -994,7 +1001,7 @@ int enter_namespace(pid_t pid, struct ds_config *cfg) {
   /* 1. Open all namespace descriptors first (CRITICAL: before any setns) */
   for (int i = 0; i < 6; i++) {
     snprintf(path, sizeof(path), "/proc/%d/ns/%s", pid, ns_names[i]);
-    ns_fds[i] = open(path, O_RDONLY);
+    ns_fds[i] = open(path, O_RDONLY | O_CLOEXEC);
     if (ns_fds[i] < 0) {
       if (i == 0) { /* mnt is mandatory */
         ds_error("Failed to open mount namespace at %s: %s", path,
@@ -1069,7 +1076,7 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
   tty.master = tty.slave = -1;
 
   int sv[2];
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) < 0) {
+  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
     close(tty.master);
     close(tty.slave);
     free_config_env_vars(cfg);
@@ -1275,6 +1282,31 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
   return 0;
 }
 
+/* Append arg to buf as a single-quoted shell word, space-separated from any
+ * prior content unless first.  Embedded single quotes use the '\'' idiom.
+ * Writes at most size-1 chars and always NUL-terminates; returns the new
+ * offset.  Preserves argv word boundaries across su -c's shell. */
+static size_t shell_quote_append(char *buf, size_t off, size_t size,
+                                 const char *arg, int first) {
+  if (!first && off < size - 1)
+    buf[off++] = ' ';
+  if (off < size - 1)
+    buf[off++] = '\'';
+  for (const char *p = arg; *p; p++) {
+    if (*p == '\'') {
+      const char *esc = "'\\''"; /* close quote, escaped quote, reopen quote */
+      for (const char *e = esc; *e && off < size - 1; e++)
+        buf[off++] = *e;
+    } else if (off < size - 1) {
+      buf[off++] = *p;
+    }
+  }
+  if (off < size - 1)
+    buf[off++] = '\'';
+  buf[off] = '\0';
+  return off;
+}
+
 int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
                   const char *as_user) {
   (void)argc;
@@ -1354,19 +1386,17 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
          * Otherwise join all args into a single shell string. */
         char cmd_buf[4096];
         if (argv[1] == NULL) {
+          /* Single argument is treated as a shell command string as-is, so a
+           * caller can pass e.g. `-- "ls -la | grep foo"`. */
           safe_strncpy(cmd_buf, argv[0], sizeof(cmd_buf));
         } else {
+          /* Multiple args: shell-quote each so word boundaries (spaces, globs,
+           * metacharacters) survive su's shell -- e.g. `-- rm "a b"` stays two
+           * arguments instead of being resplit into three. */
           size_t off = 0;
-          for (int k = 0; argv[k] && off < sizeof(cmd_buf) - 1; k++) {
-            if (k > 0 && off < sizeof(cmd_buf) - 2)
-              cmd_buf[off++] = ' ';
-            size_t al = strlen(argv[k]);
-            if (off + al >= sizeof(cmd_buf) - 1)
-              al = sizeof(cmd_buf) - 1 - off;
-            memcpy(cmd_buf + off, argv[k], al);
-            off += al;
-          }
-          cmd_buf[off] = '\0';
+          for (int k = 0; argv[k]; k++)
+            off = shell_quote_append(cmd_buf, off, sizeof(cmd_buf), argv[k],
+                                     k == 0);
         }
         char *su_argv[] = {"su", "-",     (char *)(uintptr_t)as_user,
                            "-c", cmd_buf, NULL};

@@ -8,6 +8,10 @@
 #include "droidspace.h"
 #include "socketd_protocol.h"
 #include <ftw.h>
+#include <grp.h>
+#include <pwd.h>
+#include <sys/random.h>
+#include <sys/socket.h>
 #include <sys/xattr.h>
 #include <time.h>
 
@@ -74,6 +78,15 @@ int ds_parse_iface_csv(const char *val, char ifaces[][IFNAMSIZ], int *count,
 /* Mirrors ContainerManager.sanitizeContainerName() in the Android app.
  * Replaces spaces with dashes so directory names are consistent. */
 void sanitize_container_name(const char *name, char *out, size_t size) {
+  /* Guard size == 0: 'size - 1' is size_t, so it would wrap to SIZE_MAX and
+   * turn the copy into an unbounded write.  (safe_strncpy/read_file guard this
+   * the same way.) */
+  if (!out || size == 0)
+    return;
+  if (!name) {
+    out[0] = '\0';
+    return;
+  }
   size_t i;
   for (i = 0; i < size - 1 && name[i] != '\0'; i++)
     out[i] = (name[i] == ' ') ? '-' : name[i];
@@ -420,20 +433,32 @@ int write_file(const char *path, const char *content) {
 }
 
 int write_file_atomic(const char *path, const char *content) {
+  /* Randomized name + O_EXCL (via mkstemp) so a symlink pre-planted at a
+   * predictable "<path>.tmp" cannot redirect this (often root-owned) write or
+   * let it truncate an arbitrary followed target. */
   char tmp[PATH_MAX];
-  snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-
-  if (write_file(tmp, content) < 0)
+  int n = snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
+  if (n < 0 || n >= (int)sizeof(tmp))
     return -1;
 
-  /* fsync before rename - ensures data hits disk on Android before reboot */
-  int sync_fd = open(tmp, O_RDONLY | O_CLOEXEC);
-  if (sync_fd >= 0) {
-    fsync(sync_fd);
-    close(sync_fd);
-  }
+  int fd = mkstemp(tmp);
+  if (fd < 0)
+    return -1;
+  (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
 
-  if (rename(tmp, path) < 0) {
+  size_t len = strlen(content);
+  int ok = (write_all(fd, content, len) == (ssize_t)len);
+
+  /* mkstemp creates the file 0600; preserve the previous 0644 semantics. */
+  if (ok && fchmod(fd, 0644) < 0)
+    ok = 0;
+
+  /* fsync before rename - ensures data hits disk on Android before reboot. */
+  if (ok && fsync(fd) < 0)
+    ok = 0;
+  close(fd);
+
+  if (!ok || rename(tmp, path) < 0) {
     unlink(tmp);
     return -1;
   }
@@ -512,27 +537,19 @@ int generate_uuid(char *buf, size_t size) {
     }
   }
 
-  /* Fallback path: seeded rand() */
-  static int seeded = 0;
-  if (!seeded) {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
+  /* Fallback path: getrandom(2).  Unlike /dev/urandom it needs no device node
+   * (e.g. when /dev is not yet populated).  If it too is unavailable, fail
+   * closed rather than emit a predictable time+pid-seeded rand() identifier. */
+  ssize_t g = getrandom(raw, sizeof(raw), 0);
+  if (g == (ssize_t)sizeof(raw)) {
+    for (int i = 0; i < (int)sizeof(raw); i++)
+      snprintf(buf + i * 2, 3, "%02x", raw[i]);
 
-    unsigned int seed =
-        (unsigned int)(ts.tv_nsec ^ ts.tv_sec ^ getpid() ^ getppid());
-
-    srand(seed);
-    seeded = 1;
+    buf[DS_UUID_LEN] = '\0';
+    return 0;
   }
 
-  for (int i = 0; i < DS_UUID_LEN / 2; i++)
-    raw[i] = (unsigned char)(rand() & 0xFF);
-
-  for (int i = 0; i < (int)sizeof(raw); i++)
-    snprintf(buf + i * 2, 3, "%02x", raw[i]);
-
-  buf[DS_UUID_LEN] = '\0';
-  return 0;
+  return -1;
 }
 
 /* ---------------------------------------------------------------------------
@@ -723,18 +740,21 @@ int read_and_validate_pid(const char *pidfile, pid_t *pid_out) {
  * Mount sidecar files (.mount)
  * ---------------------------------------------------------------------------*/
 
-/* Internal helper to convert pidfile path to mount sidecar path: foo.pid ->
- * foo.mount */
-static void pidfile_to_mountfile(const char *pidfile, char *buf, size_t size) {
+/* Convert a pidfile path to a sibling sidecar path with the given extension:
+ * foo.pid -> foo<ext> (replacing a trailing .pid, else appending). */
+static void pidfile_to_sidecar(const char *pidfile, const char *ext, char *buf,
+                               size_t size) {
   safe_strncpy(buf, pidfile, size);
   char *dot = strrchr(buf, '.');
-  if (dot && strcmp(dot, DS_EXT_PID) == 0) {
-    /* If it ends in .pid, replace it */
-    snprintf(dot, size - (size_t)(dot - buf), DS_EXT_MOUNT);
-  } else {
-    /* Otherwise just append */
-    strncat(buf, DS_EXT_MOUNT, size - strlen(buf) - 1);
-  }
+  if (dot && strcmp(dot, DS_EXT_PID) == 0)
+    snprintf(dot, size - (size_t)(dot - buf), "%s", ext);
+  else
+    strncat(buf, ext, size - strlen(buf) - 1);
+}
+
+/* foo.pid -> foo.mount */
+static void pidfile_to_mountfile(const char *pidfile, char *buf, size_t size) {
+  pidfile_to_sidecar(pidfile, DS_EXT_MOUNT, buf, size);
 }
 
 /* Save mount path alongside a pidfile: foo.pid -> foo.mount */
@@ -760,16 +780,9 @@ int remove_mount_path(const char *pidfile) {
  * Init-type sidecar files (.init)
  * ---------------------------------------------------------------------------*/
 
+/* foo.pid -> foo.init */
 static void pidfile_to_initfile(const char *pidfile, char *buf, size_t size) {
-  safe_strncpy(buf, pidfile, size);
-  char *dot = strrchr(buf, '.');
-  if (dot && strcmp(dot, DS_EXT_PID) == 0) {
-    /* If it ends in .pid, replace it */
-    snprintf(dot, size - (size_t)(dot - buf), DS_EXT_INIT);
-  } else {
-    /* Otherwise just append */
-    strncat(buf, DS_EXT_INIT, size - strlen(buf) - 1);
-  }
+  pidfile_to_sidecar(pidfile, DS_EXT_INIT, buf, size);
 }
 
 static const char *init_type_to_string(ds_init_type_t type) {
@@ -2518,6 +2531,89 @@ void ds_oom_protect(void) {
   }
 }
 
+void ds_daemon_child_preamble(void) {
+  /* Ignore hangups, keyboard interrupts, and broken pipes so the helper
+   * survives terminal disconnects (SIGTERM remains the shutdown signal). */
+  signal(SIGHUP, SIG_IGN);
+  signal(SIGINT, SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+  signal(SIGPIPE, SIG_IGN);
+  /* Protect from the OOM killer while still root, before any privilege drop. */
+  ds_oom_protect();
+}
+
+int ds_peer_in_pidns(pid_t peer_pid) {
+  if (peer_pid <= 0)
+    return 1; /* unknown -> fail open */
+
+  char path[64], self_ns[64], peer_ns[64];
+  ssize_t sn = readlink("/proc/self/ns/pid", self_ns, sizeof(self_ns) - 1);
+  snprintf(path, sizeof(path), "/proc/%d/ns/pid", (int)peer_pid);
+  ssize_t pn = readlink(path, peer_ns, sizeof(peer_ns) - 1);
+  if (sn <= 0 || pn <= 0)
+    return 1; /* cannot determine -> fail open, never wrongly deny */
+
+  self_ns[sn] = '\0';
+  peer_ns[pn] = '\0';
+  return strcmp(self_ns, peer_ns) == 0;
+}
+
+int ds_peer_authorized(int fd, const char *group_name) {
+#ifdef SO_PEERCRED
+  struct ucred cred;
+  socklen_t clen = sizeof(cred);
+  memset(&cred, 0, sizeof(cred));
+  if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &clen) < 0 ||
+      clen != sizeof(cred))
+    return 0;
+
+  /* Abstract sockets are network-namespace scoped, so reject peers outside our
+   * PID namespace (host-net container guard) before any uid/group check. */
+  if (!ds_peer_in_pidns(cred.pid))
+    return 0;
+
+  if (cred.uid == 0)
+    return 1;
+
+  if (!group_name)
+    return 0;
+  struct group *gr = getgrnam(group_name);
+  struct passwd *pw = getpwuid(cred.uid);
+  if (!gr || !pw)
+    return 0;
+
+  /* getgrouplist() returns -1 when the user is in more than ngroups groups,
+   * setting ngroups to the required count while filling only the first slots.
+   * Reallocate and retry so a member with many supplementary groups is still
+   * authorized instead of being read out of bounds / wrongly denied. */
+  int ngroups = 64;
+  gid_t stackgroups[64];
+  gid_t *groups = stackgroups;
+  gid_t *heapgroups = NULL;
+  int authorized = 0;
+  if (getgrouplist(pw->pw_name, pw->pw_gid, groups, &ngroups) < 0) {
+    heapgroups = malloc(sizeof(gid_t) * (size_t)ngroups);
+    if (heapgroups &&
+        getgrouplist(pw->pw_name, pw->pw_gid, heapgroups, &ngroups) >= 0)
+      groups = heapgroups;
+    else
+      ngroups = 0; /* fail closed */
+  }
+  for (int i = 0; i < ngroups; i++) {
+    if (groups[i] == gr->gr_gid) {
+      authorized = 1;
+      break;
+    }
+  }
+  free(heapgroups);
+  return authorized;
+#else
+  (void)fd;
+  (void)group_name;
+  return 0;
+#endif
+}
+
 /*
  * Fork a log-relay child that reads from pipe_read_fd and writes timestamped
  * lines to <logs_dir>/<log_file> with [tag] prefix.  The relay ignores all
@@ -2664,16 +2760,46 @@ pid_t ds_spawn_daemon(ds_child_fn child_fn, void *user_data,
  */
 int ds_bind_mount_socket(const char *src, const char *dst, uid_t uid,
                          const char *label) {
-  int fd = open(dst, O_WRONLY | O_CREAT | O_CLOEXEC, 0666);
+  /* O_NOFOLLOW: never create through, chown/chmod, or bind-mount over a symlink
+   * planted at dst (which lives in the container's own /tmp).  Operate on the
+   * opened inode via fchown/fchmod so there is no path-re-resolution race. */
+  int fd = open(dst, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0666);
   if (fd >= 0) {
-    close(fd);
-    if (chown(dst, uid, uid) < 0) { /* ignore */
+    if (fchown(fd, uid, uid) < 0) { /* ignore */
     }
-    chmod(dst, 0666);
+    fchmod(fd, 0666);
+    close(fd);
+  } else {
+    struct stat st;
+    if (lstat(dst, &st) == 0 && S_ISLNK(st.st_mode)) {
+      ds_warn("[%s] refusing to bind-mount socket: %s is a symlink", label,
+              dst);
+      return -1;
+    }
   }
   if (mount(src, dst, NULL, MS_BIND, NULL) != 0) {
     ds_warn("[%s] failed to bind-mount socket: %s", label, strerror(errno));
     return -1;
   }
+  return 0;
+}
+
+int ds_bridge_termux_socket(const char *leaf, const char *dst,
+                            const char *env_key, const char *env_val,
+                            const char *label) {
+  char src[PATH_MAX];
+  snprintf(src, sizeof(src), "%s/%s", DS_TERMUX_TMP_OLDROOT, leaf);
+
+  struct stat st;
+  if (stat(src, &st) != 0) {
+    ds_warn("%s: socket not found at %s - skipping socket bridge", label, src);
+    return 0;
+  }
+
+  if (ds_bind_mount_socket(src, dst, st.st_uid, label) < 0)
+    return 0;
+
+  ds_log("%s: socket bind-mounted into container", label);
+  setenv(env_key, env_val, 1);
   return 0;
 }

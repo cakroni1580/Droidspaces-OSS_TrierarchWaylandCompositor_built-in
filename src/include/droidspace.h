@@ -544,12 +544,29 @@ void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
                            pid_t *pid_out, const char *pidfile,
                            const char *sock_path, const char *tag);
 void ds_oom_protect(void);
+/* Common preamble for a forked long-lived daemon child (audio/GPU/X11 helper):
+ * ignore terminal-disconnect signals so it outlives the launching session and
+ * protect it from the OOM killer.  Must run while still root. */
+void ds_daemon_child_preamble(void);
+/* Return 1 if peer_pid shares this process's PID namespace (or if it cannot be
+ * determined), 0 only on a positive mismatch.  Used by the abstract-socket
+ * authorizers to reject host-net container peers. */
+int ds_peer_in_pidns(pid_t peer_pid);
+/* Authorize a connected AF_UNIX peer: allow root, or a member of group_name,
+ * but only when the peer shares our PID namespace.  Returns 1 if authorized. */
+int ds_peer_authorized(int fd, const char *group_name);
 void ds_spawn_log_relay(int pipe_read_fd, const char *log_file,
                         const char *tag);
 pid_t ds_spawn_daemon(ds_child_fn child_fn, void *user_data,
                       const char *log_file, const char *tag, const char *label);
 int ds_bind_mount_socket(const char *src, const char *dst, uid_t uid,
                          const char *label);
+/* Bridge a Termux host socket (DS_TERMUX_TMP_OLDROOT/<leaf>) into the container
+ * at dst (owned by the host socket's uid), then export env_key=env_val.
+ * Best-effort: warns and skips if the source is absent.  Always returns 0. */
+int ds_bridge_termux_socket(const char *leaf, const char *dst,
+                            const char *env_key, const char *env_val,
+                            const char *label);
 
 /* ---------------------------------------------------------------------------
  * config.c

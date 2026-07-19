@@ -294,8 +294,15 @@ static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
   /* Pass 2: emit with recomputed aggregate */
   int agg_done = 0;
   while (fgets(line, sizeof(line), f)) {
-    if (off + 1024 >= cap) {
-      cap *= 2;
+    /* A single /proc/stat line (intr, softirq) can be up to sizeof(line)-1
+     * bytes on hosts with many IRQ vectors.  A fixed-headroom guard is not
+     * enough: size the growth to the actual line length (plus slack for the
+     * generated aggregate "cpu" line and the trailing NUL) before either the
+     * memcpy passthrough or the snprintf below can write. */
+    size_t need = strlen(line) + 512;
+    if (off + need >= cap) {
+      while (off + need >= cap)
+        cap *= 2;
       char *nb = realloc(buf, cap);
       if (!nb) {
         free(buf);
@@ -403,7 +410,15 @@ static char *gen_uptime(struct ds_config *cfg, size_t *out_len) {
   char *buf = malloc(64);
   if (!buf)
     return NULL;
-  *out_len = (size_t)snprintf(buf, 64, "%.2f %.2f\n", up, idle);
+  /* snprintf returns the length it *would* have written; clamp to the bytes
+   * actually in the buffer so a consumer's write_all() cannot over-read the
+   * heap if the formatted output ever exceeds 63 chars. */
+  int n = snprintf(buf, 64, "%.2f %.2f\n", up, idle);
+  if (n < 0) {
+    free(buf);
+    return NULL;
+  }
+  *out_len = (n < 64) ? (size_t)n : 63;
   return buf;
 }
 
@@ -468,9 +483,11 @@ static void bind_vfile(const char *vpath, const char *target,
                        size_t len __attribute__((unused))) {
   if (write_file(vpath, content) < 0)
     return;
-  /* Ensure the target exists as a regular file for bind_mount */
+  /* Ensure the target exists as a regular file for bind_mount.  O_NOFOLLOW so a
+   * symlink planted at the final component is not followed (bind_mount also
+   * rejects a symlinked target as defense-in-depth). */
   if (access(target, F_OK) != 0) {
-    int fd = open(target, O_WRONLY | O_CREAT | O_CLOEXEC, 0444);
+    int fd = open(target, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0444);
     if (fd >= 0)
       close(fd);
   }

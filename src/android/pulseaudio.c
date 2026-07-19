@@ -86,16 +86,7 @@ struct pulse_args {
 static void pulse_child_wrapper(int ready_fd, void *user_data) {
   struct pulse_args *args = (struct pulse_args *)user_data;
 
-  /* Ignore hangups, keyboard interrupts, and broken pipes to keep the daemon
-   * alive through terminal disconnects. SIGTERM is our shutdown signal. */
-  signal(SIGHUP, SIG_IGN);
-  signal(SIGINT, SIG_IGN);
-  signal(SIGQUIT, SIG_IGN);
-  signal(SIGPIPE, SIG_IGN);
-
-  /* Make PulseAudio unkillable by the OOM killer.
-   * Must be done while still root, before privilege drop. */
-  ds_oom_protect();
+  ds_daemon_child_preamble();
 
   /* Set up the Termux environment before dropping privileges */
   setenv("TMPDIR", TX11_PREFIX "/tmp", 1);
@@ -201,22 +192,7 @@ static void nuke_pulse_config(void) {
     return;
 
   ds_log("[PulseAudio] nuking stale config: %s", PA_CONFIG_DIR);
-
-  pid_t child = fork();
-  if (child < 0)
-    return;
-  if (child == 0) {
-    int devnull = open("/dev/null", O_RDWR);
-    if (devnull >= 0) {
-      dup2(devnull, STDOUT_FILENO);
-      dup2(devnull, STDERR_FILENO);
-      close(devnull);
-    }
-    execl("/system/bin/rm", "rm", "-rf", PA_CONFIG_DIR, NULL);
-    _exit(1);
-  }
-  int st;
-  waitpid(child, &st, 0);
+  remove_recursive(PA_CONFIG_DIR);
 }
 
 /* ---- spawn ------------------------------------------------------------ */
@@ -287,28 +263,9 @@ int ds_setup_pulse_socket(struct ds_config *cfg) {
   if (!is_android() || !cfg->pulseaudio)
     return 0;
 
-  /* Post-pivot_root: host filesystem is under /.old_root.
-   * TX11_PULSE_SOCKET lives in TX11_PREFIX/tmp, accessed via
-   * DS_TERMUX_TMP_OLDROOT, exactly like the VirGL socket. */
-  char src[PATH_MAX];
-  snprintf(src, sizeof(src), "%s/.pulse-socket", DS_TERMUX_TMP_OLDROOT);
-
-  struct stat st;
-  if (stat(src, &st) != 0) {
-    ds_warn("PulseAudio: socket not found at %s - skipping socket bridge", src);
-    return 0;
-  }
-
-  uid_t uid = st.st_uid;
-
-  if (ds_bind_mount_socket(src, DS_PULSE_SOCKET, uid, "PulseAudio") < 0)
-    return 0;
-
-  ds_log("PulseAudio: socket bind-mounted into container");
-
-  /* Inject PULSE_SERVER so all processes inside the container find the daemon
-   */
-  setenv("PULSE_SERVER", "unix:" DS_PULSE_SOCKET, 1);
-
-  return 0;
+  /* Post-pivot_root: the host socket lives under DS_TERMUX_TMP_OLDROOT.  Bridge
+   * it in and export PULSE_SERVER for all container processes. */
+  return ds_bridge_termux_socket(".pulse-socket", DS_PULSE_SOCKET,
+                                 "PULSE_SERVER", "unix:" DS_PULSE_SOCKET,
+                                 "PulseAudio");
 }
