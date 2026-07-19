@@ -30,7 +30,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
     return -1;
   }
 
-  if (mkdir("/run/droidspaces", 0700) < 0 && errno != EEXIST) {
+  /*if (mkdir("/run/droidspaces", 0700) < 0 && errno != EEXIST) {
     ds_warn("[Wayland] failed to create /run/droidspaces: %s",
             strerror(errno));
     return -1;
@@ -46,7 +46,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
     ds_warn("[Wayland] failed to chown /run/droidspaces: %s",
             strerror(errno));
     return -1;
-  }
+  }*/
 
   /* Stage under /run/droidspaces - immune to user-runtime-dir@0 overmounts.
    * XDG_RUNTIME_DIR and WAYLAND_DISPLAY are set per-user by the rootfs side. */
