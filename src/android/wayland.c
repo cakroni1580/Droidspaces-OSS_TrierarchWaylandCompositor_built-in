@@ -39,6 +39,10 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET_OLDROOT,
          DS_WL_CONTAINER_SOCKET);
 
+  mkdir("/run/droidspaces", 0700);
+  chmod("/run/droidspaces", 0700);
+  chown("/run/droidspaces", 0, 0);
+
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
   setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
