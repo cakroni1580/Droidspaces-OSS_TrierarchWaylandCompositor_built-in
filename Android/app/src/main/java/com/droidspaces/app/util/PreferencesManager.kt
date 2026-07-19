@@ -145,6 +145,12 @@ class PreferencesManager private constructor(context: Context) {
             prefs.edit().putBoolean(KEY_SYMLINK_ENABLED, value).apply()
         }
 
+     var isWaylandCompositorEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, value).apply()
+        }
+
     /**
      * Sync daemon mode preference to the root-protected file on disk.
      * writes 1 if enabled, 0 if disabled.
@@ -373,6 +379,7 @@ class PreferencesManager private constructor(context: Context) {
         const val KEY_THEME_PALETTE = Constants.KEY_THEME_PALETTE
         const val KEY_DAEMON_MODE_ENABLED = Constants.KEY_DAEMON_MODE_ENABLED
         const val KEY_SYMLINK_ENABLED = Constants.KEY_SYMLINK_ENABLED
+        private const val KEY_WAYLAND_COMPOSITOR_ENABLED = Constants.KEY_WAYLAND_COMPOSITOR_ENABLED
         const val KEY_CONTAINER_LOG_PREFIX = Constants.KEY_CONTAINER_LOG_PREFIX
         private const val KEY_CONTAINER_OS_INFO_PREFIX = Constants.KEY_CONTAINER_OS_INFO_PREFIX
         private const val KEY_CACHED_CONTAINER_NAMES = Constants.KEY_CACHED_CONTAINER_NAMES

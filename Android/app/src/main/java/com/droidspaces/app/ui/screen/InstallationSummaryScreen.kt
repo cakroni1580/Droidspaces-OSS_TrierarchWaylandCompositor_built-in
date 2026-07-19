@@ -170,6 +170,7 @@ fun InstallationSummaryScreen(
                     if (config.enableTermuxX11) SummaryItem(stringResource(R.string.termux_x11), stringResource(R.string.enabled_legend), painterResource(id = R.drawable.ic_x11))
                     if (config.enableVirgl) SummaryItem(stringResource(R.string.enable_virgl), stringResource(R.string.enabled_legend), Icons.Default.Layers)
                     if (config.enablePulseaudio) SummaryItem(stringResource(R.string.enable_pulseaudio), stringResource(R.string.enabled_legend), Icons.AutoMirrored.Filled.VolumeUp)
+                    if (config.enableWayland && Constants.isArm64) SummaryItem(stringResource(R.string.enable_wayland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
                     if (config.selinuxPermissive) SummaryItem(stringResource(R.string.selinux_permissive), stringResource(R.string.enabled_legend), Icons.Default.Security)
                     if (config.allowUserns) SummaryItem(stringResource(R.string.allow_userns), stringResource(R.string.enabled_legend), Icons.Default.Groups)
                     if (config.volatileMode) SummaryItem(stringResource(R.string.volatile_mode), stringResource(R.string.enabled_legend), Icons.Default.AutoDelete)
@@ -211,6 +212,7 @@ fun InstallationSummaryScreen(
                         !config.allowUserns && !config.volatileMode && config.bindMounts.isEmpty() &&
                         !config.runAtBoot && !config.disableIPv6 &&
                         !config.enableTermuxX11 && !config.enableVirgl && !config.enablePulseaudio &&
+                        !config.enableWayland &&
                         !config.forceCgroupv1 && !config.blockNestedNs &&
                         config.upstreamInterfaces.isEmpty() && config.portForwards.isEmpty() &&
                         config.envFileContent.isNullOrBlank()) {
