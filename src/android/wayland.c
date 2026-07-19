@@ -39,5 +39,17 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET_OLDROOT,
          DS_WL_CONTAINER_SOCKET);
 
+  setenv("QT_QPA_PLATFORM", "wayland", 1);
+  setenv("XDG_SESSION_TYPE", "wayland", 1);
+  setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
+  setenv("WAYLAND_DISPLAY", "wayland-1", 1);
+  setenv("KWIN_COMPOSE", "Q", 1);
+  setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
+  setenv("LIBGL_ALWAYS_SOFTWARE", "0", 1);
+
+  ds_log("[Wayland] environment configured:");
+  ds_log("[Wayland]   XDG_RUNTIME_DIR=/run/droidspaces");
+  ds_log("[Wayland]   WAYLAND_DISPLAY=wayland-1");
+
   return 0;
 }
