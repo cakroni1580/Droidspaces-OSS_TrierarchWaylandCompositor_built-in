@@ -80,6 +80,7 @@ internal class SoftKeyboardSink(context: Context) : View(context) {
         // The sink never displays text — it only forwards events to Wayland.
         outAttrs.inputType =
            EditorInfo.TYPE_CLASS_TEXT or
+           EditorInfo.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or
            EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS
 
        outAttrs.imeOptions =
