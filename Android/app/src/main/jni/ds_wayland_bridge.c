@@ -275,8 +275,6 @@ static void *dispatch_loop(void *arg) {
 
         g_wayland_checkpoint = "client_ping";
         compositor_send_ping_to_clients(srv);
-
-        g_wayland_checkpoint = "dispatch_idle";
         /* adaptive sleep to avoid starvation on low-end cores */
         if (g_keyq_len > 0)
             usleep(2000);
@@ -293,8 +291,6 @@ static void *render_loop(void *arg) {
     LOGI("render thread started");
     while (g_render_running) {
 
-        g_wayland_checkpoint = "loop_begin";
-
         pthread_mutex_lock(&g_lock);
 
         renderer_context_t *rctx = g_renderer;
@@ -302,22 +298,16 @@ static void *render_loop(void *arg) {
 
         pthread_mutex_unlock(&g_lock);
 
-        g_wayland_checkpoint = "loop_snapshot";
-
         if (!rctx || !srv) {
             usleep(16000);
             continue;
         }
 
-        g_wayland_checkpoint = "before_keyq";
-
         keyq_drain();
 
-        g_wayland_checkpoint = "before_dispatch";
+        g_wayland_checkpoint = "dispatch";
 
         compositor_dispatch(srv);
-
-        g_wayland_checkpoint = "after_dispatch";
 
         /* ==========================================================
          * Resize handling
@@ -366,7 +356,7 @@ static void *render_loop(void *arg) {
             }
         }
 
-        g_wayland_checkpoint = "before_render";
+        g_wayland_checkpoint = "render";
 
        if (!renderer_render(
                rctx,
@@ -379,22 +369,6 @@ static void *render_loop(void *arg) {
 
            break;
        }
-
-       g_wayland_checkpoint = "after_render";
-
-       g_wayland_checkpoint = "before_frame_callbacks";
-
-       compositor_send_frame_callbacks(srv);
-
-       g_wayland_checkpoint = "after_frame_callbacks";
-
-       g_wayland_checkpoint = "before_client_ping";
-
-       compositor_send_ping_to_clients(srv);
-
-       g_wayland_checkpoint = "after_client_ping";
-
-       g_wayland_checkpoint = "loop_end";
     }
     if (g_renderer && renderer_is_valid(g_renderer))
         renderer_release_context(g_renderer);
