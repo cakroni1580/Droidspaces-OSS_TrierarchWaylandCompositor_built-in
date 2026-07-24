@@ -650,6 +650,7 @@ Java_com_droidspaces_app_wayland_WaylandSurface_nativeSurfaceDestroyed(
     pthread_mutex_unlock(&g_lock);
 
     LOGI("surface destroyed — renderer detached only (compositor alive)");
+    start_dispatch(); /* compositor stays alive for container clients */
 }
 
 JNIEXPORT void JNICALL
