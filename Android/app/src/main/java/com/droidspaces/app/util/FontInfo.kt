@@ -1,6 +1,9 @@
 package com.droidspaces.app.util
 
 import android.content.Context
+import android.graphics.Typeface
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -30,6 +33,10 @@ object FontInfo {
      */
     fun displayName(file: File): String =
         runCatching { parseName(file) }.getOrNull() ?: file.nameWithoutExtension
+
+    /** Null when the file no longer loads, so callers fall back to the bundled face. */
+    fun family(file: File): FontFamily? =
+        runCatching { FontFamily(ComposeTypeface(Typeface.createFromFile(file))) }.getOrNull()
 
     private fun parseName(file: File): String? = RandomAccessFile(file, "r").use { f ->
         // 'ttcf' collections keep the first face's offset table pointer at byte 12
