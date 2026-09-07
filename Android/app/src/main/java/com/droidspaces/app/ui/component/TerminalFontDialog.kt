@@ -18,7 +18,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 import androidx.compose.ui.unit.dp
 import com.droidspaces.app.R
 import com.droidspaces.app.ui.theme.JetBrainsMono
@@ -63,9 +62,7 @@ fun TerminalFontDialog(
     // falls back to the app's mono, name-only
     val fontFamilies = remember(importedFonts) {
         importedFonts.associate { file ->
-            file.name to runCatching {
-                FontFamily(ComposeTypeface(Typeface.createFromFile(file)))
-            }.getOrNull()
+            file.name to FontInfo.family(file)
         }
     }
     // A selection pointing at a deleted file behaves as the bundled default

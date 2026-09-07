@@ -97,6 +97,11 @@
     <string name="terminal_font_delete">Remove font</string>
     <string name="terminal_confirm_close">Confirm Before Closing</string>
     <string name="terminal_confirm_close_description">Ask for confirmation when closing a terminal tab</string>
+    <string name="terminal_tap_keyboard">Open Keyboard On Tap</string>
+    <string name="terminal_tap_keyboard_description">Tapping the terminal opens the keyboard. Turn off in editors, so a tap only moves the cursor, and use the on-screen button instead</string>
+    <string name="terminal_keyboard_left">Keyboard Button On The Left</string>
+    <string name="terminal_keyboard_left_description">Move the keyboard button to the bottom left corner, for left-handed use</string>
+    <string name="terminal_toggle_keyboard">Toggle keyboard</string>
     <string name="terminal_close_tab_title">Close session?</string>
     <string name="terminal_close_tab_message">The shell running in this tab will end.</string>
     <string name="amoled_mode">AMOLED Mode</string>
