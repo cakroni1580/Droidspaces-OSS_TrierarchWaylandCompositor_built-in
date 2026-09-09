@@ -60,6 +60,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import com.droidspaces.app.R
 import androidx.compose.ui.window.Dialog
+import com.droidspaces.app.wayland.WaylandManager
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable

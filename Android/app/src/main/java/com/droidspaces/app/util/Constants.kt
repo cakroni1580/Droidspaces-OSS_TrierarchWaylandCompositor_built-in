@@ -52,6 +52,7 @@ object Constants {
     const val KEY_BACKEND_MODE = "backend_mode"
     const val KEY_SELINUX_STATUS = "selinux_status"
     const val KEY_DAEMON_MODE_ENABLED = "daemon_mode_enabled"
+    const val KEY_WAYLAND_COMPOSITOR_ENABLED = "wayland_compositor_enabled"
     const val KEY_TREAT_AS_64BIT = "treat_as_64bit"
     const val KEY_CHECK_APP_UPDATES = "check_app_updates"
 
@@ -79,6 +80,12 @@ object Constants {
 
     // Pull-to-refresh animation delay (ms) - smooth refresh indicator animation
     const val PULL_TO_REFRESH_ANIMATION_DELAY = 200L
+
+    // Wayland compositor is only supported on arm64-v8a.
+    // Used to hide Wayland UI on unsupported architectures.
+    val isArm64: Boolean = android.os.Build.SUPPORTED_ABIS[0].let {
+        it.contains("arm64") || it.contains("aarch64")
+    }
 
     /**
      * Check if droidspaces binary is available in system PATH

@@ -88,8 +88,9 @@ void print_usage(void) {
       "      --virgl-flags=\"FLAGS\"   Extra flags passed to "
       "virgl_test_server_android\n"
       "      --pulse-audio         Configure PulseAudio sound server "
-      "support\n\n");
-
+      "support\n"
+      "      --wayland             Bridge Wayland compositor socket into container "
+      "(Android)\n\n");
   printf(
       C_BOLD
       "Options (Security & Boot):" C_RESET "\n"
@@ -396,6 +397,7 @@ static struct option long_options[] = {
     {"virgl", no_argument, 0, 270},
     {"virgl-flags", required_argument, 0, 272},
     {"pulse-audio", no_argument, 0, 273},
+    {"wayland", no_argument, 0, 280},
     {"gateway", required_argument, 0, 274},
     {"gateway-container", required_argument, 0, 274},
     {"gateway-net", required_argument, 0, 275},
@@ -507,6 +509,9 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       break;
     case 277:
       safe_strncpy(cfg->gateway_bridge, optarg, sizeof(cfg->gateway_bridge));
+      break;
+    case 280:
+      cfg->wayland = 1;
       break;
     case 'I':
       cfg->disable_ipv6 = 1;
