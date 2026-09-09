@@ -26,27 +26,27 @@ object BinaryInstaller {
     /**
      * Map Android architecture to binary name suffix
      */
-    private fun getArchitectureSuffix(): String = DeviceArch.suffix()
+    private fun getArchitectureSuffix(context: Context): String = DeviceArch.suffix(context)
 
     /**
      * Get droidspaces binary name for architecture
      */
-    private fun getDroidspacesBinaryName(): String {
-        return "droidspaces-${getArchitectureSuffix()}"
+    private fun getDroidspacesBinaryName(context: Context): String {
+        return "droidspaces-${getArchitectureSuffix(context)}"
     }
 
     /**
      * Get busybox binary name for architecture
      */
-    private fun getBusyboxBinaryName(): String {
-        return "busybox-${getArchitectureSuffix()}"
+    private fun getBusyboxBinaryName(context: Context): String {
+        return "busybox-${getArchitectureSuffix(context)}"
     }
 
 
     /**
      * Get human-readable architecture name
      */
-    fun getArchitectureName(): String = DeviceArch.displayName()
+    fun getArchitectureName(context: Context): String = DeviceArch.displayName(context)
 
     /**
      * Install droidspaces binary with progress updates
@@ -57,11 +57,11 @@ object BinaryInstaller {
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             // Step 1: Detect architecture
-            val arch = getArchitectureName()
+            val arch = getArchitectureName(context)
             onProgress(InstallationStep.DetectingArchitecture(arch))
 
-            val droidspacesBinaryName = getDroidspacesBinaryName()
-            val busyboxBinaryName = getBusyboxBinaryName()
+            val droidspacesBinaryName = getDroidspacesBinaryName(context)
+            val busyboxBinaryName = getBusyboxBinaryName(context)
 
             // Always install to the canonical path. The daemon's g_self_path fix
             // means this is safe even while the daemon is running - the mv is

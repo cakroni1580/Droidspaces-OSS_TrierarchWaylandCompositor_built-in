@@ -1,11 +1,20 @@
 package com.droidspaces.app.ui.component
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.droidspaces.app.util.AppUpdateInfo
 import com.droidspaces.app.util.SystemInfoManager
 import com.droidspaces.app.R
 
@@ -36,6 +46,7 @@ fun DroidspacesStatusCard(
     isChecking: Boolean = false,
     isRootAvailable: Boolean = true,
     refreshTrigger: Int = 0,
+    appUpdate: AppUpdateInfo? = null,
     onClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -176,6 +187,55 @@ fun DroidspacesStatusCard(
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             color = accentColor
+                        )
+                    }
+                }
+            }
+
+            // App update banner, same slot and shape as the error banner above but
+            // in tertiary, the "something to fetch" accent. Slides in once the
+            // release check lands. The APK is never fetched in-app: this app holds
+            // a root shell, so an APK download path is a supply-chain surface we
+            // do not want. The row opens the GitHub release page instead.
+            AnimatedVisibility(
+                visible = appUpdate != null,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+            ) {
+                val update = appUpdate ?: return@AnimatedVisibility
+                val updateColor = MaterialTheme.colorScheme.tertiary
+                Surface(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)))
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = updateColor.copy(alpha = 0.1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = updateColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = context.getString(R.string.app_update_message, update.version),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = updateColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = updateColor,
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }

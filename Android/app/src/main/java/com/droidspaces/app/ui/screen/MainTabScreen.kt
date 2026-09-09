@@ -1,4 +1,7 @@
 package com.droidspaces.app.ui.screen
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.ui.graphics.Color
 
 import androidx.compose.foundation.clickable
@@ -25,7 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.droidspaces.app.ui.component.DroidspacesStatus
 import com.droidspaces.app.ui.component.DroidspacesStatusCard
 import com.droidspaces.app.ui.component.SystemInfoCard
@@ -35,11 +37,14 @@ import com.droidspaces.app.util.SystemInfoManager
 import com.droidspaces.app.ui.viewmodel.AppStateViewModel
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
 import com.droidspaces.app.ui.component.HelpCard
+import com.droidspaces.app.util.AppUpdateInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.sp
 import com.droidspaces.app.R
+
+private const val EASTER_EGG_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Home(R.string.home_title, Icons.Default.Home),
@@ -56,6 +61,7 @@ enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.v
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MainTabScreen(
+    appStateViewModel: AppStateViewModel,
     containerViewModel: ContainerViewModel,
     skipInitialRefresh: Boolean = false,
     requestedTab: TabItem? = null,
@@ -71,8 +77,6 @@ fun MainTabScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // ViewModels - persist across navigation (activity-scoped)
-    val appStateViewModel: AppStateViewModel = viewModel()
     // containerViewModel is now passed as parameter to ensure sharing
 
 
@@ -299,6 +303,7 @@ fun MainTabScreen(
                 when (tabs[page]) {
                     TabItem.Home -> {
                         HomeTabContent(
+                            appUpdate = appStateViewModel.appUpdate,
                             droidspacesStatus = droidspacesStatus,
                             isChecking = isChecking,
                             isRootAvailable = appStateViewModel.isRootAvailable,
@@ -372,6 +377,7 @@ fun MainTabScreen(
 
 @Composable
 private fun HomeTabContent(
+    appUpdate: AppUpdateInfo?,
     droidspacesStatus: DroidspacesStatus,
     isChecking: Boolean,
     isRootAvailable: Boolean,
@@ -385,6 +391,11 @@ private fun HomeTabContent(
     val context = LocalContext.current
     // Track refresh trigger for SystemInfoCard
     var refreshTrigger by remember { mutableStateOf(0) }
+
+    // Taps on a healthy status card do nothing useful, so count them for the
+    // easter egg. Reset whenever the backend state changes so a tap that was
+    // meant for the installer never lands on YouTube instead.
+    var idleTaps by remember(droidspacesStatus) { mutableStateOf(0) }
 
     PullToRefreshWrapper(
         onRefresh = {
@@ -405,6 +416,7 @@ private fun HomeTabContent(
                 isChecking = isChecking,
                 isRootAvailable = isRootAvailable,
                 refreshTrigger = refreshTrigger,
+                appUpdate = appUpdate,
                 onClick = {
                     if (!isRootAvailable) {
                         // Disabled for non-root users
@@ -416,6 +428,19 @@ private fun HomeTabContent(
                         droidspacesStatus == DroidspacesStatus.ModuleMissing
                     ) {
                         onNavigateToInstallation()
+                        return@DroidspacesStatusCard
+                    }
+                    if (droidspacesStatus != DroidspacesStatus.Working) return@DroidspacesStatusCard
+                    idleTaps++
+                    when (idleTaps) {
+                        5 -> Toast.makeText(context, R.string.easter_egg_warning, Toast.LENGTH_SHORT).show()
+                        10 -> {
+                            idleTaps = 0
+                            Toast.makeText(context, R.string.easter_egg_reward, Toast.LENGTH_SHORT).show()
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(EASTER_EGG_URL)))
+                            }
+                        }
                     }
                 }
             )

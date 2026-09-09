@@ -36,7 +36,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.droidspaces.app.R
 import com.droidspaces.app.ui.component.DsSnackbarHost
 import com.droidspaces.app.ui.component.TerminalDialog
@@ -55,10 +54,10 @@ import com.droidspaces.app.ui.util.LoadingIndicator
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RequirementsScreen(
+    appStateViewModel: AppStateViewModel,
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val appStateViewModel: AppStateViewModel = viewModel()
     val isRootAvailable = appStateViewModel.isRootAvailable
     // Re-check on entry so a missing/corrupted backend is reflected here even if it
     // was nuked after the last check elsewhere.

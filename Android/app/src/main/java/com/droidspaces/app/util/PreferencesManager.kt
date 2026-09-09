@@ -105,6 +105,14 @@ class PreferencesManager private constructor(context: Context) {
             }
         }
 
+    // Last known SELinux status. Seeds the home card on a fresh launch so it
+    // never shows a loading row while the root shell spins up.
+    var cachedSelinuxStatus: String?
+        get() = prefs.getString(KEY_SELINUX_STATUS, null)
+        set(value) {
+            prefs.edit().putString(KEY_SELINUX_STATUS, value).apply()
+        }
+
     // Theme preferences
     var followSystemTheme: Boolean
         get() = prefs.getBoolean(KEY_FOLLOW_SYSTEM_THEME, true)
@@ -214,6 +222,24 @@ class PreferencesManager private constructor(context: Context) {
 
     /** Reactive stream of the symlink-enabled preference. */
     val symlinkEnabledFlow: Flow<Boolean> = booleanPrefFlow(KEY_SYMLINK_ENABLED, false)
+
+    // 32-bit OS on a 64-bit kernel: install the 64-bit backend and list 64-bit
+    // rootfs images. Read by DeviceArch, which every arch lookup goes through.
+    var treatAs64Bit: Boolean
+        get() = prefs.getBoolean(KEY_TREAT_AS_64BIT, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_TREAT_AS_64BIT, value).apply()
+        }
+
+    val treatAs64BitFlow: Flow<Boolean> = booleanPrefFlow(KEY_TREAT_AS_64BIT, false)
+
+    // One GET to the GitHub releases API per app open. Default on, since the
+    // app only ships through GitHub Releases and nobody polls that page by hand.
+    var checkAppUpdates: Boolean
+        get() = prefs.getBoolean(KEY_CHECK_APP_UPDATES, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_CHECK_APP_UPDATES, value).apply()
+        }
 
     private fun booleanPrefFlow(key: String, default: Boolean): Flow<Boolean> = callbackFlow {
         trySend(prefs.getBoolean(key, default))
@@ -428,6 +454,7 @@ class PreferencesManager private constructor(context: Context) {
         private const val KEY_RUNNING_COUNT = Constants.KEY_RUNNING_COUNT
         private const val KEY_BACKEND_STATUS = Constants.KEY_BACKEND_STATUS
         private const val KEY_BACKEND_MODE = Constants.KEY_BACKEND_MODE
+        private const val KEY_SELINUX_STATUS = Constants.KEY_SELINUX_STATUS
         private const val KEY_FOLLOW_SYSTEM_THEME = Constants.KEY_FOLLOW_SYSTEM_THEME
         private const val KEY_DARK_THEME = Constants.KEY_DARK_THEME
         private const val KEY_AMOLED_MODE = Constants.KEY_AMOLED_MODE
@@ -442,6 +469,8 @@ class PreferencesManager private constructor(context: Context) {
         const val KEY_DAEMON_MODE_ENABLED = Constants.KEY_DAEMON_MODE_ENABLED
         const val KEY_SYMLINK_ENABLED = Constants.KEY_SYMLINK_ENABLED
         private const val KEY_WAYLAND_COMPOSITOR_ENABLED = Constants.KEY_WAYLAND_COMPOSITOR_ENABLED
+        const val KEY_TREAT_AS_64BIT = Constants.KEY_TREAT_AS_64BIT
+        const val KEY_CHECK_APP_UPDATES = Constants.KEY_CHECK_APP_UPDATES
         const val KEY_CONTAINER_LOG_PREFIX = Constants.KEY_CONTAINER_LOG_PREFIX
         private const val KEY_CONTAINER_OS_INFO_PREFIX = Constants.KEY_CONTAINER_OS_INFO_PREFIX
         private const val KEY_CACHED_CONTAINER_NAMES = Constants.KEY_CACHED_CONTAINER_NAMES

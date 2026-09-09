@@ -1,7 +1,6 @@
 package com.droidspaces.app.util
 
 import android.content.Context
-import android.os.Build
 import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -107,15 +106,7 @@ object DroidspacesChecker {
      */
     suspend fun checkUpdateAvailable(context: Context): Boolean = withContext(Dispatchers.IO) {
         try {
-            // Get architecture-specific binary name
-            val arch = Build.SUPPORTED_ABIS[0]
-            val binaryName = when {
-                arch.contains("arm64") || arch.contains("aarch64") -> "droidspaces-aarch64"
-                arch.contains("armeabi") || arch.contains("arm") -> "droidspaces-armhf"
-                arch.contains("x86_64") -> "droidspaces-x86_64"
-                arch.contains("x86") -> "droidspaces-x86"
-                else -> "droidspaces-aarch64"
-            }
+            val binaryName = "droidspaces-${DeviceArch.suffix(context)}"
 
             // Calculate hash of installed binary
             val installedHashResult = Shell.cmd("md5sum $DROIDSPACES_BINARY_PATH 2>&1 | cut -d' ' -f1").exec()

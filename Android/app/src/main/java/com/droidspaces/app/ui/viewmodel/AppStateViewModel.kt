@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.droidspaces.app.R
+import com.droidspaces.app.util.AppUpdateChecker
+import com.droidspaces.app.util.AppUpdateInfo
 import com.droidspaces.app.util.BinaryInstaller
 import com.droidspaces.app.util.Constants
 import com.droidspaces.app.util.DroidspacesBackendStatus
@@ -299,9 +301,26 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
     val isRootAvailable: Boolean
         get() = rootStatus == RootStatus.Granted
 
+    // Latest GitHub release, or null when the check is off, offline, or failed.
+    var appUpdate: AppUpdateInfo? by mutableStateOf(null)
+        private set
+
+    fun checkAppUpdate() {
+        if (!prefsManager.checkAppUpdates) {
+            appUpdate = null
+            return
+        }
+        viewModelScope.launch {
+            appUpdate = withContext(Dispatchers.IO) {
+                AppUpdateChecker.fetchLatest(getApplication())
+            }
+        }
+    }
+
     init {
         // Check root status on initialization
         checkRootStatus()
+        checkAppUpdate()
     }
 }
 

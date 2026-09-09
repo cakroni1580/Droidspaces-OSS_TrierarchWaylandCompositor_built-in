@@ -59,6 +59,8 @@
     <string name="root_unavailable">Root access is unavailable.</string>
     <string name="grant_root_message">Grant root access to continue exploring droidspaces !</string>
     <string name="unknown">Unknown</string>
+    <string name="easter_egg_warning">The backend is fine, no need to spam it 🙂</string>
+    <string name="easter_egg_reward">You asked for it 🎵</string>
     <string name="update_available_message">Backend update available, click here to update</string>
     <string name="backend_attention_required">Backend: Action required</string>
     <string name="tap_to_fix_system">Tap to fix system configuration</string>
@@ -663,4 +665,11 @@
     <string name="repo_custom_url_empty">URL cannot be empty</string>
     <string name="repo_custom_url_invalid">URL must start with https://</string>
     <string name="debugging_section">Debugging</string>
+    <string name="experimental_section">Experimental</string>
+    <string name="treat_as_64bit">Use the 64-bit backend</string>
+    <string name="treat_as_64bit_description">Your OS is 32-bit but the kernel is 64-bit. Install the 64-bit backend and list 64-bit rootfs images instead.</string>
+    <string name="app_update_message">Droidspaces %1$s is ready. Tap to open the release on GitHub.</string>
+    <string name="updates_section">Updates</string>
+    <string name="check_app_updates">Check for app updates</string>
+    <string name="check_app_updates_description">Look for a new release on GitHub when the app opens</string>
 </resources>

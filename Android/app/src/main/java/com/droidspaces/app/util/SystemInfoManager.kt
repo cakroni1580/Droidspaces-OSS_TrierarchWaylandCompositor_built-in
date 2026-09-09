@@ -78,8 +78,10 @@ object SystemInfoManager {
 
         coroutineScope {
             // Load cached values first (instant access, ~0.1ms)
-            val cachedRootVersion = PreferencesManager.getInstance(ctx).cachedRootProviderVersion
-            val cachedDroidspacesVersion = PreferencesManager.getInstance(ctx).cachedDroidspacesVersion
+            val prefs = PreferencesManager.getInstance(ctx)
+            val cachedRootVersion = prefs.cachedRootProviderVersion
+            val cachedDroidspacesVersion = prefs.cachedDroidspacesVersion
+            if (selinuxStatusCache == null) selinuxStatusCache = prefs.cachedSelinuxStatus
 
             // Load root provider, SELinux status, and droidspaces version in parallel (non-blocking)
             val rootProviderDeferred = async { loadRootProviderVersion() }
@@ -89,7 +91,7 @@ object SystemInfoManager {
             // Wait for all to complete (parallel execution)
             val newRootVersion = rootProviderDeferred.await()
             rootProviderVersionCache = newRootVersion
-            selinuxStatusCache = selinuxDeferred.await()
+            selinuxStatusCache = selinuxDeferred.await().also { prefs.cachedSelinuxStatus = it }
             val newDroidspacesVersion = droidspacesVersionDeferred.await()
             droidspacesVersionCache = newDroidspacesVersion
 
@@ -174,47 +176,13 @@ object SystemInfoManager {
     }
 
     /**
-     * Get SELinux status (cached after initialization).
-     * Fast path returns cached value immediately.
-     *
-     * Performance: ~0.1ms if cached, ~10-20ms if not cached
-     */
-    suspend fun getSELinuxStatus(): String = withContext(Dispatchers.IO) {
-        // Fast path: return cached value immediately
-        val cached = selinuxStatusCache
-        if (cached != null && isInitialized) {
-            return@withContext cached
-        }
-
-        // Initialize if not done yet
-        if (!isInitialized) {
-            initialize()
-            // Return cached value after initialization
-            return@withContext selinuxStatusCache ?: "Unknown"
-        }
-
-        // Fallback: load if cache is null (shouldn't happen after init)
-        SELinuxChecker.getSELinuxStatus().also {
-            selinuxStatusCache = it
-        }
-    }
-
-    /**
-     * Synchronous SELinux status from cache.
-     */
-    fun getSELinuxStatusSync(): String {
-        return selinuxStatusCache ?: "ENFORCING"
-    }
-
-    /**
-     * Force refresh SELinux status (bypasses cache).
-     * Use this when the user manually refreshes to get the latest status.
-     *
-     * Performance: ~10-20ms (shell command execution)
+     * Live SELinux status. The UI seeds from [cachedSelinuxStatus] and then calls
+     * this, so a changed status corrects itself without ever showing a loading row.
      */
     suspend fun refreshSELinuxStatus(): String = withContext(Dispatchers.IO) {
         SELinuxChecker.getSELinuxStatus().also {
             selinuxStatusCache = it
+            context?.let { ctx -> PreferencesManager.getInstance(ctx).cachedSelinuxStatus = it }
         }
     }
 

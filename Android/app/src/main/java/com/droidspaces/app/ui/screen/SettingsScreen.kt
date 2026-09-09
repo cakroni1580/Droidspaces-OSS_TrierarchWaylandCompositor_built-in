@@ -39,7 +39,6 @@ import android.net.Uri
 import com.droidspaces.app.ui.component.DsDialog
 import com.droidspaces.app.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.droidspaces.app.ui.component.DialogCloseButton
 import com.droidspaces.app.ui.component.DialogFooterRow
 import com.droidspaces.app.ui.component.SectionHeader
@@ -59,6 +58,7 @@ import android.util.Base64
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
 import com.droidspaces.app.util.SymlinkInstaller
+import com.droidspaces.app.util.DeviceArch
 import androidx.core.content.edit
 import com.droidspaces.app.util.Constants
 import com.droidspaces.app.wayland.WaylandManager
@@ -71,6 +71,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    appStateViewModel: AppStateViewModel,
     onBack: () -> Unit,
     onNavigateToInstallation: () -> Unit = {},
     onNavigateToRequirements: () -> Unit = {},
@@ -80,7 +81,6 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val prefsManager = remember { PreferencesManager.getInstance(context) }
-    val appStateViewModel: AppStateViewModel = viewModel()
     val isRootAvailable = appStateViewModel.isRootAvailable
     val scope = rememberCoroutineScope()
 
@@ -111,6 +111,8 @@ fun SettingsScreen(
         .collectAsStateWithLifecycle(initialValue = prefsManager.isDaemonModeEnabled)
     val isSymlinkEnabled by prefsManager.symlinkEnabledFlow
         .collectAsStateWithLifecycle(initialValue = prefsManager.isSymlinkEnabled)
+    val treatAs64Bit by prefsManager.treatAs64BitFlow
+        .collectAsStateWithLifecycle(initialValue = prefsManager.treatAs64Bit)
 
     // Listen for locale changes and sync daemon mode from disk
     LaunchedEffect(Unit) {
@@ -461,6 +463,35 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Updates Section
+            SectionHeader(
+                text = context.getString(R.string.updates_section),
+                modifier = Modifier.padding(start = 24.dp, bottom = 8.dp, top = 8.dp)
+            )
+
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = if (darkTheme) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            ) {
+                var checkAppUpdates by remember { mutableStateOf(prefsManager.checkAppUpdates) }
+                SwitchItem(
+                    icon = Icons.Default.SystemUpdate,
+                    title = context.getString(R.string.check_app_updates),
+                    summary = context.getString(R.string.check_app_updates_description),
+                    checked = checkAppUpdates,
+                    onCheckedChange = { checked ->
+                        checkAppUpdates = checked
+                        prefsManager.checkAppUpdates = checked
+                        // Hides the Home banner right away, or fetches right away.
+                        appStateViewModel.checkAppUpdate()
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Debugging Section
             SectionHeader(
                 text = context.getString(R.string.debugging_section),
@@ -522,6 +553,37 @@ fun SettingsScreen(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Experimental Section, only for a 32-bit userspace on a 64-bit kernel
+            if (DeviceArch.is32Bit()) {
+                SectionHeader(
+                    text = context.getString(R.string.experimental_section),
+                    modifier = Modifier.padding(start = 24.dp, bottom = 8.dp, top = 8.dp)
+                )
+
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = if (darkTheme) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                ) {
+                    SwitchItem(
+                        icon = Icons.Default.Memory,
+                        title = context.getString(R.string.treat_as_64bit),
+                        summary = context.getString(R.string.treat_as_64bit_description),
+                        checked = treatAs64Bit,
+                        enabled = isRootAvailable,
+                        onCheckedChange = { checked ->
+                            prefsManager.treatAs64Bit = checked
+                            // The hash check now compares against the other arch's
+                            // asset, so the update banner appears without a restart.
+                            appStateViewModel.forceRefresh()
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             // About Section
             SectionHeader(
