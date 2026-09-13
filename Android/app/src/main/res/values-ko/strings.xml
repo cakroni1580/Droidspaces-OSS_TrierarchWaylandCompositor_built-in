@@ -526,7 +526,6 @@
     <string name="privileged_nocaps_desc">어떠한 리눅스 권한(capability)도 제거하지 않습니다(완전한 루트 권한).</string>
     <string name="privileged_noseccomp_desc">Seccomp 시스템 콜 필터링을 비활성화합니다. 이를 통해 비특권 사용자 네임스페이스와 같은 고급 커널 기능을 사용할 수 있으며, 이는 중첩 샌드박싱(Bubblewrap, Flatpak)에 반드시 필요하고 트리 외부 커널 모듈 로드도 가능하게 합니다.</string>
     <string name="privileged_shared_desc">호스트로의 MS_SHARED 마운트 전파를 활성화합니다.</string>
-    <string name="privileged_unfiltered_desc">장치 필터링을 우회합니다. 모든 호스트 /dev 노드가 표시됩니다.</string>
     <string name="privileged_full_desc">모든 특권 플래그를 한 번에 활성화합니다.</string>
     <string name="privileged_warning_title">위험 영역</string>
     <string name="privileged_disclaimer">이 옵션들을 활성화하면 기기 보안이 저하됩니다. 데이터 손실, 벽돌 현상, 이상한 버그에 대해 저희는 책임지지 않습니다. 이 모드 사용 중 발생한 문제는 신고하지 마세요.</string>

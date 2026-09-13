@@ -353,7 +353,6 @@
     <string name="privileged_nocaps_desc">保留所有 Linux 功能（完整 root 權限）。</string>
     <string name="privileged_noseccomp_desc">禁用Seccomp 系統呼叫過濾。這將啟用非特權使用者命名空間等進階核心功能，是嵌套沙箱的必要條件（Bubblewrap、Flatpak），同時允許載入非官方核心模組。</string>
     <string name="privileged_shared_desc">啟用 MS_SHARED 掛載傳播到主機。</string>
-    <string name="privileged_unfiltered_desc">繞過設備過濾。所有主機 /dev 節點都將可見。</string>
     <string name="privileged_full_desc">一次性啟用所有特權標誌。</string>
     <string name="privileged_warning_title">高危險區域</string>
     <string name="privileged_disclaimer">啟用這些選項會降低裝置的安全性。我們對任何資料遺失、設備損壞或異常錯誤概不負責。請勿報告在使用這些模式時遇到的問題。</string>
@@ -568,4 +567,13 @@
     <string name="terminal_keyboard_left">左側的鍵盤按鍵</string>
     <string name="terminal_keyboard_left_description">將鍵盤按鈕移至左下角，以便左手使用。</string>
     <string name="terminal_toggle_keyboard">切換鍵盤</string>
+    <string name="easter_egg_warning">後端沒問題，無須頻繁發送請求 🙂</string>
+    <string name="easter_egg_reward">這是你自找的 🎵</string>
+    <string name="experimental_section">實驗性</string>
+    <string name="treat_as_64bit">使用64位元後端</string>
+    <string name="treat_as_64bit_description">您的作業系統是 32 位元的，但核心是 64 位元的。請安裝 64 位元後端，並改為列出 64 位元 rootfs 映像檔。</string>
+    <string name="app_update_message">Droidspaces %1$s 已就緒。點擊以在 GitHub 上開啟正式版本。</string>
+    <string name="updates_section">更新</string>
+    <string name="check_app_updates">檢查應用程式更新</string>
+    <string name="check_app_updates_description">應用程式啟動時，檢查 GitHub 上是否有新版本發布</string>
 </resources>

@@ -270,7 +270,7 @@ int internal_boot(struct ds_config *cfg) {
   }
 
   /* 8. Setup /dev (device nodes, devtmpfs) */
-  if (setup_dev(".", cfg->hw_access, cfg->gpu_mode, cfg->privileged_mask) < 0) {
+  if (setup_dev(".", cfg->hw_access, cfg->gpu_mode, cfg->allow_vts) < 0) {
     ds_error("Failed to setup /dev.");
     goto boot_fail;
   }

@@ -365,7 +365,6 @@
     <string name="privileged_nocaps_desc">Nu dezactiva nicio capacitate Linux (putere completă de root).</string>
     <string name="privileged_noseccomp_desc">Dezactivează filtrarea Seccomp de syscall. Aceasta permite opțiuni de kernel avansate precum utilizarea neprivilegiată a namespace-urilor user, necesară pentru sandboxing nested (Bubblewrap, Flatpak). Dezactivarea acestei opțiuni va permite, de asemenea, încărcarea modulelor kernel out-of-tree.</string>
     <string name="privileged_shared_desc">Activează propagarea mount MS_SHARED către gazdă.</string>
-    <string name="privileged_unfiltered_desc">Dezactivează filtrarea dispozitivelor. Toate node-urile /dev ale gazdei vor deveni vizibile.</string>
     <string name="privileged_full_desc">Activează toate flag-urile privilegiate simultan.</string>
     <string name="privileged_warning_title">TERITORIU PERICULOS</string>
     <string name="privileged_disclaimer">Prin activarea acestor opțiuni, îți compromiți securitatea dispozitivului tău. NU suntem responsabili pentru ORICE fel de pierdere de date, dispozitive stricate, sau bug-uri ciudate. NU raporta probleme care apar în timpul utilizării a acestor moduri.</string>

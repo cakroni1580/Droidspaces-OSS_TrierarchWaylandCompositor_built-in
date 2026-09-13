@@ -58,18 +58,7 @@ object ContainerCommandBuilder {
         return "$DROIDSPACES_BINARY_PATH --config=${quote(getConfigPath(container))} restart"
     }
 
-    /**
-     * Build unified usage command for a container (UPTIME, RAM, CPU).
-     */
-    fun buildUsageCommand(containerName: String): String {
-        return "$DROIDSPACES_BINARY_PATH --name=${quote(containerName)} usage"
-    }
-
-    /**
-     * Build command to get IP addresses of a container.
-     */
-    fun buildGetIpCommand(containerName: String): String {
-        return "$DROIDSPACES_BINARY_PATH --name=${quote(containerName)} run 'ip -4 addr show 2>/dev/null | awk \"/inet / && \\\$2 !~ /^127/ {split(\\\$2,a,\\\"/\\\"); print a[1]}\" | tr \"\\n\" \" \" || echo'"
-    }
+    /** JSON status of every running container: OS, hostname, IP, uptime, CPU, RAM. */
+    fun buildShowCommand(): String = "$DROIDSPACES_BINARY_PATH --format show"
 }
 

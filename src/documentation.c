@@ -261,16 +261,17 @@ static void print_page(int page, const char *bin) {
     p_printf("  %s show\n", bin);
     p_printf("  (Displays name and PID inside a table)\n\n");
 
+    p_printf("%sListing Containers (JSON):%s\n", bold, reset);
+    p_printf("  %s --format show\n", bin);
+    p_printf(
+        "  (Adds OS, hostname, IP, uptime, CPU and RAM per container)\n\n");
+
     p_printf("%sTechnical Information:%s\n", bold, reset);
     p_printf("  %s --name=mycontainer info\n", bin);
     p_printf("  (Shows current features, metadata, and container state)\n\n");
 
-    p_printf("%sTechnical Information (machine-parseable):%s\n", bold, reset);
+    p_printf("%sTechnical Information (JSON):%s\n", bold, reset);
     p_printf("  %s --name=mycontainer --format info\n\n", bin);
-
-    p_printf("%sResource Usage:%s\n", bold, reset);
-    p_printf("  %s --name=mycontainer usage\n", bin);
-    p_printf("  (Shows uptime, CPU%%, and RAM usage)\n\n");
 
     p_printf("%sMetadata Recovery:%s\n", bold, reset);
     p_printf("  %s scan\n", bin);
@@ -284,9 +285,10 @@ static void print_page(int page, const char *bin) {
     p_printf("----------\n\n");
 
     p_printf("%sIsolation Modes (--net):%s\n", bold, reset);
-    p_printf("  --net=host     Shared with host (default)\n");
+    p_printf("  --net=nat      Isolated namespace with internet access "
+             "(default)\n");
+    p_printf("  --net=host     Shared with host\n");
     p_printf("  --net=none     No network access (air-gapped)\n");
-    p_printf("  --net=nat      Isolated namespace with internet access\n");
     p_printf("  --net=gateway  LAN delegated to another container "
              "(e.g. OpenWRT)\n\n");
 
@@ -355,7 +357,11 @@ static void print_page(int page, const char *bin) {
         "  %s --name=mycontainer --rootfs=/path/to/rootfs --hw-access start\n",
         bin);
     p_printf("  (Exposes host /dev nodes, maps GPU groups, setups X11 in "
-             "Linux)\n\n");
+             "Linux)\n");
+    p_printf("  --allow-vts               Leave the host VTs (tty1-6) visible. "
+             "Off by default so a\n");
+    p_printf("                            systemd container's getty does not "
+             "land on the host console.\n\n");
 
     p_printf("%sSecure GPU-only Mode (--gpu):%s\n", bold, reset);
     p_printf("  %s --name=mycontainer --rootfs=/path/to/rootfs --gpu start\n",
@@ -385,7 +391,6 @@ static void print_page(int page, const char *bin) {
     p_printf("  noseccomp     Disable syscall filtering (useful for "
              "flatpak,bwrap and other unprivileged sandboxes)\n");
     p_printf("  shared        Enable MS_SHARED mount propagation\n");
-    p_printf("  unfiltered-dev Bypass device filtering (all host /dev)\n");
     p_printf("  full          Enable all above tags\n\n");
 
     p_printf(

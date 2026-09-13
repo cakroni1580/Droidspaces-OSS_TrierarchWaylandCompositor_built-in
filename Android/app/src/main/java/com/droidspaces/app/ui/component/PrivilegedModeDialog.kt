@@ -35,7 +35,6 @@ fun PrivilegedModeDialog(
     var nocaps by remember { mutableStateOf(initialTags.contains("nocaps")) }
     var noseccomp by remember { mutableStateOf(initialTags.contains("noseccomp")) }
     var shared by remember { mutableStateOf(initialTags.contains("shared")) }
-    var unfiltered by remember { mutableStateOf(initialTags.contains("unfiltered-dev")) }
     var full by remember { mutableStateOf(initialTags.contains("full")) }
     
     var confirmText by remember { mutableStateOf("") }
@@ -48,27 +47,25 @@ fun PrivilegedModeDialog(
             nocaps = true
             noseccomp = true
             shared = true
-            unfiltered = true
-        } else if (nomask && nocaps && noseccomp && shared && unfiltered) {
+        } else if (nomask && nocaps && noseccomp && shared) {
             // If full was toggled off while all children were on, toggle them all off
             nomask = false
             nocaps = false
             noseccomp = false
             shared = false
-            unfiltered = false
         }
     }
 
     // Sync logic: if any individual tag is manually unchecked, 'full' must be false
-    LaunchedEffect(nomask, nocaps, noseccomp, shared, unfiltered) {
-        if (!nomask || !nocaps || !noseccomp || !shared || !unfiltered) {
+    LaunchedEffect(nomask, nocaps, noseccomp, shared) {
+        if (!nomask || !nocaps || !noseccomp || !shared) {
             full = false
         } else {
             full = true
         }
     }
 
-    val allOff = !nomask && !nocaps && !noseccomp && !shared && !unfiltered && !full
+    val allOff = !nomask && !nocaps && !noseccomp && !shared && !full
 
     DsDialog(
         onDismiss = onDismiss,
@@ -86,7 +83,6 @@ fun PrivilegedModeDialog(
                         if (nocaps) tags.add("nocaps")
                         if (noseccomp) tags.add("noseccomp")
                         if (shared) tags.add("shared")
-                        if (unfiltered) tags.add("unfiltered-dev")
                     }
                     onConfirm(tags.joinToString(","))
                 },
@@ -148,14 +144,6 @@ fun PrivilegedModeDialog(
                 description = context.getString(R.string.privileged_shared_desc),
                 checked = shared,
                 onCheckedChange = { shared = it },
-                enabled = !full
-            )
-
-            ToggleCard(
-                title = "unfiltered-dev",
-                description = context.getString(R.string.privileged_unfiltered_desc),
-                checked = unfiltered,
-                onCheckedChange = { unfiltered = it },
                 enabled = !full
             )
         }

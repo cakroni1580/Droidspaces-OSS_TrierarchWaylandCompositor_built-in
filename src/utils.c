@@ -1593,30 +1593,8 @@ int copy_file(const char *src, const char *dst) {
   return 0;
 }
 
-/* show_container_usage
- *
- * Prints uptime, CPU%, and RAM usage for a running container.
- * Works entirely from the host side - no namespace entry required.
- * Compatible with kernel 3.10+.
- *
- * Method:
- *   UPTIME  - field 22 (starttime) of /proc/<init_pid>/stat converted to
- *             seconds, subtracted from /proc/uptime.
- *   MEMORY  - PID namespace walk: any PID whose ns/pid matches container
- *             init's namespace is in the container. Sum VmRSS.
- *   CPU     - same walk, sum utime+stime jiffies, two samples 1s apart.
- *             Divide delta by host CPU delta for percentage.
- *             Per-mille avoids integer floor on sub-1% values.
- *
- *   OPTIMISATION: walk 1 collects RAM + CPU sample 1 simultaneously.
- *   walk 2 (after sleep) collects CPU sample 2 only. Total: 2 walks.
- *
- * Output (machine-parseable key=value):
- *   UPTIME_SEC=<seconds>
- *   UPTIME=<Xd Xh Xm Xs | Xh Xm Xs>
- *   RAM_USED_KB=<kb>
- *   RAM_TOTAL_KB=<kb>
- *   CPU_PERMILL=<0-1000> */
+/* Seconds since container init started: field 22 (starttime) of
+ * /proc/<pid>/stat subtracted from /proc/uptime. */
 long ds_get_container_uptime(pid_t pid) {
   if (pid <= 0)
     return -1;
@@ -1682,185 +1660,6 @@ void ds_format_uptime(long uptime_sec, char *buf, size_t size) {
   snprintf(tmp + pos, sizeof(tmp) - pos, "%ds", secs);
 
   safe_strncpy(buf, tmp, size);
-}
-
-int show_container_usage(struct ds_config *cfg) {
-  pid_t pid = 0;
-
-  if (!is_container_running(cfg, &pid) || pid <= 0) {
-    ds_error("Container '%s' is not running.", cfg->container_name);
-    return -1;
-  }
-
-  /* UPTIME */
-  long uptime_sec = ds_get_container_uptime(pid);
-  char uptime_str[128];
-  ds_format_uptime(uptime_sec, uptime_str, sizeof(uptime_str));
-
-  /* PID namespace of container init */
-  char ns_init_path[PATH_MAX];
-  snprintf(ns_init_path, sizeof(ns_init_path), "/proc/%d/ns/pid", (int)pid);
-  char container_ns[256] = {0};
-  ssize_t ns_len =
-      readlink(ns_init_path, container_ns, sizeof(container_ns) - 1);
-  if (ns_len <= 0) {
-    ds_error("Failed to read PID namespace of container init: %s",
-             strerror(errno));
-    return -1;
-  }
-  container_ns[ns_len] = '\0';
-
-  /* WALK 1: collect RAM + CPU sample 1 in a single /proc pass */
-  long ram_used_kb = 0;
-  long long cpu_t1 = 0;
-  long long cpu_host_t1 = 0;
-  FILE *f = NULL;
-
-  DIR *proc_dir = opendir("/proc");
-  if (!proc_dir) {
-    ds_error("Failed to open /proc: %s", strerror(errno));
-    return -1;
-  }
-  struct dirent *de;
-  while ((de = readdir(proc_dir)) != NULL) {
-    if (de->d_name[0] < '1' || de->d_name[0] > '9')
-      continue;
-
-    /* check PID namespace */
-    char ns_path[PATH_MAX];
-    snprintf(ns_path, sizeof(ns_path), "/proc/%s/ns/pid", de->d_name);
-    char ns_buf[256] = {0};
-    ssize_t r = readlink(ns_path, ns_buf, sizeof(ns_buf) - 1);
-    if (r <= 0)
-      continue;
-    ns_buf[r] = '\0';
-    if (strcmp(ns_buf, container_ns) != 0)
-      continue;
-
-    /* RAM: VmRSS from /proc/<pid>/status */
-    char status_path[PATH_MAX];
-    snprintf(status_path, sizeof(status_path), "/proc/%s/status", de->d_name);
-    FILE *sf = fopen(status_path, "r");
-    if (sf) {
-      char line[128];
-      while (fgets(line, sizeof(line), sf)) {
-        if (strncmp(line, "VmRSS:", 6) == 0) {
-          long rss = 0;
-          if (sscanf(line + 6, "%ld", &rss) == 1)
-            ram_used_kb += rss;
-          break;
-        }
-      }
-      fclose(sf);
-    }
-
-    /* CPU sample 1: utime+stime from /proc/<pid>/stat fields 14+15 */
-    char pstat_path[PATH_MAX];
-    snprintf(pstat_path, sizeof(pstat_path), "/proc/%s/stat", de->d_name);
-    FILE *pf = fopen(pstat_path, "r");
-    if (pf) {
-      long long utime = 0, stime = 0;
-      for (int i = 1; i <= 13; i++)
-        if (fscanf(pf, "%*s") == EOF)
-          break;
-      if (fscanf(pf, "%lld %lld", &utime, &stime) == 2)
-        cpu_t1 += utime + stime;
-      fclose(pf);
-    }
-  }
-  closedir(proc_dir);
-
-  /* host CPU total sample 1 */
-  f = fopen("/proc/stat", "r");
-  if (f) {
-    long long u, n, s, i, iow, irq, sirq;
-    if (fscanf(f, "cpu %lld %lld %lld %lld %lld %lld %lld", &u, &n, &s, &i,
-               &iow, &irq, &sirq) == 7)
-      cpu_host_t1 = u + n + s + i + iow + irq + sirq;
-    fclose(f);
-  }
-
-  /* total device RAM from /proc/meminfo */
-  long ram_total_kb = 0;
-  f = fopen("/proc/meminfo", "r");
-  if (f) {
-    char line[128];
-    while (fgets(line, sizeof(line), f)) {
-      if (strncmp(line, "MemTotal:", 9) == 0) {
-        sscanf(line + 9, "%ld", &ram_total_kb);
-        break;
-      }
-    }
-    fclose(f);
-  }
-
-  /* 250ms measurement window - short enough for a responsive UI,
-   * long enough for a meaningful CPU delta (1 jiffie = 10ms at HZ=100,
-   * so 250ms gives 25-jiffie resolution = ~0.4% minimum granularity). */
-  struct timespec ts = {0, 250000000L};
-  nanosleep(&ts, NULL);
-
-  /* WALK 2: CPU sample 2 only */
-  long long cpu_t2 = 0;
-  long long cpu_host_t2 = 0;
-
-  proc_dir = opendir("/proc");
-  if (proc_dir) {
-    while ((de = readdir(proc_dir)) != NULL) {
-      if (de->d_name[0] < '1' || de->d_name[0] > '9')
-        continue;
-      char ns_path[PATH_MAX];
-      snprintf(ns_path, sizeof(ns_path), "/proc/%s/ns/pid", de->d_name);
-      char ns_buf[256] = {0};
-      ssize_t r = readlink(ns_path, ns_buf, sizeof(ns_buf) - 1);
-      if (r <= 0)
-        continue;
-      ns_buf[r] = '\0';
-      if (strcmp(ns_buf, container_ns) != 0)
-        continue;
-
-      char pstat_path[PATH_MAX];
-      snprintf(pstat_path, sizeof(pstat_path), "/proc/%s/stat", de->d_name);
-      FILE *pf = fopen(pstat_path, "r");
-      if (pf) {
-        long long utime = 0, stime = 0;
-        for (int i = 1; i <= 13; i++)
-          if (fscanf(pf, "%*s") == EOF)
-            break;
-        if (fscanf(pf, "%lld %lld", &utime, &stime) == 2)
-          cpu_t2 += utime + stime;
-        fclose(pf);
-      }
-    }
-    closedir(proc_dir);
-  }
-
-  f = fopen("/proc/stat", "r");
-  if (f) {
-    long long u, n, s, i, iow, irq, sirq;
-    if (fscanf(f, "cpu %lld %lld %lld %lld %lld %lld %lld", &u, &n, &s, &i,
-               &iow, &irq, &sirq) == 7)
-      cpu_host_t2 = u + n + s + i + iow + irq + sirq;
-    fclose(f);
-  }
-
-  long long delta_container = cpu_t2 - cpu_t1;
-  long long delta_host = cpu_host_t2 - cpu_host_t1;
-  if (delta_container < 0)
-    delta_container = 0;
-  long cpu_permill =
-      (delta_host > 0) ? (long)(delta_container * 1000 / delta_host) : 0;
-  if (cpu_permill > 1000)
-    cpu_permill = 1000;
-
-  /* Output - machine-parseable key=value, one per line */
-  printf("UPTIME_SEC=%ld\n", uptime_sec);
-  printf("UPTIME=%s\n", uptime_str);
-  printf("RAM_USED_KB=%ld\n", ram_used_kb);
-  printf("RAM_TOTAL_KB=%ld\n", ram_total_kb);
-  printf("CPU_PERMILL=%ld\n", cpu_permill);
-
-  return 0;
 }
 
 /* Bind Mount Sorting */
@@ -2509,6 +2308,16 @@ int ds_peer_in_pidns(pid_t peer_pid) {
 
   char path[64], self_ns[64], peer_ns[64];
   ssize_t sn = readlink("/proc/self/ns/pid", self_ns, sizeof(self_ns) - 1);
+  /* Our own ns/pid is missing while ns/mnt (unconditional in procfs since
+   * 3.8) is there: this kernel was built without CONFIG_PID_NS. There is
+   * exactly one PID namespace, so the peer cannot be anywhere else and no
+   * container exists to hide it in. That is a positive answer, not "cannot
+   * confirm". Denying here rejects every client before it sends its request,
+   * and the daemon closing mid-write is what the client saw as a silent exit
+   * 141; the requirement probe in the worker is what reports the missing
+   * feature. The peer-path ENOENT below (dead, recycled pid) still denies. */
+  if (sn < 0 && errno == ENOENT && access("/proc/self/ns/mnt", F_OK) == 0)
+    return 1;
   snprintf(path, sizeof(path), "/proc/%d/ns/pid", (int)peer_pid);
   ssize_t pn = readlink(path, peer_ns, sizeof(peer_ns) - 1);
   if (sn <= 0 || pn <= 0)

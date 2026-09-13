@@ -29,9 +29,6 @@ import com.droidspaces.app.util.ContainerSystemdManager
 import com.droidspaces.app.util.ContainerProcdManager
 import com.droidspaces.app.util.ContainerOpenRCManager
 import com.droidspaces.app.util.ContainerDiskUsageManager
-import com.droidspaces.app.util.ContainerManager
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.droidspaces.app.util.AnimationUtils
@@ -109,11 +106,9 @@ fun ContainerDetailsScreen(
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 try {
-                    // Check live status first; navigate back if container is dead
-                    val isAlive = withContext(Dispatchers.IO) {
-                        ContainerManager.checkContainerStatus(container.name).first
-                    }
-                    if (!isAlive) {
+                    // Missing from `show` means the container died; navigate back
+                    val newOSInfo = ContainerOSInfoManager.fetchAll(context)[container.name]
+                    if (newOSInfo == null) {
                         // Kill all terminal sessions for this container
                         context.startService(
                             android.content.Intent(context, TerminalSessionService::class.java).apply {
@@ -125,7 +120,6 @@ fun ContainerDetailsScreen(
                         break
                     }
 
-                    val newOSInfo = ContainerOSInfoManager.getOSInfo(container.name, useCache = false, appContext = context)
                     val currentInfo = osInfo
                     if (currentInfo == null || hasOSInfoChanged(currentInfo, newOSInfo)) {
                         osInfo = newOSInfo

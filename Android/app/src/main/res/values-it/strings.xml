@@ -358,7 +358,6 @@
     <string name="privileged_nocaps_desc">Non eliminare alcuna capability Linux (piena potenza root).</string>
     <string name="privileged_noseccomp_desc">Disabilita il filtraggio syscall Seccomp. Questo abilita funzionalità avanzate del kernel come i namespace utente non privilegiati, strettamente necessari per il sandboxing annidato (Bubblewrap, Flatpak) e consente anche il caricamento di moduli kernel di terze parti.</string>
     <string name="privileged_shared_desc">Abilita la propagazione del mount MS_SHARED all\'host.</string>
-    <string name="privileged_unfiltered_desc">Bypassa il filtraggio dei dispositivi. Tutti i nodi /dev dell\'host diventano visibili.</string>
     <string name="privileged_full_desc">Abilita tutti i flag privilegiati contemporaneamente.</string>
     <string name="privileged_warning_title">TERRITORIO PERICOLOSO</string>
     <string name="privileged_disclaimer">Abilitando queste opzioni, stai compromettendo la sicurezza del tuo dispositivo. NON siamo responsabili per perdita di dati, dispositivi danneggiati o bug strani. NON segnalare problemi verificatisi durante l\'uso di queste modalità.</string>

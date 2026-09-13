@@ -8,7 +8,8 @@
 #include "droidspace.h"
 #include <linux/loop.h>
 
-#define DS_VTTY_COUNT 6 /* /dev/tty1..6 null symlinks for non-systemd inits */
+#define DS_VTTY_COUNT                                                          \
+  6 /* /dev/tty1..6: masked in hw mode, null symlinks otherwise */
 
 /* Forward declarations for loop helpers used in find_available_mountpoint */
 static void loop_detach(const char *loop_dev);
@@ -203,6 +204,50 @@ int bind_mount(const char *src, const char *tgt) {
 }
 
 /*
+ * ds_stage_dev_node()
+ *
+ * Create a device node in the staging tmpfs and bind it over the same path in
+ * the container /dev.  In --hw-access mode /dev is the kernel devtmpfs, one
+ * superblock shared by every mount of it and, on Linux, the host's own /dev.
+ * A bind changes only this mount namespace, so the singleton is never
+ * written.  The one exception is the placeholder bind_mount() creates when the
+ * target does not exist at all, which only happens on Android where nothing
+ * else mounts devtmpfs.
+ */
+int ds_stage_dev_node(const char *staging, const char *dev_dir, const char *rel,
+                      mode_t mode, dev_t dev, gid_t gid) {
+  char src[PATH_MAX], tgt[PATH_MAX];
+  snprintf(src, sizeof(src), "%s/%s", staging, rel);
+  snprintf(tgt, sizeof(tgt), "%s/%s", dev_dir, rel);
+
+  const char *slash = strrchr(rel, '/');
+  if (slash) {
+    char parent[PATH_MAX];
+    int len = (int)(slash - rel);
+    snprintf(parent, sizeof(parent), "%s/%.*s", staging, len, rel);
+    mkdir_p(parent, 0755);
+    snprintf(parent, sizeof(parent), "%s/%.*s", dev_dir, len, rel);
+    mkdir(parent, 0755);
+  }
+
+  if (mknod(src, mode, dev) < 0) {
+    if (errno == EEXIST)
+      return 0; /* reached twice by the GPU scan, already bound */
+    ds_warn("mknod %s: %s", src, strerror(errno));
+    return -1;
+  }
+  chmod(src, mode & 0777);
+  if (chown(src, 0, gid) < 0)
+    ds_warn("chown %s: %s", src, strerror(errno));
+
+  if (bind_mount(src, tgt) < 0) {
+    ds_warn("Failed to bind %s over %s: %s", src, tgt, strerror(errno));
+    return -1;
+  }
+  return 0;
+}
+
+/*
  * ds_apply_jail_mask()
  *
  * Secure sensitive kernel interfaces by self-binding and remounting them
@@ -332,90 +377,9 @@ int ds_apply_jail_mask(int hw_access, int privileged_mask) {
   return 0;
 }
 
-/*
- * prune_host_devices()
- *
- * Scans the mounted /dev (devtmpfs) and unlinks dangerous nodes to isolate
- * the container from the host's display server, consoles, and GPU masters.
- */
-static void prune_host_devices(const char *dev_path, int privileged_mask) {
-  if (privileged_mask & DS_PRIV_UNFILTERED) {
-    ds_log("[SEC] --privileged=unfiltered-dev: skipping hardware blocklist.");
-    return;
-  }
-  DIR *dir = opendir(dev_path);
-  if (!dir)
-    return;
-
-  struct dirent *entry;
-  char path[PATH_MAX];
-
-  while ((entry = readdir(dir)) != NULL) {
-    const char *name = entry->d_name;
-    int should_unlink = 0;
-
-    if (is_dangerous_node(name)) {
-      should_unlink = 1;
-    }
-
-    if (should_unlink) {
-      snprintf(path, sizeof(path), "%.3800s/%s", dev_path, name);
-      /* Use force_unlink to handle potential bind-mount stale artifacts */
-      umount2(path, MNT_DETACH);
-      force_unlink(path);
-      continue;
-    }
-
-    /* Subdirectory scanning for Tiers 1 and 2 (caps) */
-    if (strcmp(name, "dri") == 0 || strcmp(name, "nvidia-caps") == 0) {
-      snprintf(path, sizeof(path), "%.3800s/%s", dev_path, name);
-      DIR *subdir = opendir(path);
-      if (subdir) {
-        struct dirent *subentry;
-        while ((subentry = readdir(subdir)) != NULL) {
-          int sub_unlink = 0;
-          const char *subname = subentry->d_name;
-
-          if (is_dangerous_node(subname)) {
-            sub_unlink = 1;
-          }
-
-          if (sub_unlink) {
-            char subpath[PATH_MAX];
-            snprintf(subpath, sizeof(subpath), "%.3800s/%s", path, subname);
-            unlink(subpath);
-          }
-        }
-        closedir(subdir);
-
-        /* Special case: Handle /dev/dri/by-path symlinks */
-        if (strcmp(name, "dri") == 0) {
-          char bp_path[PATH_MAX];
-          snprintf(bp_path, sizeof(bp_path), "%.3800s/by-path", path);
-          DIR *bp_dir = opendir(bp_path);
-          if (bp_dir) {
-            while ((subentry = readdir(bp_dir)) != NULL) {
-              if (strstr(subentry->d_name, "-card")) {
-                char bppath[PATH_MAX];
-                snprintf(bppath, sizeof(bppath), "%.3800s/%s", bp_path,
-                         subentry->d_name);
-                unlink(bppath);
-              }
-            }
-            closedir(bp_dir);
-          }
-        }
-      }
-    }
-  }
-
-  closedir(dir);
-}
-
 /* /dev setup */
 
-int setup_dev(const char *rootfs, int hw_access, int gpu_mode,
-              int privileged_mask) {
+int setup_dev(const char *rootfs, int hw_access, int gpu_mode, int allow_vts) {
   char dev_path[PATH_MAX];
   snprintf(dev_path, sizeof(dev_path), "%s/dev", rootfs);
 
@@ -423,25 +387,45 @@ int setup_dev(const char *rootfs, int hw_access, int gpu_mode,
   mkdir(dev_path, 0755);
 
   if (hw_access) {
-    /* If hw_access is enabled, we mount host's devtmpfs.
-     * WARNING: This is a shared singleton. We MUST be careful. */
+    /* The kernel devtmpfs is one superblock shared by every mount of it, and
+     * on Linux it is the host's live /dev.  We never write into it: every
+     * node we need is created in a throwaway tmpfs and bound over the
+     * devtmpfs path.  Binds hold their own reference, so the staging mount is
+     * detached as soon as they exist and the container never sees it. */
     if (domount("devtmpfs", dev_path, "devtmpfs", MS_NOSUID | MS_NOEXEC,
                 "mode=755") == 0) {
-      /* On Android, /dev is a private tmpfs owned by ueventd - safe to modify.
-       * On Linux, /dev is the host's shared devtmpfs (one instance,
-       * kernel-managed). Unlinking nodes here removes them from the host
-       * permanently. Skip on Linux. */
-      if (is_android())
-        prune_host_devices(dev_path, privileged_mask);
+      /* No MS_NODEV here: a bind inherits the source mount's flags and a
+       * nodev /dev/null cannot be opened.  The rootfs /run directory already
+       * exists (boot step 7) and gets its real tmpfs at step 12. */
+      char staging[PATH_MAX];
+      snprintf(staging, sizeof(staging), "%s/run", rootfs);
+      if (domount("tmpfs", staging, "tmpfs", MS_NOSUID | MS_NOEXEC,
+                  "size=64k,mode=755") < 0)
+        return -1;
 
-      /* devtmpfs is the kernel's own instance and does NOT contain nodes
-       * that Android's ueventd created in its tmpfs-based /dev (kgsl-3d0,
-       * mali0, dri/renderD128, etc.).  Mirror any missing GPU/hardware nodes
-       * from the host into the freshly mounted devtmpfs now, before
-       * create_devices() lays down the standard char nodes.
-       * hw_access already implies full GPU wiring - no need to check gpu_mode
-       * separately here. */
-      mirror_gpu_nodes(dev_path);
+      int r = create_devices(rootfs, staging);
+
+      /* The devtmpfs carries the host's real VTs.  A systemd container will
+       * start getty@tty1 and logind spawns autovt@ on tty2-6 (NAutoVTs=6),
+       * which lands its login prompts on the host console.  Mask tty1-6
+       * with a 1:3 (null) node each unless the user asked for the VTs.  One
+       * node per VT, not a re-bind of the staged null: agetty fchmods its
+       * tty to 0620 root:tty and a shared inode would take /dev/null with it.
+       */
+      if (!allow_vts) {
+        char tty[16];
+        for (int i = 1; i <= DS_VTTY_COUNT; i++) {
+          snprintf(tty, sizeof(tty), "tty%d", i);
+          ds_stage_dev_node(staging, dev_path, tty, S_IFCHR | 0666,
+                            makedev(1, 3), 0);
+        }
+      }
+
+      /* Android's devtmpfs lacks the nodes ueventd hand-made in its own
+       * tmpfs /dev (kgsl-3d0, mali0, dri/renderD128). Fill them in. */
+      mirror_gpu_nodes(dev_path, staging);
+      umount2(staging, MNT_DETACH);
+      return r;
     } else {
       ds_warn("Failed to mount devtmpfs, falling back to tmpfs");
       if (domount("none", dev_path, "tmpfs", MS_NOSUID | MS_NOEXEC,
@@ -454,49 +438,60 @@ int setup_dev(const char *rootfs, int hw_access, int gpu_mode,
                 "size=8M,mode=755") < 0)
       return -1;
 
-    /* --gpu mode: scan the host /dev for known GPU "smoking guns" and mknod
-     * the found nodes into our isolated tmpfs.  This gives GPU acceleration
-     * without exposing the full host devtmpfs.  mirror_gpu_nodes() honours
-     * the is_dangerous_node() blocklist and only creates character devices
-     * that exist on the host, so it is safe to call unconditionally here. */
+    /* --gpu mode: mknod the known GPU nodes into our isolated tmpfs.  GPU
+     * acceleration without exposing the host devtmpfs. */
     if (gpu_mode) {
       ds_log("[GPU] --gpu mode: mirroring host GPU nodes into isolated tmpfs");
-      mirror_gpu_nodes(dev_path);
+      mirror_gpu_nodes(dev_path, NULL);
     }
   }
 
-  /* Create minimal set of device nodes (creates secure console/ptmx/etc.) */
-  return create_devices(rootfs, hw_access, privileged_mask);
+  return create_devices(rootfs, NULL);
 }
 
-int create_devices(const char *rootfs, int hw_access, int privileged_mask) {
-  (void)hw_access;
+/* Lay down the device nodes every init expects.  staging is the tmpfs to
+ * create them in when /dev is the devtmpfs singleton (--hw-access), NULL when
+ * /dev is our own tmpfs and nodes are created in place. */
+int create_devices(const char *rootfs, const char *staging) {
   const struct {
     const char *name;
     mode_t mode;
     dev_t dev;
-  } devices[] = {{"null", S_IFCHR | 0666, makedev(1, 3)},
-                 {"zero", S_IFCHR | 0666, makedev(1, 5)},
-                 {"full", S_IFCHR | 0666, makedev(1, 7)},
-                 {"random", S_IFCHR | 0666, makedev(1, 8)},
-                 {"urandom", S_IFCHR | 0666, makedev(1, 9)},
-                 {"tty", S_IFCHR | 0666, makedev(5, 0)},
-                 {"console", S_IFCHR | 0620, makedev(5, 1)},
-                 {"ptmx", S_IFCHR | 0666, makedev(5, 2)},
-                 {NULL, 0, 0}};
+    gid_t gid;
+  } devices[] = {{"null", S_IFCHR | 0666, makedev(1, 3), 0},
+                 {"zero", S_IFCHR | 0666, makedev(1, 5), 0},
+                 {"full", S_IFCHR | 0666, makedev(1, 7), 0},
+                 {"random", S_IFCHR | 0666, makedev(1, 8), 0},
+                 {"urandom", S_IFCHR | 0666, makedev(1, 9), 0},
+                 {"tty", S_IFCHR | 0666, makedev(5, 0), DS_DEFAULT_TTY_GID},
+                 {"console", S_IFCHR | 0620, makedev(5, 1), DS_DEFAULT_TTY_GID},
+                 {"ptmx", S_IFCHR | 0666, makedev(5, 2), 0},
+                 {"net/tun", S_IFCHR | 0666, makedev(10, 200), 0},
+                 {"fuse", S_IFCHR | 0666, makedev(10, 229), 0},
+                 {NULL, 0, 0, 0}};
 
-  char path[PATH_MAX];
+  char dev_dir[PATH_MAX], path[PATH_MAX];
+  snprintf(dev_dir, sizeof(dev_dir), "%s/dev", rootfs);
 
-  /* 1. Create standard devices */
   for (int i = 0; devices[i].name; i++) {
-    snprintf(path, sizeof(path), "%s/dev/%s", rootfs, devices[i].name);
+    if (staging) {
+      ds_stage_dev_node(staging, dev_dir, devices[i].name, devices[i].mode,
+                        devices[i].dev, devices[i].gid);
+      continue;
+    }
 
-    /* We always force recreation of these critical standard nodes to ensure
-     * correct permissions (0666) and isolation, even in unfiltered mode.
-     * Host nodes in devtmpfs often have restrictive permissions that break
-     * non-root users in the container. */
+    snprintf(path, sizeof(path), "%s/%s", dev_dir, devices[i].name);
+    const char *slash = strrchr(devices[i].name, '/');
+    if (slash) {
+      char parent[PATH_MAX];
+      snprintf(parent, sizeof(parent), "%s/%.*s", dev_dir,
+               (int)(slash - devices[i].name), devices[i].name);
+      mkdir(parent, 0755);
+    }
+
+    /* Always recreate: a node the rootfs shipped may carry host permissions
+     * that break non-root users in the container. */
     force_unlink(path);
-
     if (mknod(path, devices[i].mode, devices[i].dev) < 0) {
       /* Fallback for environments where mknod is restricted */
       char host_path[PATH_MAX];
@@ -504,65 +499,40 @@ int create_devices(const char *rootfs, int hw_access, int privileged_mask) {
       bind_mount(host_path, path);
     } else {
       chmod(path, devices[i].mode & 0777);
-      /* Success! Now set ownership to root:tty (gid 5) for console/tty nodes */
-      if (strcmp(devices[i].name, "console") == 0 ||
-          strcmp(devices[i].name, "tty") == 0) {
-        if (chown(path, 0, 5) < 0) {
-          /* Ignore failure */
-        }
+      if (devices[i].gid && chown(path, 0, devices[i].gid) < 0) {
+        /* Ignore failure */
       }
     }
   }
 
-  /* 2. Create /dev/net/tun */
-  snprintf(path, sizeof(path), "%s/dev/net", rootfs);
-  mkdir(path, 0755);
-  snprintf(path, sizeof(path), "%s/dev/net/tun", rootfs);
-  force_unlink(path);
-  if (mknod(path, S_IFCHR | 0666, makedev(10, 200)) < 0)
-    bind_mount("/dev/net/tun", path);
-  else
-    chmod(path, 0666);
-
-  /* 3. Create /dev/fuse */
-  snprintf(path, sizeof(path), "%s/dev/fuse", rootfs);
-  force_unlink(path);
-  if (mknod(path, S_IFCHR | 0666, makedev(10, 229)) < 0)
-    bind_mount("/dev/fuse", path);
-  else
-    chmod(path, 0666);
-
-  /* 4. Create /dev/tty1-N as symlinks to /dev/null.
-   * For non-systemd inits (openrc, busybox): silences "can't open /dev/ttyN"
-   * log spam -- the node exists, agetty opens /dev/null and exits cleanly.
-   *
-   * Skip in privileged+unfiltered-dev mode: devtmpfs already provides real
-   * ttyN char device nodes and we must not clobber them with symlinks.
-   */
-  if (!(privileged_mask & DS_PRIV_UNFILTERED)) {
-    for (int i = 1; i <= DS_VTTY_COUNT; i++) {
-      snprintf(path, sizeof(path), "%s/dev/tty%d", rootfs, i);
-      force_unlink(path);
-      if (symlink("/dev/null", path) < 0) {
-        /* best-effort, ignore */
-      }
+  /* Private tmpfs only: tty1..N as /dev/null symlinks so non-systemd inits
+   * (openrc, busybox) stop logging "can't open /dev/ttyN"; agetty opens
+   * /dev/null and exits cleanly.  hw mode masks the real VTs in setup_dev(). */
+  for (int i = 1; !staging && i <= DS_VTTY_COUNT; i++) {
+    snprintf(path, sizeof(path), "%s/tty%d", dev_dir, i);
+    force_unlink(path);
+    if (symlink("/dev/null", path) < 0) {
+      /* best-effort, ignore */
     }
   }
-  /* Standard symlinks */
+
+  /* Standard symlinks.  A symlink cannot be bind-mounted, so in hw mode these
+   * are created in the devtmpfs itself: on Linux they already exist (EEXIST),
+   * on Android the singleton is private to us. */
   char tgt[PATH_MAX];
-  snprintf(tgt, sizeof(tgt), "%s/dev/fd", rootfs);
+  snprintf(tgt, sizeof(tgt), "%s/fd", dev_dir);
   if (symlink("/proc/self/fd", tgt) < 0 && errno != EEXIST)
     ds_warn("Failed to create /dev/fd symlink: %s", strerror(errno));
 
-  snprintf(tgt, sizeof(tgt), "%s/dev/stdin", rootfs);
+  snprintf(tgt, sizeof(tgt), "%s/stdin", dev_dir);
   if (symlink("/proc/self/fd/0", tgt) < 0 && errno != EEXIST)
     ds_warn("Failed to create /dev/stdin symlink: %s", strerror(errno));
 
-  snprintf(tgt, sizeof(tgt), "%s/dev/stdout", rootfs);
+  snprintf(tgt, sizeof(tgt), "%s/stdout", dev_dir);
   if (symlink("/proc/self/fd/1", tgt) < 0 && errno != EEXIST)
     ds_warn("Failed to create /dev/stdout symlink: %s", strerror(errno));
 
-  snprintf(tgt, sizeof(tgt), "%s/dev/stderr", rootfs);
+  snprintf(tgt, sizeof(tgt), "%s/stderr", dev_dir);
   if (symlink("/proc/self/fd/2", tgt) < 0 && errno != EEXIST)
     ds_warn("Failed to create /dev/stderr symlink: %s", strerror(errno));
 
@@ -599,9 +569,9 @@ int setup_devpts(int hw_access) {
       const char *pts_ptmx = "/dev/pts/ptmx";
 
       if (hw_access) {
-        /* In HW access mode, /dev is a devtmpfs (shared singleton).
-         * CRITICAL: Do NOT unlink. create_devices() already created
-         * a real char device node (5,2) for us to bind-mount over. */
+        /* In HW access mode, /dev is the devtmpfs singleton and nothing in
+         * it may be unlinked.  The ptmx underneath is the staged 5,2 node
+         * create_devices() bound over the devtmpfs one; stack on top. */
         if (mount(pts_ptmx, ptmx_path, NULL, MS_BIND, NULL) == 0) {
           return 0;
         }

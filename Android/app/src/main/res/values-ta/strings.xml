@@ -212,7 +212,6 @@
     <string name="migrate_to_sparse_image">அரிதான படத்திற்கு நகர்த்தவும்</string>
     <string name="read_only">படிக்க மட்டும்</string>
     <string name="volatile_mode_description">ரேம் மட்டும் பயன்முறை (நிறுத்தத்திற்குப் பிறகு மாற்றங்கள் மறைந்துவிடும்)</string>
-    <string name="privileged_unfiltered_desc">சாதன வடிகட்டலைத் தவிர்க்கவும். அனைத்து புரவலன் /டெவ் முனைகளும் தெரியும்.</string>
     <string name="ok">சரி</string>
     <string name="gateway_configure">நுழைவாயிலை உள்ளமைக்கவும்</string>
     <string name="operation_completed_success">அறுவை மருத்தீடு வெற்றிகரமாக முடிந்தது!</string>

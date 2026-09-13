@@ -23,25 +23,23 @@ void print_usage(void) {
   printf(C_DIM "Built on: %s %s" C_RESET "\n\n", __DATE__, __TIME__);
   printf("Usage: droidspaces [options] <command> [args]\n\n");
 
-  printf(
-      C_BOLD
-      "Commands:" C_RESET "\n"
-      "  start                     Start a new container\n"
-      "  stop                      Stop one or more containers\n"
-      "  restart                   Restart a container\n"
-      "  enter [user]              Enter a running container\n"
-      "  run <cmd> [args]          Run a command in a running container\n"
-      "  usage                     Show container uptime, CPU and RAM usage\n"
-      "  info                      Show detailed container info\n"
-      "  pid                       Show the live PID of the container init\n"
-      "  show                      List all running containers\n"
-      "  scan                      Scan for untracked containers\n"
-      "  check                     Check system requirements\n"
-      "  docs                      Show interactive documentation\n"
-      "  help                      Show this help message\n"
-      "  version                   Show version information\n"
-      "  daemon                    Run daemon mode (use --foreground for "
-      "foreground execution)\n\n");
+  printf(C_BOLD
+         "Commands:" C_RESET "\n"
+         "  start                     Start a new container\n"
+         "  stop                      Stop one or more containers\n"
+         "  restart                   Restart a container\n"
+         "  enter [user]              Enter a running container\n"
+         "  run <cmd> [args]          Run a command in a running container\n"
+         "  info                      Show detailed container info\n"
+         "  pid                       Show the live PID of the container init\n"
+         "  show                      List all running containers\n"
+         "  scan                      Scan for untracked containers\n"
+         "  check                     Check system requirements\n"
+         "  docs                      Show interactive documentation\n"
+         "  help                      Show this help message\n"
+         "  version                   Show version information\n"
+         "  daemon                    Run daemon mode (use --foreground for "
+         "foreground execution)\n\n");
 
   printf(C_BOLD "Options (Container Setup):" C_RESET "\n"
                 "  -r, --rootfs=PATH         Path to rootfs directory\n"
@@ -53,7 +51,7 @@ void print_usage(void) {
   printf(
       C_BOLD
       "Options (Networking):" C_RESET "\n"
-      "      --net=MODE            Modes: host (default), nat, none, gateway\n"
+      "      --net=MODE            Modes: nat (default), host, none, gateway\n"
       "      --gateway=NAME        Gateway container for --net=gateway\n"
       "      --gateway-net=NAME    Gateway LAN name/bridge suffix (default: "
       "lan)\n"
@@ -104,8 +102,10 @@ void print_usage(void) {
       "      --cpus=COUNT          CPU limit (e.g. 1.5, 2)\n"
       "      --pids-limit=N        Max number of PIDs\n"
       "      --privileged=TAGS     Relax security: nomask, nocaps, noseccomp, "
-      "shared, unfiltered-dev, full\n"
-      "      --allow-userns        Allow user namespaces\n\n");
+      "shared, full\n"
+      "      --allow-userns        Allow user namespaces\n"
+      "      --allow-vts           Leave host VTs (tty1-6) visible with "
+      "--hw-access\n\n");
 
   printf(
       C_BOLD
@@ -122,7 +122,7 @@ void print_usage(void) {
       "                            e.g. -B /data:/data,/tmp:/tmp\n"
       "      --reset               Reset config to defaults (keeps "
       "name/rootfs)\n"
-      "      --format              Machine-parseable output (KEY=VALUE)\n"
+      "      --format              JSON output (show, info)\n"
       "      --help                Show this help message\n\n");
 
   printf(C_BOLD
@@ -309,7 +309,7 @@ static void enforce_nat_safety(struct ds_config *cfg, int argc, char **argv) {
              "[ FATAL: NETWORK NAMESPACE UNSUPPORTED ]" C_RESET "\n\n");
       ds_error("Kernel does not support CLONE_NEWNET (network namespaces).");
       ds_log("Cannot use --net=nat, --net=none, or --net=gateway.");
-      ds_log("Tip: Use --net=host (default) for shared host networking.");
+      ds_log("Tip: Use --net=host for shared host networking.");
       exit(EXIT_FAILURE);
     }
   }
@@ -350,7 +350,7 @@ static void enforce_nat_safety(struct ds_config *cfg, int argc, char **argv) {
     printf("\n" C_RED C_BOLD "[ FATAL: NAT NETWORKING UNSUPPORTED ]" C_RESET
            "\n\n");
     ds_error("--net=nat is not supported on this kernel:\n  %s", reason);
-    ds_log("\nTip: Use --net=host (default) for shared host networking,");
+    ds_log("\nTip: Use --net=host for shared host networking,");
     ds_log("or rebuild your kernel with CONFIG_BRIDGE=y and CONFIG_VETH=y.");
     exit(1);
   }
@@ -379,6 +379,7 @@ static struct option long_options[] = {
     {"enable-android-storage", no_argument, 0, 'S'},
     {"selinux-permissive", no_argument, 0, 'P'},
     {"allow-userns", no_argument, 0, 279},
+    {"allow-vts", no_argument, 0, 278},
     {"volatile", no_argument, 0, 'V'},
     {"bind-mount", required_argument, 0, 'B'},
     {"bind", required_argument, 0, 'B'},
@@ -524,6 +525,9 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       break;
     case 279:
       cfg->userns_allowed = 1;
+      break;
+    case 278:
+      cfg->allow_vts = 1;
       break;
     case 'V':
       cfg->volatile_mode = 1;
@@ -821,7 +825,7 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       cfg->gpu_mode = 1;
       break;
     case 265:
-      /* --format: machine-parseable output */
+      /* --format: JSON output */
       cfg->format_output = 1;
       break;
 
@@ -894,6 +898,11 @@ int main(int argc, char **argv) {
   /* Initialise pipe fds to -1 so accidental close(-1) is harmless */
   cfg.net_ready_pipe[0] = cfg.net_ready_pipe[1] = -1;
   cfg.net_done_pipe[0] = cfg.net_done_pipe[1] = -1;
+
+  /* DS_NET_HOST is the enum's zero value because the socketd wire format
+   * pins 0=host, so the zeroed struct must be corrected: NAT is the default,
+   * a saved config or --net overrides it below. */
+  cfg.net_mode = DS_NET_NAT;
 
   safe_strncpy(cfg.prog_name, argv[0], sizeof(cfg.prog_name));
 
@@ -1017,7 +1026,6 @@ int main(int argc, char **argv) {
                           strcmp(discovered_cmd, "restart") == 0 ||
                           strcmp(discovered_cmd, "pid") == 0 ||
                           strcmp(discovered_cmd, "info") == 0 ||
-                          strcmp(discovered_cmd, "usage") == 0 ||
                           strcmp(discovered_cmd, "enter") == 0 ||
                           strcmp(discovered_cmd, "run") == 0));
 
@@ -1213,11 +1221,6 @@ int main(int argc, char **argv) {
 
   if (strcmp(cmd, "info") == 0) {
     ret = show_info(&cfg, 0);
-    goto cleanup;
-  }
-
-  if (strcmp(cmd, "usage") == 0) {
-    ret = show_container_usage(&cfg);
     goto cleanup;
   }
 

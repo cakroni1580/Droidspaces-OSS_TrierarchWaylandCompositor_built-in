@@ -398,7 +398,6 @@
     <string name="privileged_nocaps_desc">មិនលុបបំបាត់សមត្ថភាព Linux ណាមួយឡើយ (ទទួលបានអំណាច root ពេញលេញ)។</string>
     <string name="privileged_noseccomp_desc">បិទការច្រោះ Seccomp Syscall។ មុខងារនេះនឹងបើកដំណើរការលក្ខណៈពិសេសកម្រិតខ្ពស់របស់ Kernel ដូចជា Unprivileged User Namespaces ដែលជាលក្ខខណ្ឌតម្រូវដាច់ខាតសម្រាប់ Nested Sandboxing (Bubblewrap, Flatpak) ហើយវាក៏អនុញ្ញាតឱ្យផ្ទុក Out-of-tree Kernel Modules ផងដែរ។</string>
     <string name="privileged_shared_desc">បើកដំណើរការការបញ្ជូនទិន្នន័យម៉ោន (Mount Propagation) បែប MS_SHARED ទៅកាន់ម៉ាស៊ីនផ្ទាល់ (Host)។</string>
-    <string name="privileged_unfiltered_desc">រំលងការច្រោះឧបករណ៍ (Device Filtering)។ រាល់ Device Nodes (/dev) ទាំងអស់របស់ម៉ាស៊ីនផ្ទាល់ (Host) នឹងត្រូវបានបង្ហាញឱ្យឃើញ។</string>
     <string name="privileged_full_desc">បើកដំណើរការគ្រប់សិទ្ធិខ្ពស់ទាំងអស់ក្នុងពេលតែមួយ។</string>
     <string name="privileged_warning_title">តំបន់គ្រោះថ្នាក់</string>
     <string name="privileged_disclaimer">តាមរយៈការបើកដំណើរការជម្រើសទាំងនេះ អ្នកកំពុងធ្វើឱ្យប៉ះពាល់ដល់សន្តិសុខឧបករណ៍របស់អ្នកហើយ។ យើងមិនទទួលខុសត្រូវចំពោះការបាត់បង់ទិន្នន័យ ឧបករណ៍ខូចដំណើរការទាំងស្រុង (Bricked) ឬបញ្ហាបច្ចេកទេសចម្លែកៗ (Weird Bugs) ណាមួយឡើយ។ សូមកុំរាយការណ៍ពីបញ្ហាដែលបានកើតឡើង អំឡុងពេលកំពុងប្រើប្រាស់របៀប (Modes) ទាំងនេះ។</string>

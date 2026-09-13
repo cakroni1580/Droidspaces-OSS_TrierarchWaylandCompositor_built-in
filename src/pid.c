@@ -418,90 +418,91 @@ int sync_pidfile(const char *src_pidfile, const char *name) {
 /* Status reporting */
 
 int show_containers(struct ds_config *cfg) {
-  DIR *d = opendir(get_pids_dir());
-  if (!d) {
-    if (errno == ENOENT) {
-      printf("\n(No containers running)\n\n");
-      return 0;
-    }
-    ds_error("Failed to open PIDs directory: %s", strerror(errno));
-    return -1;
-  }
-
-  struct container_info {
-    char name[128];
-    pid_t pid;
-  } *containers = NULL;
-
-  int count = 0;
-  int totalcount = 0;
-  int cap = 32;
   char container_dir[1024];
   snprintf(container_dir, sizeof(container_dir), "%s/%s", get_workspace_dir(),
            DS_CONTAINERS_DIR);
-  totalcount = count_folders(container_dir);
-  containers = malloc(cap * sizeof(struct container_info));
-  if (!containers) {
-    closedir(d);
+  int totalcount = count_folders(container_dir);
+
+  int count = 0;
+  int cap = 32;
+  size_t max_name_len = 4; /* "NAME" */
+  struct ds_status *containers = malloc((size_t)cap * sizeof(*containers));
+  if (!containers)
+    return -1;
+
+  DIR *d = opendir(get_pids_dir());
+  if (!d && errno != ENOENT) {
+    ds_error("Failed to open PIDs directory: %s", strerror(errno));
+    free(containers);
     return -1;
   }
 
-  size_t max_name_len = 4; /* "NAME" */
-
   struct dirent *ent;
-  while ((ent = readdir(d)) != NULL) {
-    if (is_pid_file(ent->d_name)) {
-      struct ds_config tmp_cfg = {0};
-      resolve_scanned_container(ent->d_name, &tmp_cfg);
+  while (d && (ent = readdir(d)) != NULL) {
+    if (!is_pid_file(ent->d_name))
+      continue;
+    struct ds_config tmp_cfg = {0};
+    resolve_scanned_container(ent->d_name, &tmp_cfg);
 
-      pid_t pid;
-      if (is_container_running(&tmp_cfg, &pid)) {
-        if (count >= cap) {
-          if (cap > 8192) {
-            free(containers);
-            closedir(d);
-            return -1;
-          }
-          cap *= 2;
-          struct container_info *tmp =
-              realloc(containers, (size_t)cap * sizeof(struct container_info));
-          if (!tmp) {
-            free(containers);
-            closedir(d);
-            return -1;
-          }
-          containers = tmp;
-        }
-
-        safe_strncpy(containers[count].name, tmp_cfg.container_name,
-                     sizeof(containers[count].name));
-        containers[count].pid = pid;
-        size_t nlen = strlen(containers[count].name);
-        if (nlen > max_name_len)
-          max_name_len = nlen;
-        count++;
-      } else if (pid == 0 && access(tmp_cfg.pidfile, F_OK) == 0) {
+    pid_t pid;
+    if (!is_container_running(&tmp_cfg, &pid)) {
+      if (pid == 0 && access(tmp_cfg.pidfile, F_OK) == 0)
         prune_stale_pidfile(tmp_cfg.pidfile);
-      }
+      continue;
     }
-  }
-  closedir(d);
 
-  if (count == 0) {
-    printf("\n(No containers running)\n\n");
-    free(containers);
-    return 0;
+    if (count >= cap) {
+      struct ds_status *tmp =
+          cap > 8192 ? NULL
+                     : realloc(containers, (size_t)cap * 2 * sizeof(*tmp));
+      if (!tmp) {
+        free(containers);
+        closedir(d);
+        return -1;
+      }
+      cap *= 2;
+      containers = tmp;
+    }
+    struct ds_status *st = &containers[count++];
+    memset(st, 0, sizeof(*st));
+    safe_strncpy(st->name, tmp_cfg.container_name, sizeof(st->name));
+    st->pid = pid;
+    if (cfg->format_output) {
+      /* The booted snapshot carries the display name and hostname the
+       * container actually got, the same source ds_config_load_by_name()
+       * prefers for a running one. The app keys its cards by that display
+       * name, not by the sanitized pidfile name, so report it when known. */
+      char snap[PATH_MAX];
+      if (build_proc_root_path(pid, "/run/droidspaces/container.config", snap,
+                               sizeof(snap)) == 0 &&
+          ds_config_load(snap, &tmp_cfg) == 0) {
+        safe_strncpy(st->name, tmp_cfg.container_name, sizeof(st->name));
+        safe_strncpy(st->hostname, tmp_cfg.hostname, sizeof(st->hostname));
+      }
+      ds_config_free(&tmp_cfg);
+      if (!st->hostname[0])
+        safe_strncpy(st->hostname, st->name, sizeof(st->hostname));
+    }
+    size_t nlen = strlen(st->name);
+    if (nlen > max_name_len)
+      max_name_len = nlen;
   }
+  if (d)
+    closedir(d);
 
   if (cfg->format_output) {
-    printf("TOTAL_CONTAINERS=%d\n", totalcount);
-    printf("RUN_CONTAINERS=%d\n", count);
-
+    long ram_total = ds_collect_status(containers, count);
+    printf("{\"total\":%d,\"ram_total_kb\":%ld,\"running\":[", totalcount,
+           ram_total);
     for (int i = 0; i < count; i++) {
-      printf("CONT_%s=%d\n", containers[i].name, containers[i].pid);
+      int first = 1;
+      printf(i ? ",{" : "{");
+      ds_json_status(&containers[i], &first);
+      printf("}");
     }
-
-    printf("\n");
+    printf("]}\n");
+  } else if (count == 0) {
+    printf("\n(No containers running)\n\n");
   } else {
     if (max_name_len > 60)
       max_name_len = 60;

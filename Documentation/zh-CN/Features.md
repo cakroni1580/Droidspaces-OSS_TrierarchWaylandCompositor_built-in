@@ -149,6 +149,8 @@ Droidspaces 在运行时会检测到这种不兼容性并提供清晰的诊断�
 
 硬件访问模式授予容器对**所有**宿主设备的可见性。容器可以直接与 GPU、USB 控制器和其他硬件交互。仅当您信任容器内容并需要硬件访问时才使用此模式。
 
+容器的 `/dev` 就是内核的 devtmpfs，在 Linux 上与宿主使用的是同一个实例。Droidspaces 从不向其中写入：所需的节点（`null`、`console`、`ptmx`、GPU 节点等）在一个私有 tmpfs 中创建，然后在容器的挂载命名空间内绑定挂载到 devtmpfs 的对应路径上。唯一的例外是 `/dev/tty1` 到 `tty6`，默认用 `/dev/null` 遮蔽，因为 systemd 容器会在其上启动 `getty`，把登录提示显示到宿主控制台。传入 `--allow-vts` 可保留宿主虚拟终端可见。
+
 ### systemd 258+ 修复
 
 从 systemd 258 开始，容器检测逻辑得到了强化。systemd 现在会检查 `/sys` 是否为只读挂载，以判断它是在容器内运行还是物理机上运行。如果 `/sys` 是可读写的，systemd 就会假定它具有完整的硬件管理权限，并尝试将服务（如 `getty`）附加到物理 TTY（`tty1`-`tty6`）。由于这些在隔离的容器环境中不存在，服务无法启动，导致控制台没有登录提示。
@@ -173,11 +175,11 @@ droidspaces --name=gpu-test --rootfs=/path/to/rootfs --hw-access start
 
 当启用 `--hw-access` 时，Droidspaces 会自动：
 
-1. **扫描宿主 GPU 设备** - 在 `pivot_root` 之前，探查约 40 个已知的 GPU 设备路径（`/dev/dri/*`、`/dev/mali*`、`/dev/kgsl-3d0`、`/dev/nvidia*` 等）并通过 `stat()` 收集它们的组 ID。**显式跳过像 `/dev/dri/card*` 这样的危险节点**，以防止宿主机内核恐慌，因为这些节点仅限于宿主的显示管理器。
+1. **扫描宿主 GPU 设备** - 在 `pivot_root` 之前，探查约 40 个已知的 GPU 设备路径（`/dev/dri/*`、`/dev/mali*`、`/dev/kgsl-3d0`、`/dev/nvidia*` 等）并通过 `stat()` 收集它们的组 ID。
 2. **创建匹配的组** - 在 `pivot_root` 之后，将类似 `gpu_<GID>:x:<GID>:root` 的条目追加到容器的 `/etc/group` 中。容器的 root 用户自动添加到每个组中。
 3. **幂等重启** - 容器重启时，检测到现有组并跳过（不产生重复条目）。
 
-这消除了容器内手动执行 `groupadd`/`usermod` 命令的需要，同时通过避免受限的硬件路径来确保宿主内核的稳定性。
+这消除了容器内手动执行 `groupadd`/`usermod` 命令的需要。
 
 ### X11 套接字挂载
 

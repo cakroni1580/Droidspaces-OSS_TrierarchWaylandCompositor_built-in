@@ -75,8 +75,8 @@ sudo droidspaces --name=web,db,app stop
 | `restart` | Fast restart (under 200ms) by preserving loop mounts. |
 | `enter [user]` | Open an interactive shell inside a running container. |
 | `run <cmd>` | Execute a single command without opening a full shell. Use `-u`/`--user` to run as a specific container user. |
-| `info` | Show deep technical details about a container. |
-| `show` | List all currently running containers in a table. |
+| `info` | Show deep technical details about a container. With `--format`, print them as JSON. |
+| `show` | List all currently running containers in a table. With `--format`, print JSON including OS, IP, uptime, CPU and RAM per container. |
 | `scan` | Detect and register orphaned/untracked containers. |
 | `check` | Verify system and kernel requirements. |
 | `docs` | Open the interactive terminal-based documentation. |
@@ -110,7 +110,7 @@ sudo droidspaces --name=web,db,app stop
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--net=MODE` | | Networking mode: `host` (default), `nat`, `none`, or `gateway`. |
+| `--net=MODE` | | Networking mode: `nat` (default), `host`, `none`, or `gateway`. |
 | `--upstream=IFACE` | | Pin the NAT WAN to specific interface(s); disables automatic uplink detection. Comma-separated, priority-ordered, supports wildcards. Example: `--upstream=wlan0,rmnet*`. NAT mode only. |
 | `--port HOST:CONT[/proto]` | | Forward host port to container (NAT mode). Supports TCP/UDP. |
 | `--dns=SERVERS` | `-d` | Custom DNS servers, comma-separated. Example: `--dns=1.1.1.1,8.8.8.8` |
@@ -135,11 +135,12 @@ Delegate a container's LAN to another running container (e.g. OpenWRT), which th
 | `--volatile` | `-V` | Ephemeral mode. Changes are stored in RAM and lost on exit. |
 | `--hw-access` | `-H` | Expose host hardware (GPU, USB, etc.). Auto-detects GPU group IDs and creates matching groups inside the container. Mounts X11 socket for GUI apps (Termux X11 on Android, `/tmp/.X11-unix` on Linux). See [Safety Warning](Features.md#hardware-access-mode). |
 | `--gpu` | | Exclusively enable GPU acceleration. Scans the host `/dev` for known GPU nodes and securely maps only them into the container without exposing other host hardware. (Ignored if `-H` is passed). |
+| `--allow-vts` | | With `--hw-access`, leave the host's virtual terminals (`/dev/tty1`-`tty6`) visible. By default they are masked with `/dev/null` so a systemd container's `getty` does not take over the host console. No effect without `-H`. |
 | `--termux-x11`| `-X` | Mount X11 socket for Termux-X11 display (Android only). |
 | `--enable-android-storage`| | Mount `/storage/emulated/0` (Android only). |
 | `--selinux-permissive` | | Set host SELinux to permissive for the container session. |
 | `--force-cgroupv1` | | Force legacy Cgroup V1 hierarchy. Required if the host kernel has a broken or partial Cgroups V2 implementation (common on older Android 4.x kernels). |
-| `--privileged=TAGS` | | Relax security protections. Accepts a comma-separated list of tags: `nomask`, `nocaps`, `noseccomp`, `shared`, `unfiltered-dev`, `full`. Use with extreme caution. |
+| `--privileged=TAGS` | | Relax security protections. Accepts a comma-separated list of tags: `nomask`, `nocaps`, `noseccomp`, `shared`, `full`. Use with extreme caution. |
 
 ### Bind Mounts
 

@@ -329,7 +329,6 @@
     <string name="privileged_nocaps_desc">保留所有 Linux Capabilities（完整 root 权限）。</string>
     <string name="privileged_noseccomp_desc">禁用 Seccomp 系统调用过滤。这将启用非特权用户命名空间等高级内核功能，是嵌套沙箱的必要条件（Bubblewrap、Flatpak），同时允许加载树外内核模块。</string>
     <string name="privileged_shared_desc">启用至宿主机的 MS_SHARED 挂载传播。</string>
-    <string name="privileged_unfiltered_desc">绕过设备过滤。宿主机的所有 /dev 节点都将可见。</string>
     <string name="privileged_full_desc">同时启用所有特权标志。</string>
     <string name="privileged_warning_title">高危区域</string>
     <string name="privileged_disclaimer">启用这些选项会降低设备的安全性。我们对任何数据丢失、设备损坏或异常错误概不负责。请勿报告在使用这些模式时遇到的问题。</string>

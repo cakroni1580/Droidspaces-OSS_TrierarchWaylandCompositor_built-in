@@ -618,7 +618,6 @@
     <string name="privileged_nocaps_desc">Do not drop any Linux capabilities (full root power).</string>
     <string name="privileged_noseccomp_desc">Disable Seccomp syscall filtering. This enables advanced kernel features like unprivileged user namespaces, strictly required for nested sandboxing (Bubblewrap, Flatpak) and also allows loading out-of-tree kernel modules.</string>
     <string name="privileged_shared_desc">Enable MS_SHARED mount propagation to the host.</string>
-    <string name="privileged_unfiltered_desc">Bypass device filtering. All host /dev nodes become visible.</string>
     <string name="privileged_full_desc">Enable all privileged flags at once.</string>
     <string name="privileged_warning_title">DANGEROUS TERRITORY</string>
     <string name="privileged_disclaimer">By enabling these options, you are compromising your device security. We are NOT responsible for any data loss, bricked devices, or weird bugs. Do NOT report issues occurred while using these modes.</string>

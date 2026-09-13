@@ -120,7 +120,8 @@ fun ContainerTerminalScreen(
     }
     var hostnameReady by remember { mutableStateOf(hostname != containerName.take(12)) }
     LaunchedEffect(containerName) {
-        val resolved = ContainerOSInfoManager.getOSInfo(containerName, useCache = true, appContext = context).hostname
+        val resolved = ContainerOSInfoManager.getCachedOSInfo(containerName, context)?.hostname
+            ?: ContainerOSInfoManager.fetchAll(context)[containerName]?.hostname
         if (resolved != null) hostname = resolved
         hostnameReady = true
     }

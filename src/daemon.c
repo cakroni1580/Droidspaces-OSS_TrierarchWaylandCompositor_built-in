@@ -1122,6 +1122,28 @@ int ds_daemon_probe(void) {
 
 /* connect to the daemon and relay our command */
 
+static int send_request(int sock, int argc, char **argv, int interactive) {
+  uint32_t flags = interactive ? REQ_FLAG_PTY : 0u;
+  uint32_t nf = htonl(flags), na = htonl((uint32_t)argc);
+  if (write_all(sock, &nf, 4) < 0 || write_all(sock, &na, 4) < 0)
+    return -1;
+  for (int i = 0; i < argc; i++) {
+    uint32_t al = (uint32_t)strlen(argv[i]), nal = htonl(al);
+    if (write_all(sock, &nal, 4) < 0)
+      return -1;
+    if (al && write_all(sock, argv[i], al) < 0)
+      return -1;
+  }
+  if (interactive) {
+    struct winsize ws = {24, 80, 0, 0};
+    ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
+    uint16_t wd[2] = {htons(ws.ws_row), htons(ws.ws_col)};
+    if (write_all(sock, wd, 4) < 0)
+      return -1;
+  }
+  return 0;
+}
+
 int ds_client_run(int argc, char **argv) {
   if (argc < 1)
     return -2;
@@ -1200,26 +1222,14 @@ int ds_client_run(int argc, char **argv) {
   }
   sock = s;
 
-  /* send the request */
-  uint32_t flags = interactive ? REQ_FLAG_PTY : 0u;
-  uint32_t nf = htonl(flags), na = htonl((uint32_t)argc);
-  if (write_all(sock, &nf, 4) < 0 || write_all(sock, &na, 4) < 0)
-    goto send_err;
-  for (int i = 0; i < argc; i++) {
-    uint32_t al = (uint32_t)strlen(argv[i]), nal = htonl(al);
-    if (write_all(sock, &nal, 4) < 0)
-      goto send_err;
-    if (al && write_all(sock, argv[i], al) < 0)
-      goto send_err;
-  }
+  /* The daemon may reject us and close before we finish writing the request.
+   * Without this the kernel kills us with SIGPIPE: exit 141, no output. */
+  signal(SIGPIPE, SIG_IGN);
 
-  if (interactive) {
-    struct winsize ws = {24, 80, 0, 0};
-    ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
-    uint16_t wd[2] = {htons(ws.ws_row), htons(ws.ws_col)};
-    if (write_all(sock, wd, 4) < 0)
-      goto send_err;
-  }
+  /* EPIPE means the daemon already closed. Its verdict (an error frame and
+   * the exit code) is queued on our socket, so fall through and relay it. */
+  if (send_request(sock, argc, argv, interactive) < 0 && errno != EPIPE)
+    goto send_err;
 
   /* run the relay loop */
   struct termios orig;

@@ -110,7 +110,7 @@ sudo droidspaces --name=web,db,app stop
 
 | 选项 | 简写 | 说明 |
 |--------|------|-------------|
-| `--net=MODE` | | 网络模式：主机模式 `host`（默认）、NAT 模式 `nat`、无网络模式 `none` 或网关模式 `gateway`。 |
+| `--net=MODE` | | 网络模式：NAT 模式 `nat`（默认）、主机模式 `host`、无网络模式 `none` 或网关模式 `gateway`。 |
 | `--upstream=IFACE` | | 将 NAT WAN 固定到指定接口；禁用自动上行链路检测。逗号分隔、按优先级排序，并支持通配符。示例：`--upstream=wlan0,rmnet*`。仅 NAT 模式有效。 |
 | `--port HOST:CONT[/proto]` | | 将主机端口转发到容器（NAT 模式）。支持 TCP/UDP。 |
 | `--dns=SERVERS` | `-d` | 自定义 DNS 服务器，逗号分隔。示例：`--dns=1.1.1.1,8.8.8.8` |
@@ -135,11 +135,12 @@ sudo droidspaces --name=web,db,app stop
 | `--volatile` | `-V` | 临时模式。更改存储在 RAM 中，退出后丢失。 |
 | `--hw-access` | `-H` | 暴露主机硬件（GPU、USB 等）。自动检测 GPU 组 ID 并在容器内创建匹配的组。挂载 X11 socket 以支持 GUI 应用（Android 上为 Termux X11，Linux 上为 `/tmp/.X11-unix`）。参见[安全警告](./Features.md#hardware-access-mode)。 |
 | `--gpu` | | 仅启用 GPU 加速。扫描主机 `/dev` 中的已知 GPU 节点，并仅将其安全映射到容器中，不暴露其他主机硬件。（若已传入 `-H`，此选项将被忽略）。 |
+| `--allow-vts` | | 与 `--hw-access` 一起使用时，保留主机虚拟终端（`/dev/tty1`-`tty6`）可见。默认情况下它们会被 `/dev/null` 遮蔽，以免 systemd 容器的 `getty` 接管主机控制台。没有 `-H` 时无效。 |
 | `--termux-x11`| `-X` | 挂载 X11 socket 以支持 Termux-X11 显示（仅限 Android）。 |
 | `--enable-android-storage`| | 挂载 `/storage/emulated/0`（仅限 Android）。 |
 | `--selinux-permissive` | | 在容器会话期间将主机 SELinux 设置为宽容模式。 |
 | `--force-cgroupv1` | | 强制使用旧版 Cgroup V1 层级。若主机内核存在损坏或不完整的 Cgroups V2 实现（常见于旧版 Android 4.x 内核），则需要此选项。 |
-| `--privileged=TAGS` | | 放宽安全保护。接受逗号分隔的标签列表：`nomask`、`nocaps`、`noseccomp`、`shared`、`unfiltered-dev`、`full`。请极其谨慎地使用。 |
+| `--privileged=TAGS` | | 放宽安全保护。接受逗号分隔的标签列表：`nomask`、`nocaps`、`noseccomp`、`shared`、`full`。请极其谨慎地使用。 |
 
 ### 绑定挂载
 

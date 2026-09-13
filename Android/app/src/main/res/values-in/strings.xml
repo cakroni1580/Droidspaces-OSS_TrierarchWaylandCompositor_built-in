@@ -310,7 +310,6 @@
     <string name="privileged_nocaps_desc">Jangan lepaskan kemampuan Linux (hak akses root penuh).</string>
     <string name="privileged_noseccomp_desc">Nonaktifkan penyaringan panggilan sistem Seccomp. Hal ini mengaktifkan fitur-fitur kernel tingkat lanjut seperti ruang nama pengguna tanpa hak istimewa, yang sangat diperlukan untuk sandboxing bersarang (Bubblewrap, Flatpak), serta memungkinkan pemuatan modul kernel yang tidak termasuk dalam pohon sumber.</string>
     <string name="privileged_shared_desc">Aktifkan penyebaran mount MS_SHARED ke host.</string>
-    <string name="privileged_unfiltered_desc">Melewati penyaringan perangkat. Semua node host /dev menjadi terlihat.</string>
     <string name="privileged_full_desc">Aktifkan semua bendera hak istimewa sekaligus.</string>
     <string name="privileged_warning_title">WILAYAH BERBAHAYA</string>
     <string name="privileged_disclaimer">Dengan mengaktifkan opsi-opsi ini, Anda membahayakan keamanan perangkat Anda. Kami TIDAK bertanggung jawab atas kehilangan data, perangkat yang rusak total, atau bug yang aneh. JANGAN laporkan masalah yang terjadi saat menggunakan mode-mode ini.</string>

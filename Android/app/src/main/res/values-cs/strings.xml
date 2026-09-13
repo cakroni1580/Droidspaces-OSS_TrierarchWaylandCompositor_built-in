@@ -452,7 +452,6 @@
     <string name="privileged_nocaps_desc">Neodebírá žádné schopnosti (capabilities) Linuxu (plný přístup roota).</string>
     <string name="privileged_noseccomp_desc">Vypne filtrování systémových volání seccomp. Tím povolí pokročilé funkce jádra, například neprivilegované uživatelské jmenné prostory, které jsou nezbytné pro vnořený sandboxing (Bubblewrap, Flatpak), a také načítání modulů jádra mimo strom.</string>
     <string name="privileged_shared_desc">Zapne sdílené šíření připojení MS_SHARED do hostitele.</string>
-    <string name="privileged_unfiltered_desc">Obejde filtrování zařízení. Zobrazí se všechny uzly /dev hostitele.</string>
     <string name="privileged_full_desc">Zapne všechny privilegované příznaky najednou.</string>
     <string name="privileged_warning_title">NEBEZPEČNÁ OBLAST</string>
     <string name="privileged_disclaimer">Zapnutím těchto možností ohrožujete zabezpečení svého zařízení. NENESEME odpovědnost za ztrátu dat, znefunkčněná zařízení ani podivné chyby. Potíže vzniklé při používání těchto režimů NEHLASTE.</string>

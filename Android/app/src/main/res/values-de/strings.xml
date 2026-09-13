@@ -445,7 +445,6 @@
     <string name="repo_dl_error_device_not_found">Speicher nicht gefunden</string>
     <string name="privileged_shared_desc">Weitergabe von MS_SHARED-Einbindungen an den Host aktivieren.</string>
     <string name="repo_install">Installieren</string>
-    <string name="privileged_unfiltered_desc">Gerätefilterung umgehen. Alle /dev-Knoten des Hosts werden sichtbar.</string>
     <string name="repo_dl_error_file_error">Dateisystemfehler</string>
     <string name="repo_fab_label">Repository</string>
     <string name="repo_dl_error_unhandled_http">Unerwartete HTTP-Antwort</string>

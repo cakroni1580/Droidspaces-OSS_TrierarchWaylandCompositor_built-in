@@ -148,6 +148,8 @@ This gives the container access to:
 
 Hardware access mode grants the container visibility to **all** host devices. The container can interact with the GPU, USB controllers, and other hardware directly. Only use this mode when you trust the container's contents and need hardware access.
 
+The container's `/dev` is the kernel's devtmpfs, the same instance the host uses on Linux. Droidspaces never writes into it: the nodes it needs (`null`, `console`, `ptmx`, GPU nodes and so on) are created in a private tmpfs and bind-mounted over the devtmpfs paths inside the container's mount namespace. The one exception is `/dev/tty1` to `tty6`, which are masked with `/dev/null` by default because a systemd container starts `getty` on them and would put its login prompt on the host console. Pass `--allow-vts` to leave the host's virtual terminals visible.
+
 ### The systemd 258+ Fix
 
 Starting with systemd 258, the container detection logic was hardened. systemd now checks whether `/sys` is mounted read-only to determine if it's running in a container versus a physical machine. If `/sys` is read-write, systemd assumes it has full hardware authority and attempts to attach services (like `getty`) to physical TTYs (`tty1`-`tty6`). Since these do not exist in the isolated container environment, the services fail to start, leaving the console without a login prompt.
@@ -172,11 +174,11 @@ droidspaces --name=gpu-test --rootfs=/path/to/rootfs --hw-access start
 
 When `--hw-access` is enabled, Droidspaces automatically:
 
-1. **Scans host GPU devices** - Before `pivot_root`, it probes ~40 known GPU device paths (`/dev/dri/*`, `/dev/mali*`, `/dev/kgsl-3d0`, `/dev/nvidia*`, etc.) and collects their group IDs via `stat()`. **Dangerous nodes like `/dev/dri/card*` are explicitly skipped** to prevent host kernel panics, as these nodes are restricted to the host's display manager.
+1. **Scans host GPU devices** - Before `pivot_root`, it probes ~40 known GPU device paths (`/dev/dri/*`, `/dev/mali*`, `/dev/kgsl-3d0`, `/dev/nvidia*`, etc.) and collects their group IDs via `stat()`.
 2. **Creates matching groups** - After `pivot_root`, it appends entries like `gpu_<GID>:x:<GID>:root` to the container's `/etc/group`. The container's root user is automatically added to each group.
 3. **Idempotent restarts** - On container restart, existing groups are detected and skipped (no duplicate entries).
 
-This eliminates the need for manual `groupadd`/`usermod` commands inside the container, while ensuring the host's kernel stability by avoiding restricted hardware paths.
+This eliminates the need for manual `groupadd`/`usermod` commands inside the container.
 
 ### X11 Socket Mounting
 
