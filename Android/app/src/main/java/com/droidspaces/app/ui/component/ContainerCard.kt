@@ -35,6 +35,7 @@ import com.droidspaces.app.util.AnimationUtils
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ContainerOSInfoManager
 import com.droidspaces.app.util.ContainerStatus
+import com.droidspaces.app.util.Constants
 import com.droidspaces.app.util.IconUtils
 
 /**
@@ -187,6 +188,7 @@ fun ContainerCard(
                     if (container.enableTermuxX11) add(context.getString(R.string.x11_option))
                     if (container.enableVirgl) add(context.getString(R.string.virgl_option))
                     if (container.enablePulseaudio) add(context.getString(R.string.pulseaudio_option))
+                    if (container.enableWayland && Constants.isArm64) add(context.getString(R.string.wayland_option))
                     if (container.selinuxPermissive) add(context.getString(R.string.selinux_permissive_option))
                     if (container.allowUserns) add(context.getString(R.string.userns_option))
                     if (container.volatileMode) add(context.getString(R.string.volatile_option))

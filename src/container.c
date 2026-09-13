@@ -435,6 +435,8 @@ int start_rootfs(struct ds_config *cfg) {
     ds_warn("--virgl-flags is only applicable on Android. Skipping.");
   if (cfg->pulseaudio && !is_android())
     ds_warn("--pulse-audio is only applicable on Android. Skipping.");
+  if (cfg->wayland && !is_android())
+    ds_warn("--wayland is only applicable on Android. Skipping.");
 
   /* If no hostname specified, default to container name */
   if (cfg->hostname[0] == '\0') {
@@ -1603,6 +1605,11 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       ds_json_int("pulseaudio", cfg->pulseaudio, &first);
     }
 
+
+    if (is_android()) {
+      printf("WAYLAND=%d\n", cfg->wayland);
+    }
+
     if (access("/sys/fs/selinux/enforce", R_OK) == 0)
       ds_json_str("selinux",
                   ds_get_selinux_status() == 0 ? "Permissive" : "Enforcing",
@@ -1790,6 +1797,12 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     /* 9. PulseAudio */
     if (is_android() && cfg->pulseaudio) {
       printf("  PulseAudio: enabled\n");
+      feat_count++;
+    }
+
+    /* 10. Wayland */
+    if (is_android() && cfg->wayland) {
+      printf("  Wayland: enabled (compositor in app)\n");
       feat_count++;
     }
 

@@ -44,6 +44,7 @@ import com.droidspaces.app.ui.component.DialogFooterRow
 import com.droidspaces.app.ui.component.SectionHeader
 import com.droidspaces.app.ui.component.AccentColorPicker
 import com.droidspaces.app.ui.component.BugReportDialog
+import com.droidspaces.app.ui.component.SettingsRowCard
 import com.droidspaces.app.ui.component.SwitchItem
 import com.droidspaces.app.ui.theme.ThemePalette
 import com.droidspaces.app.ui.theme.rememberThemeState
@@ -59,6 +60,8 @@ import androidx.compose.foundation.Image
 import com.droidspaces.app.util.SymlinkInstaller
 import com.droidspaces.app.util.DeviceArch
 import androidx.core.content.edit
+import com.droidspaces.app.util.Constants
+import com.droidspaces.app.wayland.WaylandManager
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -227,6 +230,27 @@ fun SettingsScreen(
                 }
             )
 
+            // Wayland Compositor Toggle (arm64 only)
+            if (Constants.isArm64) {
+                val isWaylandRunning = WaylandManager.isRunning
+                SwitchItem(
+                    icon = Icons.Default.DesktopWindows,
+                    title = context.getString(R.string.wayland_compositor),
+                    summary = if (isWaylandRunning)
+                        WaylandManager.hostSocketPath(context)
+                    else
+                        context.getString(R.string.wayland_compositor_stopped),
+                    checked = isWaylandRunning,
+                    enabled = isRootAvailable,
+                    onCheckedChange = { checked ->
+                        if (checked) WaylandManager.start(context)
+                        else WaylandManager.stop(context)
+                        prefsManager.isWaylandCompositorEnabled = checked
+                    }
+                )
+
+                // Open Display button removed — now lives at the top of the Panel tab
+            }
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
             val isBackendAvailable = appStateViewModel.isBackendAvailable
