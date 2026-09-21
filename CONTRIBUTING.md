@@ -427,6 +427,7 @@ validation. Prefer the wrappers.
 | `ContainerUsageViewModel` | `ui/viewmodel/ContainerUsageViewModel.kt` | Live usage polling |
 | `SystemStatsViewModel` | `ui/viewmodel/SystemStatsViewModel.kt` | Per-container OS info |
 | `RootfsRepoViewModel` | `ui/viewmodel/RootfsRepoViewModel.kt` | Repo listing and per-asset download state |
+| `InitServiceViewModel` | `ui/viewmodel/InitServiceViewModel.kt` | Init-system service list, filter and search, shared by systemd, OpenRC and procd |
 
 ### Android: terminal
 

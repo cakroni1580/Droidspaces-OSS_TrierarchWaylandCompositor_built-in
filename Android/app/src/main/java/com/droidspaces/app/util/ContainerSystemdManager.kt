@@ -332,7 +332,14 @@ object ContainerSystemdManager {
     suspend fun unmaskService(containerName: String, serviceName: String) =
         runSystemctl(containerName, "unmask", serviceName)
 
-    // ── Unit inspection ──────────────────────────────────────────────────────
+    /** Tail of the unit's journal. Empty if the unit name is unsafe or journalctl is missing. */
+    suspend fun dumpJournal(containerName: String, unitName: String, lines: Int): List<String> =
+        withContext(Dispatchers.IO) {
+            if (!ServiceManagerBase.isSafeServiceName(unitName)) return@withContext emptyList()
+            val cmd = "${Constants.DROIDSPACES_BINARY_PATH} --name=${ContainerCommandBuilder.quote(containerName)} " +
+                "run 'journalctl -u $unitName --no-pager -n $lines 2>/dev/null'"
+            Shell.cmd(cmd).exec().out
+        }
 
     /**
      * Inspect a single unit: key properties (via `systemctl show -p`), the raw

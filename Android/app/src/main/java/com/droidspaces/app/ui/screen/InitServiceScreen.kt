@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.droidspaces.app.ui.component.CardContentPadding
 import com.droidspaces.app.ui.component.CardHeaderHeight
 import com.droidspaces.app.ui.theme.JetBrainsMono
@@ -54,6 +55,8 @@ import com.droidspaces.app.ui.component.DsMenuTheme
 import com.droidspaces.app.ui.component.StatusPill
 import com.droidspaces.app.ui.util.*
 import com.droidspaces.app.util.AnimationUtils
+import com.droidspaces.app.ui.viewmodel.InitScreenState
+import com.droidspaces.app.ui.viewmodel.InitServiceViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -117,12 +120,6 @@ data class InitServiceFilterChip(
     val predicate: (InitServiceRow) -> Boolean,
 )
 
-private sealed class InitScreenState {
-    data object Loading : InitScreenState()
-    data object NotAvailable : InitScreenState()
-    data class Ready(val rows: List<InitServiceRow>) : InitScreenState()
-}
-
 private sealed class InitActionState {
     data object Idle : InitActionState()
     data class InProgress(val serviceName: String, val actionName: String) : InitActionState()
@@ -143,47 +140,31 @@ fun InitServiceScreen(
     fetchRows: suspend (String) -> List<InitServiceRow>,
     filters: List<InitServiceFilterChip>,
     defaultFilterId: String,
+    viewModel: InitServiceViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var screenState by remember { mutableStateOf<InitScreenState>(InitScreenState.Loading) }
+    val screenState = viewModel.screenState
+    val selectedFilterId = viewModel.selectedFilterId
+    val searchQuery = viewModel.searchQuery
     var actionState by remember { mutableStateOf<InitActionState>(InitActionState.Idle) }
-    var selectedFilterId by remember { mutableStateOf(defaultFilterId) }
     var logsDialogContent by remember { mutableStateOf<List<String>?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
 
-    var fetchJob by remember { mutableStateOf<Job?>(null) }
     var actionJob by remember { mutableStateOf<Job?>(null) }
 
-    fun fetchServices() {
-        fetchJob?.cancel()
-        screenState = InitScreenState.Loading
-        fetchJob = scope.launch {
-            try {
-                if (!isAvailable(containerName)) {
-                    screenState = InitScreenState.NotAvailable
-                    return@launch
-                }
-                screenState = InitScreenState.Ready(fetchRows(containerName))
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                screenState = InitScreenState.NotAvailable
-            }
-        }
-    }
+    fun fetchServices() = viewModel.fetchServices(containerName, isAvailable, fetchRows)
 
     fun executeAction(serviceName: String, actionName: String, action: suspend () -> InitCommandResult) {
         actionJob?.cancel()
-        fetchJob?.cancel()
+        viewModel.cancelFetch()
         actionState = InitActionState.InProgress(serviceName, actionName)
         actionJob = scope.launch {
             try {
                 val result = action()
                 actionState = InitActionState.Idle
                 if (result.isSuccess) {
-                    screenState = InitScreenState.Loading
                     scope.showSuccess(snackbarHostState, context.getString(R.string.action_successful, actionName, serviceName))
                     fetchServices()
                 } else {
@@ -199,7 +180,7 @@ fun InitServiceScreen(
         }
     }
 
-    LaunchedEffect(containerName) { fetchServices() }
+    LaunchedEffect(Unit) { viewModel.loadOnce(defaultFilterId, isAvailable, fetchRows, containerName) }
 
     val allRows = (screenState as? InitScreenState.Ready)?.rows ?: emptyList()
     val selectedFilter = filters.firstOrNull { it.id == selectedFilterId } ?: filters.first()
@@ -234,10 +215,10 @@ fun InitServiceScreen(
                             )
                             // Swiping between filter pages keeps the chip row selection in sync.
                             LaunchedEffect(pagerState.currentPage) {
-                                selectedFilterId = filters[pagerState.currentPage].id
+                                viewModel.selectedFilterId = filters[pagerState.currentPage].id
                             }
                             Column(modifier = Modifier.fillMaxSize()) {
-                                InitServiceSearchBar(query = searchQuery, onQueryChange = { searchQuery = it })
+                                InitServiceSearchBar(query = searchQuery, onQueryChange = { viewModel.searchQuery = it })
                                 InitServiceFilterChipsRow(
                                     filters = filters,
                                     counts = counts,

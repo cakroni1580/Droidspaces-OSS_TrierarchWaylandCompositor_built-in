@@ -391,6 +391,7 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `ContainerUsageViewModel` | `ui/viewmodel/ContainerUsageViewModel.kt` | 实时资源占用轮询 |
 | `SystemStatsViewModel` | `ui/viewmodel/SystemStatsViewModel.kt` | 各容器的系统信息 |
 | `RootfsRepoViewModel` | `ui/viewmodel/RootfsRepoViewModel.kt` | 仓库列表与每个资源的下载状态 |
+| `InitServiceViewModel` | `ui/viewmodel/InitServiceViewModel.kt` | init 系统服务列表、筛选与搜索，systemd、OpenRC 与 procd 共用 |
 
 ### Android：终端
 

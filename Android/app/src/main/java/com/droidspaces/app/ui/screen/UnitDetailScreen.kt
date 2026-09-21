@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.droidspaces.app.ui.theme.JetBrainsMono
 import com.droidspaces.app.R
+import com.droidspaces.app.ui.component.ErrorState
 import com.droidspaces.app.ui.component.SectionHeader
 import com.droidspaces.app.ui.util.FullScreenLoading
 import com.droidspaces.app.util.ContainerSystemdManager
@@ -62,6 +64,7 @@ fun UnitDetailScreen(
     unitName: String,
     onNavigateBack: () -> Unit,
     onEditOverride: () -> Unit,
+    onViewLogs: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -98,6 +101,7 @@ fun UnitDetailScreen(
                     },
                     actions = {
                         IconButton(onClick = { load() }) { Icon(Icons.Default.Refresh, context.getString(R.string.refresh)) }
+                        IconButton(onClick = onViewLogs) { Icon(Icons.Default.Terminal, context.getString(R.string.view_logs)) }
                         IconButton(onClick = onEditOverride) { Icon(Icons.Default.Edit, context.getString(R.string.edit_override)) }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent)
@@ -108,32 +112,15 @@ fun UnitDetailScreen(
             Box(modifier = Modifier.padding(padding).fillMaxSize()) {
                 when (val s = state) {
                     is UnitDetailState.Loading -> FullScreenLoading(message = context.getString(R.string.fetching_services))
-                    is UnitDetailState.Error -> UnitDetailError(onRetry = { load() })
+                    is UnitDetailState.Error -> ErrorState(
+                        title = context.getString(R.string.unit_detail_load_error_title),
+                        description = context.getString(R.string.unit_detail_load_error_message),
+                        onRetry = { load() }
+                    )
                     is UnitDetailState.Ready -> UnitDetailContent(s.inspection, context)
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun UnitDetailError(onRetry: () -> Unit) {
-    val context = LocalContext.current
-    Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(context.getString(R.string.unit_detail_load_error_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            context.getString(R.string.unit_detail_load_error_message),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(16.dp))
-        FilledTonalButton(onClick = onRetry) { Text(context.getString(R.string.repo_retry)) }
     }
 }
 
