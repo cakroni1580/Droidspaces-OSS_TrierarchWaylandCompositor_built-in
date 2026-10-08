@@ -273,8 +273,9 @@ int ds_config_load(const char *config_path, struct ds_config *cfg) {
       cfg->hw_access = parse_bool(val);
     } else if (strcmp(key, "enable_gpu_mode") == 0) {
       cfg->gpu_mode = parse_bool(val);
-    } else if (strcmp(key, "enable_termux_x11") == 0) {
-      cfg->termux_x11 = parse_bool(val);
+    } else if (strcmp(key, "enable_x11") == 0 ||
+               strcmp(key, "enable_termux_x11") == 0) { /* old key */
+      cfg->x11 = parse_bool(val);
     } else if (strcmp(key, "tx11_extra_flags") == 0) {
       free(cfg->tx11_extra_flags);
       cfg->tx11_extra_flags = val[0] ? strdup(val) : NULL;
@@ -643,9 +644,9 @@ static void ds_config_serialize_known(FILE *f, struct ds_config *cfg) {
   }
 
   fprintf(f, "disable_ipv6=%d\n", cfg->disable_ipv6);
+  fprintf(f, "enable_x11=%d\n", cfg->x11);
   if (is_android()) {
     fprintf(f, "enable_android_storage=%d\n", cfg->android_storage);
-    fprintf(f, "enable_termux_x11=%d\n", cfg->termux_x11);
     if (cfg->tx11_extra_flags)
       fprintf(f, "tx11_extra_flags=%s\n", cfg->tx11_extra_flags);
     fprintf(f, "enable_virgl=%d\n", cfg->virgl);

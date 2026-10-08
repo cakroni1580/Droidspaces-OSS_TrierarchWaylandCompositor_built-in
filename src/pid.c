@@ -197,11 +197,21 @@ static void resolve_scanned_container(const char *dirent_name,
 }
 
 /* Remove a stale container's pidfile and its sidecar metadata (.mount/.init).
- */
-static void prune_stale_pidfile(const char *pidfile) {
+ *
+ * A dead PID in a pidfile is not always stale. During a restart the old init
+ * is dead and the new one not written yet, and a container that just exited
+ * still has a monitor about to clean it up or reboot it. Those belong to
+ * whoever holds the lifecycle lock or to the monitor, so only prune what
+ * nobody owns: a container whose monitor is gone (a crash, or a host reboot
+ * that left the files behind). */
+static void prune_stale_pidfile(const char *name, const char *pidfile) {
+  int lock_fd = ds_container_lock_orphan(name);
+  if (lock_fd < 0)
+    return;
   unlink(pidfile);
   remove_mount_path(pidfile);
   remove_init_type(pidfile);
+  ds_container_unlock(lock_fd);
 }
 
 int count_running_containers(char *first_name, size_t size) {
@@ -224,7 +234,7 @@ int count_running_containers(char *first_name, size_t size) {
         }
         count++;
       } else if (pid == 0 && access(tmp_cfg.pidfile, F_OK) == 0) {
-        prune_stale_pidfile(tmp_cfg.pidfile);
+        prune_stale_pidfile(tmp_cfg.container_name, tmp_cfg.pidfile);
       }
     }
   }
@@ -447,7 +457,7 @@ int show_containers(struct ds_config *cfg) {
     pid_t pid;
     if (!is_container_running(&tmp_cfg, &pid)) {
       if (pid == 0 && access(tmp_cfg.pidfile, F_OK) == 0)
-        prune_stale_pidfile(tmp_cfg.pidfile);
+        prune_stale_pidfile(tmp_cfg.container_name, tmp_cfg.pidfile);
       continue;
     }
 
@@ -744,10 +754,9 @@ int scan_containers(void) {
             0)
           tracked_mount_count++;
       } else if (p == 0) {
-        /* Stale PID file, nuke it */
-        unlink(pf);
-        remove_mount_path(pf);
-        remove_init_type(pf);
+        char name[256];
+        get_container_name_from_pidfile(ent->d_name, name, sizeof(name));
+        prune_stale_pidfile(name, pf);
       }
     }
     closedir(d);
@@ -766,23 +775,29 @@ int scan_containers(void) {
       snprintf(mpath, sizeof(mpath), "%s/%s", DS_IMG_MOUNT_ROOT_UNIVERSAL,
                ent->d_name);
 
-      if (is_mountpoint(mpath)) {
-        int is_tracked = 0;
-        for (int i = 0; i < tracked_mount_count; i++) {
-          if (strcmp(mpath, tracked_mounts[i]) == 0) {
-            is_tracked = 1;
-            break;
-          }
+      /* Untracked is not the same as orphaned: a start creates and mounts
+       * this directory before it writes the pidfile, and a restart keeps the
+       * mount while no instance is running. Both hold the lifecycle lock, and
+       * the directory is named after the container. */
+      int is_tracked = 0;
+      for (int i = 0; i < tracked_mount_count; i++) {
+        if (strcmp(mpath, tracked_mounts[i]) == 0) {
+          is_tracked = 1;
+          break;
         }
+      }
+      int lock_fd = is_tracked ? -1 : ds_container_lock_orphan(ent->d_name);
+      if (lock_fd < 0)
+        continue;
 
-        if (!is_tracked) {
-          ds_warn("Found orphaned mount: %s, cleaning up...", mpath);
-          unmount_rootfs_img(mpath, 0);
-          orphaned_found++;
-        }
+      if (is_mountpoint(mpath)) {
+        ds_warn("Found orphaned mount: %s, cleaning up...", mpath);
+        unmount_rootfs_img(mpath, 0);
+        orphaned_found++;
       } else {
         rmdir(mpath);
       }
+      ds_container_unlock(lock_fd);
     }
     closedir(md);
   }
@@ -872,7 +887,7 @@ int check_selinux_permissive_needs(void) {
   return ds_feature_needs(offsetof(struct ds_config, selinux_permissive));
 }
 int check_x11_needs(void) {
-  return ds_feature_needs(offsetof(struct ds_config, termux_x11));
+  return ds_feature_needs(offsetof(struct ds_config, x11));
 }
 int check_virgl_needs(void) {
   return ds_feature_needs(offsetof(struct ds_config, virgl));

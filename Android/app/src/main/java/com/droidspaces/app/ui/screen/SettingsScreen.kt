@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.Image
 import com.droidspaces.app.util.SymlinkInstaller
 import com.droidspaces.app.util.DeviceArch
+import com.droidspaces.app.util.HostCapabilities
 import androidx.core.content.edit
 import com.droidspaces.app.util.Constants
 import com.droidspaces.app.wayland.WaylandManager
@@ -82,6 +83,10 @@ fun SettingsScreen(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val prefsManager = remember { PreferencesManager.getInstance(context) }
     val isRootAvailable = appStateViewModel.isRootAvailable
+    // Boot order is pointless when nothing can boot: no root, or a kernel that
+    // failed a MUST HAVE probe. Same dimming as the reinstall row above.
+    val caps by HostCapabilities.state.collectAsState()
+    val autoBootUsable = isRootAvailable && caps?.requirementsMet != false
     val scope = rememberCoroutineScope()
 
     // Theme state - use reactive theme state holder for instant updates
@@ -275,30 +280,37 @@ fun SettingsScreen(
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
             // Auto Boot Priority - clickable to navigate to the boot-order screen
+            val autoBootAlpha = if (autoBootUsable) 1f else 0.38f
             ListItem(colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 leadingContent = {
                     Icon(
                         imageVector = Icons.Default.LowPriority,
-                        contentDescription = null
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = autoBootAlpha)
                     )
                 },
                 headlineContent = {
                     Text(
                         text = context.getString(R.string.auto_boot_priority),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = autoBootAlpha)
                     )
                 },
                 supportingContent = {
-                    Text(context.getString(R.string.auto_boot_priority_description))
+                    Text(
+                        text = context.getString(R.string.auto_boot_priority_description),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = autoBootAlpha)
+                    )
                 },
                 trailingContent = {
                     Icon(
                         imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = autoBootAlpha)
                     )
                 },
-                modifier = Modifier.clickable { onNavigateToAutoBootPriority() }
+                modifier = Modifier.then(if (autoBootUsable) Modifier.clickable { onNavigateToAutoBootPriority() } else Modifier)
             )
 
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))

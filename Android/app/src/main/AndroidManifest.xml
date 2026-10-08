@@ -82,6 +82,11 @@
                 android:value="Terminal sessions for Droidspaces containers" />
         </service>
 
+        <service
+            android:name=".service.RootfsDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
 
 </manifest>

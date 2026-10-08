@@ -554,7 +554,19 @@ if $TEST -f "$ROOTFS_PATH/etc/os-release" &&
 fi
 
 
-# --- 6. Miscellaneous Fixes ---
+# --- 6. OpenWrt Fixes ---
+
+# debugfs has one superblock for the whole machine, so mounting it inside the
+# container without a mode option resets the host's /sys/kernel/debug to 0700.
+# Android's webview_zygote then aborts on its next fork and is never started
+# again: Chrome and every WebView app crash until the phone reboots. OpenWrt
+# mounts it from /etc/init.d/boot on every start and needs it for nothing here.
+if $TEST -f "$ROOTFS_PATH/etc/init.d/boot" && $GREP -q -- '-t debugfs debugfs' "$ROOTFS_PATH/etc/init.d/boot"; then
+    log "OpenWrt detected, removing the debugfs mount from /etc/init.d/boot..."
+    $SED -i '/-t debugfs debugfs/d' "$ROOTFS_PATH/etc/init.d/boot"
+fi
+
+# --- 7. Miscellaneous Fixes ---
 
 # Configure logrotate
 log "Configuring logrotate for Android..."

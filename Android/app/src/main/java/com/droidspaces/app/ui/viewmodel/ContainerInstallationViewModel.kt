@@ -13,6 +13,7 @@ import com.droidspaces.app.util.Constants
 import com.droidspaces.app.util.ContainerConfigState
 import com.droidspaces.app.util.ValidationUtils
 import com.droidspaces.app.util.withConfig
+import com.droidspaces.app.util.HostCapabilities
 
 class ContainerInstallationViewModel : ViewModel() {
     var tarballUri: Uri? by mutableStateOf(null)
@@ -75,7 +76,7 @@ class ContainerInstallationViewModel : ViewModel() {
             status = ContainerStatus.STOPPED, // Default status for new container
             useSparseImage = useSparseImage,
             sparseImageSizeGB = if (useSparseImage) sparseImageSizeGB else null,
-        ).withConfig(configState)
+        ).withConfig(HostCapabilities.state.value?.coerce(configState) ?: configState)
     }
 
     fun reset() {

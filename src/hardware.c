@@ -421,8 +421,7 @@ int setup_hardware_access(struct ds_config *cfg) {
   if (cfg->hw_access || cfg->gpu_mode)
     setup_gpu_groups();
 
-  /* 2. Mount X11 socket for GUI applications (always attempt on Linux, check
-   * flag on Android) */
+  /* 2. Bridge the host X11 socket when --x11 is set */
   ds_setup_x11_socket(cfg);
 
   /* 3. Setup VirGL socket (Android only) */

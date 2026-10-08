@@ -60,5 +60,8 @@ object ContainerCommandBuilder {
 
     /** JSON status of every running container: OS, hostname, IP, uptime, CPU, RAM. */
     fun buildShowCommand(): String = "$DROIDSPACES_BINARY_PATH --format show"
+
+    /** JSON of every kernel capability probe, one 0/1 per key. */
+    fun buildCheckCommand(): String = "$DROIDSPACES_BINARY_PATH --format check"
 }
 

@@ -67,7 +67,9 @@ This is a hard floor, not a suggestion. If your implementation depends on a sysc
 will not be merged into core.
 
 - Do not use `openat2(2)`, not available before 5.6.
-- Do not rely on cgroup v2 exclusively. cgroup v1 must remain functional.
+- Do not rely on cgroup v2 exclusively. cgroup v1 must remain functional. A controller
+  lives on one hierarchy at a time, and Android keeps memory and cpu on v1, so anything
+  that touches a controller file resolves it with `ds_cgroup_ctrl_dir()`.
 - Do not assume `clone3(2)`, `pidfd_*`, or any API gated behind 5.x.
 - If a fallback path exists, implement it. If it does not, the feature does not belong in
   core.
@@ -291,8 +293,9 @@ the language and about dialogs in `ui/screen/SettingsScreen.kt`). Do not import 
 
 | Symbol | Path | Use it when |
 | --- | --- | --- |
-| `SettingsCard(title, onClick, icon, subtitleContent, trailing, ...)` | `ui/component/SettingsCard.kt` | The base for every settings or option row. Build new variants on top of it |
-| `SettingsRowCard`, `ToggleCard` | `ui/component/` | Clickable row, or switch row. Both are thin wrappers over `SettingsCard` |
+| `SettingsCard(title, onClick, icon, subtitleContent, trailing, below, ...)` | `ui/component/SettingsCard.kt` | The base for every settings or option row. Build new variants on top of it |
+| `SettingsRowCard`, `ToggleCard` | `ui/component/` | Clickable row, or switch row. Both are thin wrappers over `SettingsCard`. `ToggleCard(expandedContent = ...)` opens a body inside the card while the switch is on |
+| `DsSlider(value, onValueChange, valueRange, ...)` | `ui/component/DsSlider.kt` | Any slider. Never restyle a raw `Slider` at the call site |
 | `SwitchItem` | `ui/component/SwitchItem.kt` | Flat `ListItem` switch row, used on the Settings screen. See the duplicates note below |
 | `ContainerCard(container, actions, ...)` + `ContainerCardActions` | `ui/component/ContainerCard.kt` | The expandable container row. Add new actions to `ContainerCardActions`, not as new parameters |
 | `RunningContainerCard(container, onEnter, onTerminalClick, osInfo)` | `ui/component/RunningContainerCard.kt` | Compact running container card on the control panel |
@@ -392,6 +395,7 @@ boundary.
 | `SystemInfoManager` | `util/SystemInfoManager.kt` | Kernel version, architecture, Android version, SELinux status, root provider version, backend version and mode. All cached |
 | `RootChecker` / `RootStatus` | `util/RootChecker.kt` | Root availability |
 | `StorageChecker` | `util/StorageChecker.kt` | Free space checks |
+| `ResourceLimits` + `LimitSupport` | `util/ResourceLimits.kt` | Device RAM and core totals, which limits the running kernel can enforce (`probe()`), and the display strings for memory, cores and PIDs. Format a limit through it, never by hand |
 | `DroidspacesChecker` / `DroidspacesBackendStatus` | `util/DroidspacesChecker.kt` | Backend install state and update availability |
 | `LocaleHelper` | `util/LocaleHelper.kt` | Language listing and switching |
 | `SELinuxChecker` | `util/SELinuxChecker.kt` | Overlaps `SystemInfoManager.getSELinuxStatus()`. Prefer the latter, it caches |
@@ -409,7 +413,7 @@ All three init managers share the same shape. The container name is always quote
 | `ContainerProcdManager` | `util/ContainerProcdManager.kt` | procd services. The only manager that also allow-lists the action |
 | `ContainerProcessManager` | `util/ContainerProcessManager.kt` | Process list and kill inside a container |
 | `ContainerUsersManager` | `util/ContainerUsersManager.kt` | Container user list, cached |
-| `ContainerOSInfoManager` | `util/ContainerOSInfoManager.kt` | Distro name, version, icon |
+| `ContainerOSInfoManager` | `util/ContainerOSInfoManager.kt` | Distro name, version, icon, and live usage. `OSInfo.ramLabel(context)` is the one formatter for the RAM text, limit aware |
 | `ContainerUsageCollector` | `util/ContainerUsageCollector.kt` | CPU, RAM, uptime, IP in one call |
 | `ContainerDiskUsageManager` | `util/ContainerDiskUsageManager.kt` | Sparse image disk usage |
 
@@ -510,12 +514,15 @@ influenced, copy the `ds_bind_mount_socket` pattern: open with `O_NOFOLLOW|O_CLO
 | `ds_spawn_daemon(child_fn, user_data, log_file, tag, label)` | Forking a long-lived helper. Verifies `execv` succeeded through a ready pipe and attaches a log relay |
 | `ds_daemon_child_preamble()` | First call inside such a child, while still root |
 | `ds_oom_protect()` | Best effort OOM score protection |
+| `ds_thread_create(tid, fn, arg)` | Starting a helper thread in a process that waits on a signalfd. The thread starts with every signal blocked, so it cannot take a signal meant for the main thread. Never call `pthread_create` directly in the monitor |
 | `ds_daemon_read_pid` / `write_pid` / `remove_pid`, `ds_resolve_daemon_pid` | Pidfile lifecycle. The read form liveness-checks the pid |
 | `ds_global_daemon_stop(...)` | Unified SIGTERM, poll, SIGKILL, reap, unlink teardown |
 | `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | Waiting for a socket to appear. Bails early if the server dies. Use instead of a sleep loop |
 | `ds_send_fd` / `ds_recv_fd` | SCM_RIGHTS descriptor passing |
 | `collect_pids`, `read_and_validate_pid` | Snapshotting `/proc`, and reading a pidfile with a liveness check |
-| `is_external_lock_active(name)` | Checking the lock sidecar. Auto-removes a stale lock whose holder is dead |
+| `ds_container_lock(name, wait)` / `ds_container_unlock(fd)` | The per-container lifecycle lock, a `flock`. **Anything** that changes a container's on-disk state (pidfile, sidecars, mount, cgroup) must hold it, the monitor included. Commands pass `wait=0` and report busy; the monitor passes `wait=1`. Decide what to do from the state you find while holding it |
+| `ds_container_lock_orphan(name)` | Same lock, but only granted when no monitor is alive for the name. For pruning leftovers. On -1, leave the container alone |
+| `ds_container_claim_supervision(name)` | Called once by a monitor. It is what `ds_container_lock_orphan` checks |
 | `DS_SIG_STOP`, `ds_init_type_t`, `detect_container_init()` | Graceful stop. Each init family has its own stop and reboot signal, and under procd `SIGTERM` means reboot |
 
 ### C backend: platform gates
@@ -562,8 +569,10 @@ an unknown line.
 | `setup_volatile_overlay`, `cleanup_volatile_overlay`, `check_volatile_mode` | Volatile mode |
 | `mount_rootfs_img`, `unmount_rootfs_img` | Sparse image loop device lifecycle |
 | `setup_cgroups`, `ds_cgroup_host_bootstrap` | cgroup setup |
-| `ds_cgroup_attach`, `ds_cgroup_detach`, `ds_cgroup_cleanup_container` | Moving a process in, and cleanup |
-| `ds_cgroup_apply_limits`, `ds_cgroup_get_usage`, `print_cgroup_status` | Limits and usage |
+| `ds_cgroup_attach`, `ds_cgroup_cleanup_container` | Moving a process in, and cleanup. Both cover the cgroup v2 dir and every v1 hierarchy the container has a cgroup in |
+| `ds_cgroup_ctrl_dir(ctrl, name, dir, size)` | Finding where a container's files for one controller live: its cgroup v2 dir, or the v1 hierarchy that owns the controller, wherever it is mounted. Returns the version. Never hardcode `/sys/fs/cgroup/...` or `/dev/memcg` for a controller file |
+| `ds_cgroup_apply_limits`, `ds_cgroup_get_limits`, `ds_cgroup_get_usage`, `print_cgroup_status` | Setting limits, reading back the ones in force, and usage. Report limits from `ds_cgroup_get_limits`, not from the config, which only says what was asked for |
+| `ds_cgroup_v1_setup`, `ds_cgroup_v1_join` | Giving a v1 container its own cgroup in every v1 hierarchy before the namespace is unshared, and moving the monitor in or out of them |
 | `ds_cg_word_in_list(list, name)` | Testing for a controller name. Do not `strstr` a controller list |
 | `get_workspace_dir`, `get_pids_dir`, `get_net_dir`, `get_logs_dir` | The only sanctioned way to build a workspace path. They switch between the Android and Linux roots |
 | `ensure_workspace` | Creating the tree |
@@ -576,28 +585,32 @@ an unknown line.
 ### C backend: networking
 
 Everything in `src/net/` talks to the kernel directly. There is no `ip` or `iptables`
-shell-out on the fast path.
+shell-out on the fast path. The netfilter helpers take an address family (`AF_INET` or
+`AF_INET6`), try the raw `ip_tables` / `ip6_tables` socket first, and fall back to the
+`iptables` / `ip6tables` binary only for what the kernel rejects.
 
 | Symbol | Use it when |
 | --- | --- |
 | `ds_nl_open` / `ds_nl_close` | Opening the netlink context every link, address, route, and rule call needs |
 | `ds_nl_create_bridge`, `ds_nl_create_veth`, `ds_nl_set_master`, `ds_nl_link_up/down`, `ds_nl_del_link`, `ds_nl_rename`, `ds_nl_set_mac` | Link operations |
-| `ds_nl_add_addr4`, `ds_nl_add_route4` | Addresses and routes |
+| `ds_nl_add_addr4`, `ds_nl_add_route4`, `ds_nl_add_addr6`, `ds_nl_add_route6` | Addresses and routes. The IPv6 route is link scope only |
 | `ds_nl_move_to_netns`, `ds_nl_move_to_netns_named` | Moving an interface into a namespace |
-| `ds_nl_add_rule4`, `ds_nl_del_rule4` | FIB policy rules. Priorities come from `DS_RULE_PRIO_TO_SUBNET`, `DS_RULE_PRIO_TETHER`, `DS_RULE_PRIO_FROM_SUBNET`, which must sit above the OEM reserved range and below Android's VPN range |
-| `ds_nl_get_iface_table`, `ds_nl_get_table_default_oif`, `ds_nl_get_android_default` | Routing table introspection |
+| `ds_nl_add_rule4`, `ds_nl_del_rule4`, `ds_nl_rule6` | FIB policy rules. Priorities come from `DS_RULE_PRIO_TO_SUBNET`, `DS_RULE_PRIO_TETHER`, `DS_RULE_PRIO_FROM_SUBNET`, which must sit above the OEM reserved range and below Android's VPN range |
+| `ds_nl_get_iface_table`, `ds_nl_get_table_default_oif`, `ds_nl_get_android_default` | Routing table introspection. All three take the address family |
 | `ds_nl_flush_stale_veths`, `ds_nl_list_ifaces`, `ds_nl_count_ifaces_with_prefix` | Enumeration and garbage collection |
 | `ds_ipt_ensure_masquerade`, `ds_ipt_ensure_forward_accept`, `ds_ipt_ensure_input_accept`, `ds_ipt_ensure_mss_clamp` | Installing netfilter rules |
-| `ds_ipt_host_rules_present(iface, src_cidr, expect_dnat)` | The fork-free probe for the whole host rule set. The route monitor gates reinstallation on it |
+| `ds_ipt_host_rules_present(family, iface, src_cidr, expect_dnat)` | The fork-free probe for one family's host rule set. The route monitor gates reinstallation on it |
 | `ds_ipt_remove_iface_rules`, `ds_ipt_remove_ds_rules` | Teardown |
+| `ds_ipt6_available` | Whether the kernel can do NAT66 at all: the ip6 nat table and the MASQUERADE target. Shared by the runtime and `droidspaces check` |
 | `ds_ipt_add_portforwards`, `ds_ipt_remove_portforwards` | Port forwarding |
 | `parse_cidr(cidr, ip_out, mask_out)` | The shared CIDR splitter |
 | `fix_networking_host`, `fix_networking_rootfs`, `setup_veth_host_side`, `setup_veth_child_side_named`, `setup_gateway_veth_side` | Network bring-up |
 | `ds_net_start_route_monitor`, `ds_net_mark_local_forward_active` | The reconciler that re-asserts our rules after netd wipes them |
 | `ds_net_cleanup`, `ds_net_gateway_teardown`, `ds_net_rewire_gateway_clients` | Teardown and gateway client rewiring |
 | `ds_net_validate_static_ip`, `ds_net_check_ip_collision`, `ds_net_resolve_static_ip` | Static NAT IP handling. After `resolve`, the config must be saved to persist the result |
-| `ds_dhcp_server_start`, `ds_dhcp_server_stop` | The single-lease DHCP server. Stop it before veth teardown so the receive unblocks |
-| `ds_get_dns_servers`, `detect_ipv6_in_container`, `ds_net_disable_tx_checksum` | DNS, IPv6 detection, checksum offload |
+| `ds_dhcp_server_start`, `ds_dhcp_server_stop` | The single-lease DHCP server. Stop it before veth teardown so the receive unblocks. Given an IPv6 prefix it also sends Router Advertisements |
+| `ds_ra_build`, `ds_ra_is_solicit` | The Router Advertisement frame and the solicitation test the DHCP thread uses. No link-layer option, on purpose |
+| `ds_get_dns_servers`, `ds_net_disable_tx_checksum` | DNS, checksum offload |
 
 ### C backend: security guards
 

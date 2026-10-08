@@ -258,7 +258,7 @@ int ds_stage_dev_node(const char *staging, const char *dev_dir, const char *rel,
  * In Hardware Mode (hw_access=1), we preserve most paths to fulfill the
  * "everything possible" requirement for low-level hardware tools.
  */
-int ds_apply_jail_mask(int hw_access, int privileged_mask) {
+int ds_apply_jail_mask(int hw_access, int privileged_mask, int sandboxing) {
   if (privileged_mask & DS_PRIV_NOMASK) {
     ds_log(
         "[SEC] --privileged=nomask: skipping jail masks for /proc and /sys.");
@@ -343,9 +343,16 @@ int ds_apply_jail_mask(int hw_access, int privileged_mask) {
     }
 
     /* Step 2: Stack RW bind mounts on top of the now-RO /proc/sys.
-     * Bind inherits RO from parent, so explicitly remount RW after. */
+     * Bind inherits RO from parent, so explicitly remount RW after.
+     *
+     * /proc/sys/user is per user namespace, but the container lives in the
+     * host's, so it only opens with sandboxing: bwrap --disable-userns writes
+     * user.max_user_namespaces through the container's own /proc before it
+     * unshares its second user namespace, and the pristine copy under
+     * /run/droidspaces already exposes the same tree read-write. */
     const char *rw_holes[] = {"/proc/sys/net", "/proc/sys/kernel/hostname",
-                              "/proc/sys/kernel/domainname", NULL};
+                              "/proc/sys/kernel/domainname",
+                              sandboxing ? "/proc/sys/user" : NULL, NULL};
     for (int i = 0; rw_holes[i]; i++) {
       if (access(rw_holes[i], F_OK) != 0)
         continue;
@@ -360,7 +367,8 @@ int ds_apply_jail_mask(int hw_access, int privileged_mask) {
         ds_warn("[SEC] Failed to remount RW hole %s: %s", rw_holes[i],
                 strerror(errno));
     }
-    ds_log("[SEC] /proc/sys RW holes preserved (net/hostname/domainname).");
+    ds_log("[SEC] /proc/sys RW holes preserved (net/hostname/domainname%s).",
+           sandboxing ? "/user" : "");
   }
 
   if (hw_access) {

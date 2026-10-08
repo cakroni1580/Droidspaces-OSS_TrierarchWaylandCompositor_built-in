@@ -1,33 +1,44 @@
 package com.droidspaces.app.ui.screen
 
-import com.droidspaces.app.ui.component.PrimaryActionBottomBar
-import androidx.compose.ui.graphics.Color
-
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.droidspaces.app.util.InstallationStep
-import com.droidspaces.app.util.ModuleInstallationStep
 import com.droidspaces.app.R
-
+import com.droidspaces.app.ui.component.PrimaryActionBottomBar
+import com.droidspaces.app.ui.util.LoadingIndicator
+import com.droidspaces.app.ui.util.LoadingSize
 import com.droidspaces.app.ui.viewmodel.AppStateViewModel
+import com.droidspaces.app.util.HostCapabilities
+
+private enum class InstallPhase { Installing, Success, Warning, Failed }
+
+/* Material Expressive motion tokens. Spatial springs move size and position and
+ * may settle with a hint of overshoot; effects springs drive fades and colour and
+ * never overshoot. The app's material3 predates MotionScheme, so they live here. */
+private const val SPATIAL_DAMPING = 0.8f
+private const val SPATIAL_STIFFNESS = 380f
+private const val EFFECTS_DAMPING = 1f
+private const val EFFECTS_STIFFNESS = 1600f
+private const val EFFECTS_SLOW_STIFFNESS = 800f
 
 @Composable
 fun InstallationScreen(
@@ -36,14 +47,25 @@ fun InstallationScreen(
 ) {
     val context = LocalContext.current
 
-    // Install orchestration + state live in AppStateViewModel. Read as locals
-    // so the UI below is unchanged; these are Compose state reads and recompose.
-    val currentStep = appStateViewModel.installCurrentStep
-    val currentModuleStep = appStateViewModel.installCurrentModuleStep
+    // Install orchestration and state live in AppStateViewModel, so they
+    // survive rotation; these are Compose state reads and recompose.
     val isSuccess = appStateViewModel.isInstallSuccess
     val errorMessage = appStateViewModel.installErrorMessage
-    val isInstallingModule = appStateViewModel.isInstallingModule
     val rebootRecommended = appStateViewModel.installRebootRecommended
+    val kernelUnsupported = HostCapabilities.state.collectAsState().value?.requirementsMet == false
+
+    // The ViewModel outlives this screen and performInstallation() resets the
+    // previous outcome only once the effect below runs, which is after the
+    // first frame. Until then, show the loader rather than the stale result.
+    var started by rememberSaveable { mutableStateOf(false) }
+    val phase = when {
+        !started -> InstallPhase.Installing
+        isSuccess && kernelUnsupported -> InstallPhase.Warning
+        isSuccess -> InstallPhase.Success
+        errorMessage != null -> InstallPhase.Failed
+        else -> InstallPhase.Installing
+    }
+    val done = phase != InstallPhase.Installing
 
     // Completely block the back gesture in every state. This screen must be
     // left only via the Continue button, whose handler decides the next
@@ -56,6 +78,7 @@ fun InstallationScreen(
 
     // Run the install orchestration (idempotent inside the ViewModel).
     LaunchedEffect(Unit) {
+        started = true
         appStateViewModel.performInstallation()
     }
 
@@ -64,7 +87,7 @@ fun InstallationScreen(
         bottomBar = {
             // Show the Continue button once the work is finished, whether it
             // succeeded or failed - it is the only accepted way off this screen.
-            if (isSuccess || errorMessage != null) {
+            if (done) {
                 PrimaryActionBottomBar(
                     label = context.getString(R.string.continue_button),
                     icon = if (isSuccess) Icons.Default.Check else Icons.AutoMirrored.Filled.ArrowForward,
@@ -77,122 +100,88 @@ fun InstallationScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 24.dp)
-                .padding(top = 24.dp),
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Main icon with animation
-            InstallationIcon(
-                isSuccess = isSuccess,
-                hasError = errorMessage != null
-            )
-    
-            Spacer(modifier = Modifier.height(32.dp))
-    
-            // Title
-            Text(
-                text = when {
-                    isSuccess -> context.getString(R.string.installation_complete)
-                    errorMessage != null -> context.getString(R.string.installation_failed)
-                    isInstallingModule -> context.getString(R.string.installing_module)
-                    else -> context.getString(R.string.installing_droidspaces)
+            // Hero slot: the morphing loader while work runs, then the result
+            // icon settling into the same box so nothing on the screen jumps.
+            AnimatedContent(
+                targetState = phase,
+                transitionSpec = {
+                    (scaleIn(spring(SPATIAL_DAMPING, SPATIAL_STIFFNESS), initialScale = 0.9f) +
+                        fadeIn(spring(EFFECTS_DAMPING, EFFECTS_STIFFNESS)))
+                        .togetherWith(fadeOut(spring(EFFECTS_DAMPING, EFFECTS_STIFFNESS)))
                 },
+                label = "install_hero"
+            ) { target ->
+                Box(modifier = Modifier.size(LoadingSize.Hero.size), contentAlignment = Alignment.Center) {
+                    when (target) {
+                        InstallPhase.Installing -> LoadingIndicator(size = LoadingSize.Hero)
+                        InstallPhase.Success -> Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        // Installed, but a kernel that failed a MUST HAVE probe gets the warning, not the tick.
+                        InstallPhase.Warning -> Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        InstallPhase.Failed -> Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Text(
+                text = context.getString(
+                    when (phase) {
+                        InstallPhase.Installing -> R.string.installing_droidspaces
+                        InstallPhase.Failed -> R.string.installation_failed
+                        else -> R.string.installation_complete
+                    }
+                ),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
-    
-            Spacer(modifier = Modifier.height(16.dp))
-    
-            // Status messages in a card (MMRL style)
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(20.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            // One outcome line once the work is done. Nothing is shown while
+            // installing: the loader is the whole message.
+            AnimatedVisibility(
+                visible = done,
+                enter = fadeIn(spring(EFFECTS_DAMPING, EFFECTS_SLOW_STIFFNESS)),
+                exit = fadeOut(spring(EFFECTS_DAMPING, EFFECTS_STIFFNESS))
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    when {
-                        isSuccess -> {
-                            Text(
-                                text = if (isInstallingModule) {
-                                    context.getString(R.string.module_installed_success)
-                                } else {
-                                    context.getString(R.string.backend_installed_success)
-                                },
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                textAlign = TextAlign.Center
-                            )
-    
-                        }
-                        errorMessage != null -> {
-                            Text(
-                                text = errorMessage,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.error,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                        else -> {
-                            // Show current step
-                            if (isInstallingModule) {
-                                when (currentModuleStep) {
-                                    is ModuleInstallationStep.RemovingOldModule -> {
-                                        StepText(context.getString(R.string.removing_old_module))
-                                    }
-                                    is ModuleInstallationStep.ExtractingAssets -> {
-                                        StepText(context.getString(R.string.extracting_module_files))
-                                    }
-                                    is ModuleInstallationStep.CopyingModule -> {
-                                        StepText(context.getString(R.string.installing_module_step))
-                                    }
-                                    is ModuleInstallationStep.SettingPermissions -> {
-                                        StepText(context.getString(R.string.setting_permissions))
-                                    }
-                                    is ModuleInstallationStep.Verifying -> {
-                                        StepText(context.getString(R.string.verifying_installation))
-                                    }
-                                    else -> {
-                                        StepText(context.getString(R.string.preparing_module_installation))
-                                    }
-                                }
-                            } else {
-                                when (val step = currentStep) {
-                                    is InstallationStep.DetectingArchitecture -> {
-                                        StepText(context.getString(R.string.detected_architecture, step.arch))
-                                    }
-                                    is InstallationStep.CreatingDirectories -> {
-                                        StepText(context.getString(R.string.creating_directories))
-                                    }
-                                    is InstallationStep.CopyingBinary -> {
-                                        StepText(context.getString(R.string.installing_binary, step.binary))
-                                    }
-                                    is InstallationStep.SettingPermissions -> {
-                                        StepText(context.getString(R.string.granting_permissions))
-                                    }
-                                    is InstallationStep.Verifying -> {
-                                        StepText(context.getString(R.string.verifying_installation))
-                                    }
-                                    else -> {
-                                        StepText(context.getString(R.string.preparing_installation))
-                                    }
-                                }
-                            }
-                        }
-                    }
-    
-                    if (rebootRecommended) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 12.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                        )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = when (phase) {
+                            InstallPhase.Warning -> context.getString(R.string.backend_installed_unsupported_kernel)
+                            InstallPhase.Failed -> errorMessage.orEmpty()
+                            else -> context.getString(R.string.backend_installed_success)
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (phase == InstallPhase.Success) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            else MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // The flag is set before the steps start, so gate on the
+                    // outcome or the note would sit under the loader the whole time.
+                    if (phase == InstallPhase.Success && rebootRecommended) {
+                        Spacer(modifier = Modifier.height(24.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -219,64 +208,3 @@ fun InstallationScreen(
         }
     }
 }
-
-@Composable
-private fun InstallationIcon(
-    isSuccess: Boolean,
-    hasError: Boolean
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "download_animation")
-
-    when {
-        isSuccess -> {
-            // Success icon - checkmark
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        hasError -> {
-            // Error icon
-            Icon(
-                imageVector = Icons.Default.Error,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.error
-            )
-        }
-        else -> {
-            // Download icon with pulsing animation
-            val alpha by infiniteTransition.animateFloat(
-                initialValue = 0.3f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(1000, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "pulse_alpha"
-            )
-
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(80.dp)
-                    .alpha(alpha),
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
-
-@Composable
-private fun StepText(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        textAlign = TextAlign.Center
-    )
-}
-

@@ -194,12 +194,19 @@ fun DroidspacesNavigation(
     LaunchedEffect(pendingShortcut) {
         val shortcut = pendingShortcut ?: return@LaunchedEffect
         if (prefsManager.isSetupCompleted) {
-            when (shortcut) {
-                "settings" -> navController.navigate(Screen.Settings.route) {
+            when {
+                // Tap on a "download complete" notification, carries the tarball's URI
+                shortcut.startsWith("install:") -> navController.navigate(
+                    Screen.ContainerName.createRoute(shortcut.removePrefix("install:"))
+                ) {
                     popUpTo(Screen.Home.route) { inclusive = false }
                     launchSingleTop = true
                 }
-                "containers", "panel" -> {
+                shortcut == "settings" -> navController.navigate(Screen.Settings.route) {
+                    popUpTo(Screen.Home.route) { inclusive = false }
+                    launchSingleTop = true
+                }
+                shortcut == "containers" || shortcut == "panel" -> {
                     requestedTab =
                         if (shortcut == "containers") TabItem.Containers else TabItem.ControlPanel
                     navController.navigate(Screen.Home.createRoute()) {
@@ -270,7 +277,9 @@ fun DroidspacesNavigation(
         composable(
             route = Screen.Installation.route,
             enterTransition = setupEnterTransition,
-            exitTransition = setupExitTransition
+            // Continue must drop straight to Home. A fade here cross-paints the
+            // finished installer over the Home tab for 200 ms.
+            exitTransition = { ExitTransition.None }
         ) {
             InstallationScreen(
                 appStateViewModel = sharedAppStateViewModel,

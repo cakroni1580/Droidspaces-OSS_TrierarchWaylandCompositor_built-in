@@ -42,6 +42,7 @@ import com.droidspaces.app.R
 import com.droidspaces.app.ui.component.PrimaryActionBottomBar
 import com.droidspaces.app.ui.component.ContainerConfigForm
 import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
+import com.droidspaces.app.util.ResourceLimits
 import com.droidspaces.app.util.ContainerConfigState
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ValidationUtils
@@ -73,7 +74,8 @@ fun ContainerConfigScreen(
         else installedContainers.find { it.name != containerName && it.staticNatIp == state.staticNatIp }
     }
 
-    val canProceed = (state.netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null
+    val canProceed = (state.netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null &&
+        ResourceLimits.isValidPidsLimit(state.pidsLimit)
 
     Scaffold(
         topBar = {

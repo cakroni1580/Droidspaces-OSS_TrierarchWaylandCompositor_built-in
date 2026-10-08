@@ -1,58 +1,58 @@
 <!--
-title: Android App Usage
+title: Android app usage
 section: Guides
 order: 4
-desc: Complete guide to the Droidspaces Android app. Manage containers, configure networking, stats, terminal, and kernel settings.
+desc: Using the Droidspaces Android app: managing containers, networking, stats, the terminal and kernel settings.
 keywords: Droidspaces Android app, container manager Android, NAT mode, systemd networkd, terminal usage, kernel settings
 -->
 
-# Android App Usage Guide
+# Android app usage guide
 
-The Droidspaces Android app provides a premium GUI for managing Linux containers. It abstracts away the complexity of namespaces and mounts while giving you high-level control over your environments.
+The Droidspaces Android app is a GUI for managing Linux containers. It handles the namespaces and mounts for you and leaves you in control of each container's settings.
 
-## Bottom Navigation
+## Bottom navigation
 
-- **Home**: A dashboard displaying the number of installed and running containers, root availability status, and the backend version.
-- **Containers**: A dedicated manager for all installed containers (Install, Start, Stop, Edit, and Uninstall).
-- **Panel**: A central dashboard for managing **Running Containers** and monitoring real-time **System Statistics** (CPU, RAM, Temperature, etc.).
+- **Home**: a dashboard showing how many containers are installed and running, whether root is available, and the backend version.
+- **Containers**: manages every installed container (Install, Start, Stop, Edit and Uninstall).
+- **Panel**: manages **Running Containers** and shows live **System Statistics** (CPU, RAM, temperature and more).
 
 ---
 
-## Containers Tab
+## Containers tab
 
-This tab allows you to install containers using the "+" icon, and lists all your installed environments. Each container has a control card:
+This tab lists your installed containers, and the "+" icon installs a new one. Each container has a control card:
 
-- **Install Button (+)**: Install a new container.
-- **Play Button**: Start the container and boot the init system.
-- **Stop Button**: Sends a graceful shutdown signal to the container's init.
-- **Cycle Button**: Fast-restart the container.
-- **Terminal Icon (Logs)**: Provides access to persistent session logs for the container's previous start, stop, and restart sequences.
+- **Install button (+)**: install a new container.
+- **Play button**: start the container and boot its init system.
+- **Stop button**: send a clean shutdown signal to the container's init.
+- **Cycle button**: fast-restart the container.
+- **Terminal icon (logs)**: open the saved logs of the container's previous start, stop and restart sequences.
 
 > [!TIP]
 >
-> You can **edit container configuration** or **uninstall** existing installed containers by **pressing and holding** the container’s card. Also gives you the ability to migrate to a `rootfs.img`-based container or resize your existing `rootfs.img`..!
+> **Press and hold** a container's card to **edit its configuration** or **uninstall** it. The same menu migrates a container to a `rootfs.img` or resizes an existing `rootfs.img`.
 
 ---
 
-## Rootfs Repository
+## Rootfs repository
 
-The **cloud icon** above the "+" button opens the Rootfs Repository - a built-in distro browser that lets you download and install Linux rootfs images without leaving the app.
+The **cloud icon** above the "+" button opens the Rootfs Repository, a built-in distro browser for downloading and installing Linux rootfs images without leaving the app.
 
 ### How it works
 
 1. Tap the **cloud icon** in the Containers tab.
-2. The sheet opens and loads available distros from the [Droidspaces official repository](https://github.com/Droidspaces/Droidspaces-rootfs-builder). Only images matching your device’s architecture are shown.
-3. **Search** the list by name, description, or author using the search bar.
-4. Tap **Download** on a distro card. A progress bar tracks the download; the file is saved to your Downloads folder.
-5. Once done, the button switches to **Install**. Tap it to go straight into the container setup wizard.
+2. The sheet opens and loads the available distros from the [Droidspaces official repository](https://github.com/Droidspaces/Droidspaces-rootfs-builder). Only images matching your device’s architecture are shown.
+3. **Search** the list by name, description or author with the search bar.
+4. Tap **Download** on a distro card. A progress bar tracks the download, and the file is saved to your Downloads folder.
+5. When it finishes, the button changes to **Install**. Tap it to go straight to the container setup wizard.
 
 > [!NOTE]
 >
-> If a download fails, the card shows a **Retry** button. Previously downloaded files are detected automatically on relaunch - the Install button will already be available.
+> If a download fails, the card shows a **Retry** button. Files downloaded earlier are detected on relaunch, so the Install button is already there.
 
-### Adding Custom Repositories
+### Adding custom repositories
 
-The repository supports third-party rootfs sources in the same JSON format.
+The repository also reads third-party rootfs sources that use the same JSON format.
 
 1. Tap the **settings icon** (left of the refresh icon) in the sheet header.
 2. Enter a **name** and a **URL** pointing to a valid `rootfs.json`.
@@ -60,85 +60,109 @@ The repository supports third-party rootfs sources in the same JSON format.
 
 > [!TIP]
 >
-> To get a much wider selection of distros, add the official LXC images mirror as a custom repository:
-> - **Name**: anything you like (e.g. `LXC Mirror`)
+> For a much wider selection of distros, add the official LXC images mirror as a custom repository:
+>
+> - **Name**: anything you like (for example `LXC Mirror`)
 > - **URL**: `https://raw.githubusercontent.com/Droidspaces/linuxcontainers-mirror/refs/heads/main/rootfs.json`
 
 ---
 
-## Networking Configuration
+## Networking configuration
 
-When editing or creating a container, you can choose from four networking modes:
+When you create or edit a container, you choose one of four networking modes:
 
-- **Host (Default)**: Shares host network directly.
-- **NAT (Isolated)**: Private network namespace with deterministic IP and port forwarding support.
-- **None**: No network access.
-- **Gateway**: The container's LAN is delegated to another running container (typically OpenWRT), which owns DHCP, DNS, firewall and routing. Select the gateway container and (optionally) the LAN segment, interface and bridge in the **Gateway** settings. See [Networking From Zero](Networking-From-Zero.md) for the full guide.
+- **Host (Default)**: shares the host network directly.
+- **NAT (Isolated)**: a private network namespace with a deterministic IP and port forwarding.
+- **None**: no network access.
+- **Gateway**: the container's LAN is delegated to another running container (typically OpenWRT), which owns DHCP, DNS, firewall and routing. Select the gateway container and (optionally) the LAN segment, interface and bridge in the **Gateway** settings. See [Networking From Zero](Networking-From-Zero.md) for the full guide.
 
-### Internet Uplink (NAT Mode)
-If you select **NAT (Isolated)** mode, the internet uplink is detected fully automatically - there is nothing to configure. Droidspaces reads the kernel's own routing state to find the interface Android is currently using for internet (Wi-Fi, mobile data, ethernet) and a background Route Monitor keeps the container connected in real time as you switch networks.
+### Internet uplink (NAT mode)
 
-#### Upstream Interface (Optional)
-If you want the container to **ignore the active network** and pin its internet to specific interface(s), add them under **Upstream Interface**. This disables auto-detection and forces the WAN through your list only:
+In **NAT (Isolated)** mode the internet uplink is detected automatically, and there is nothing to configure. Droidspaces reads the kernel's routing state to find the interface Android is using for internet (Wi-Fi, mobile data, ethernet), and a background Route Monitor keeps the container connected as you switch networks.
 
-- The list is **priority-ordered** and supports **wildcards** - e.g. `wlan0, rmnet*` prefers Wi-Fi and falls back to mobile data (use `rmnet*` because the mobile-data interface number is not stable).
-- **Example - VPN killswitch**: run a VPN app on the phone and pin `tun0` so the container can only reach the internet through the tunnel.
-- **Example - cellular while on Wi-Fi**: enable *Mobile data always active* in Developer Options, connect Wi-Fi, turn on mobile data, and pin `rmnet*` so the container uses cellular while the phone stays on Wi-Fi.
+#### Upstream interface (optional)
 
-Leave it empty to auto-detect the active uplink (the default, recommended for most users).
+To make the container **ignore the active network** and pin its internet to specific interface(s), add them under **Upstream Interface**. This turns off auto-detection and sends the WAN through your list only:
+
+- The list is **priority-ordered** and supports **wildcards**. For example, `wlan0, rmnet*` prefers Wi-Fi and falls back to mobile data (use `rmnet*` because the mobile-data interface number is not stable).
+- **Example, VPN killswitch**: run a VPN app on the phone and pin `tun0` so the container can only reach the internet through the tunnel.
+- **Example, cellular while on Wi-Fi**: enable *Mobile data always active* in Developer Options, connect Wi-Fi, turn on mobile data, and pin `rmnet*` so the container uses cellular while the phone stays on Wi-Fi.
+
+Leave it empty to auto-detect the active uplink. This is the default and the right choice for most users.
 
 > [!NOTE]
-> NAT mode is IPv4 only. If your carrier only provides IPv6, see the [IPv4 NAT Workaround](Troubleshooting.md#ipv4-quirks).
+> NAT mode carries both IPv4 and IPv6. IPv6 needs NAT66 support in the kernel (`CONFIG_IP6_NF_NAT`); without it the container quietly stays IPv4 only. Use the **Disable IPv6** toggle to turn it off for a container.
 
-### Port Forwarding
-In NAT mode, use the **Port Forwarding** section to map host ports to container ports (e.g., `22:22`). You can also specify **port ranges** (e.g., `1000-2000:1000-2000`) for services that require multiple contiguous ports.
+### Port forwarding
 
----
-
-## Panel Tab (Active Environments)
-
-The **Panel** tab focuses strictly on your running containers. Tapping a running container card opens the **Details Screen**.
-
-### Container Details Screen
-This screen provides deep introspection into the running environment:
-- **Distribution Info**: Shows the Pretty Name, Version, Per-container-uptime, Hostname, and **IP Address (IPv4)**.
-- **Available Users**: Lists detected users in the rootfs.
-- **Copy Login**: Choose a user from the dropdown and tap this to copy a command like `su -c 'droidspaces enter [user]'`.
-- **Terminal**: Open an interactive Terminal Emulator inside from the container, natively on the Droidspaces app !
-- **Systemd Menu**: If the container uses systemd, a "Manage" button appears. Tapping it opens a list of all systemd services, allowing you to Start, Stop, or Restart individual services (e.g., SSH, Nginx, or a VNC server) directly from the app.
+In NAT mode, the **Port Forwarding** section maps host ports to container ports (for example `22:22`). It also takes **port ranges** (for example `1000-2000:1000-2000`) for services that need several contiguous ports.
 
 ---
 
-## Accessing the Container Shell
+## Resource limits
 
-Droidspaces provides two primary ways to interact with your running Linux containers. Whether you want a quick check from within the app or a full-featured session in your favorite terminal, we've got you covered.
+The container settings have a **Resource Limits** section, after **Integration & Hardware**:
 
-### Method 1: Built-in Terminal (v5.7.0+)
+- **Limit memory**: a slider from 128 MB up to the device's total RAM.
+- **Limit CPU**: a slider from half a core up to the device's core count.
+- **Limit processes**: the most processes and threads the container may have at once.
 
-This is the most convenient way to quickly run commands without leaving the Droidspaces app.
+Turn a switch off for no limit. Changes apply the next time the container starts.
+
+A switch that is greyed out means the kernel cannot enforce that limit, and the card names the missing option, for example `CONFIG_CFS_BANDWIDTH` for CPU. Most stock Android kernels lack the CPU and process options, see [Resource limits](Features.md#resource-limits).
+
+Limits that are set appear on the container's card next to the hostname and network mode.
+
+---
+
+## Panel tab (active environments)
+
+The **Panel** tab shows only running containers. Tap a running container's card to open its **Details Screen**.
+
+### Container details screen
+
+This screen shows what is going on inside the running container:
+
+- **Distribution Info**: the pretty name, version, per-container uptime, hostname and **IP Address (IPv4)**.
+- **CPU and RAM usage**: for a container with a limit, shown against that limit, for example `94/512 MB (18%)`. Without one, as a share of the whole device.
+- **Available Users**: the users found in the rootfs.
+- **Copy Login**: pick a user from the dropdown and tap this to copy a command like `su -c 'droidspaces enter [user]'`.
+- **Terminal**: open an interactive terminal emulator inside the container, in the Droidspaces app itself.
+- **systemd menu**: if the container uses systemd, a "Manage" button appears. It opens a list of all systemd services, where you can Start, Stop or Restart individual services (for example SSH, Nginx or a VNC server) from the app.
+
+---
+
+## Accessing the container shell
+
+There are two ways to get a shell in a running container: the terminal built into the app, or a session in any terminal app you already use.
+
+### Method 1: Built-in terminal (v5.7.0+)
+
+The quickest way to run commands without leaving the Droidspaces app.
 
 1.  Ensure the container is **RUNNING**.
 2.  Navigate to the **Panel** tab and tap the container to open its **Details**.
 3.  Find the **Terminal** card and tap **Open**.
 4.  Select the **User** you wish to log in as (e.g., `root` or your default user).
-5.  An interactive terminal will launch directly within the app.
+5.  An interactive terminal opens inside the app.
 
-### Method 2: External Terminal (Copy Login)
+### Method 2: External terminal (Copy Login)
 
-For power users who prefer **Termux**, **ADB**, or other terminal emulators, Droidspaces allows you to "attach" external sessions to the container.
+If you prefer **Termux**, **ADB** or another terminal emulator, you can "attach" a session from there to the container.
 
 1.  Ensure the container is **RUNNING**.
 2.  Open the container **Details** in the **Panel** tab.
 3.  Select your desired user from the dropdown menu.
-4.  Tap **Copy Login**. This copies a command like `su -c 'droidspaces --name=[name enter [user]'` to your clipboard.
+4.  Tap **Copy Login**. This copies a command like `su -c 'droidspaces --name=[name] enter [user]'` to your clipboard.
 5.  Open your preferred terminal (e.g., Termux) and **Paste** the command.
-6.  **Run** the command (ensure your terminal has root permissions granted from your root manager).
+6.  **Run** the command (your terminal needs root permission granted in your root manager).
 
 ---
 
-## Settings & Requirements
+## Settings & requirements
 
-Accessed via the gear icon in the top right:
-- **Requirements**: Runs a 27-point diagnostic check on your kernel.
-- **Kernel Config**: Provides a copyable `droidspaces.config` snippet specifically for your device.
-- **Theme Engine**: Support for AMOLED Black, Material You, Changing accent colors, and Light/Dark modes.
+Open these from the gear icon in the top right:
+
+- **Requirements**: runs a 27-point diagnostic check on your kernel.
+- **Kernel Config**: gives you a copyable `droidspaces.config` snippet for your device.
+- **Theme Engine**: AMOLED black, Material You, custom accent colors, and light and dark modes.

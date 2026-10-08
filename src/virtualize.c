@@ -63,32 +63,18 @@ static int container_cpus(struct ds_config *cfg) {
   return n;
 }
 
-/* Read a cgroup v2 file from the container's delegated slice. */
-static long long read_cg_ll(const char *container_name, const char *file) {
-  char safe_name[256];
-  sanitize_container_name(container_name, safe_name, sizeof(safe_name));
-  char path[PATH_MAX];
-  char buf[64];
-  snprintf(path, sizeof(path), "/sys/fs/cgroup/droidspaces/%s/%s", safe_name,
-           file);
-  if (read_file(path, buf, sizeof(buf)) <= 0)
-    return -1;
-  if (strncmp(buf, "max", 3) == 0)
-    return -1; /* unlimited */
-  char *end;
-  long long v = strtoll(buf, &end, 10);
-  return (end == buf) ? -1 : v;
-}
-
 /* Per-resource content generators
  * Each returns a malloc'd buffer + length. Caller must free(). */
 
 /* /proc/meminfo - virtualized when memory_limit > 0 */
 static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
   long long mem_limit = cfg->memory_limit; /* bytes */
-  long long mem_used = read_cg_ll(cfg->container_name, "memory.current");
+  long long mem_used = -1, file_cache = 0;
+  ds_cgroup_get_usage(cfg->container_name, &mem_used, &file_cache, NULL, NULL);
   if (mem_used < 0)
     mem_used = 0;
+  if (file_cache > mem_used)
+    file_cache = mem_used;
 
   FILE *f = fopen("/proc/meminfo", "r");
   if (!f)
@@ -107,21 +93,23 @@ static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
   if (mem_limit > 0 && host_total_kb > 0)
     ratio = (double)mem_limit / ((double)host_total_kb * 1024.0);
 
-  /* Read memory.stat for accurate anon/file/slab breakdown */
+  /* Read memory.stat for accurate anon/file/slab breakdown. v1 names the
+   * first two differently and has no slab line. */
   long long cg_anon = -1, cg_file = -1, cg_slab = -1;
   {
-    char safe_name[256];
-    sanitize_container_name(cfg->container_name, safe_name, sizeof(safe_name));
-    char path[PATH_MAX], sbuf[4096];
-    snprintf(path, sizeof(path), "/sys/fs/cgroup/droidspaces/%s/memory.stat",
-             safe_name);
+    char dir[PATH_MAX], path[PATH_MAX + 64], sbuf[4096];
+    int v1 = ds_cgroup_ctrl_dir("memory", cfg->container_name, dir,
+                                sizeof(dir)) == 1;
+    const char *k_anon = v1 ? "total_rss " : "anon ";
+    const char *k_file = v1 ? "total_cache " : "file ";
+    snprintf(path, sizeof(path), "%s/memory.stat", dir);
     if (read_file(path, sbuf, sizeof(sbuf)) > 0) {
       char *p;
-      if ((p = strstr(sbuf, "anon ")))
-        sscanf(p + 5, "%lld", &cg_anon);
-      if ((p = strstr(sbuf, "file ")))
-        sscanf(p + 5, "%lld", &cg_file);
-      if ((p = strstr(sbuf, "slab ")))
+      if ((p = strstr(sbuf, k_anon)))
+        sscanf(p + strlen(k_anon), "%lld", &cg_anon);
+      if ((p = strstr(sbuf, k_file)))
+        sscanf(p + strlen(k_file), "%lld", &cg_file);
+      if (!v1 && (p = strstr(sbuf, "slab ")))
         sscanf(p + 5, "%lld", &cg_slab);
     }
   }
@@ -159,13 +147,16 @@ static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
         val = (mem_limit - mem_used) / 1024 > 0 ? (mem_limit - mem_used) / 1024
                                                 : 0;
       else if (!strcmp(key, "MemAvailable")) {
-        /* MemAvailable = MemTotal - actual_cgroup_usage.
-         * Do NOT add cg_file here: host page cache can be huge and pushes
-         * MemAvailable >= MemTotal, triggering fastfetch/free's fallback
-         * guard (memAvailable >= memTotal) which reads raw host fields and
-         * produces completely wrong numbers (e.g. 16 EiB used).
-         * Simple and correct: what the cgroup hasn't consumed is available. */
-        val = lim_kb - mem_used / 1024;
+        /* What the cgroup has not consumed, plus its own file cache, which
+         * the kernel gives back under pressure. free and fastfetch report
+         * "used" as MemTotal - MemAvailable, so without the cache term they
+         * count every file the container has read as used memory.
+         * It must be the cgroup's cache, never the host's Cached, and it must
+         * stay below MemTotal: at memAvailable >= memTotal those tools fall
+         * back to raw fields and print nonsense (e.g. 16 EiB used). */
+        val = lim_kb - (mem_used - file_cache) / 1024;
+        if (val >= lim_kb)
+          val = lim_kb - 1;
         if (val < 0)
           val = 0;
       } else if (!strcmp(key, "SwapTotal") || !strcmp(key, "SwapFree"))
@@ -247,7 +238,47 @@ static char *gen_cpuinfo(struct ds_config *cfg, size_t *out_len) {
   return buf;
 }
 
-/* /proc/stat - recomputed aggregate + only max_cpus cpuN lines */
+static double container_start_time_secs(pid_t pid);
+
+/* Seconds since the container's init started. */
+static double container_uptime_secs(struct ds_config *cfg) {
+  struct timespec boot;
+  clock_gettime(CLOCK_BOOTTIME, &boot);
+  double boottime = (double)boot.tv_sec + (double)boot.tv_nsec / 1e9;
+
+  double up = -1.0;
+  if (cfg->container_pid > 0) {
+    double proc_start = container_start_time_secs(cfg->container_pid);
+    if (proc_start > 0.0)
+      up = boottime - proc_start;
+  }
+  if (up < 0.0) {
+    up = boottime - ((double)cfg->start_time.tv_sec +
+                     (double)cfg->start_time.tv_nsec / 1e9);
+  }
+  return up < 0.0 ? 0.0 : up;
+}
+
+/* /proc/stat for a container with a CPU quota: max_cpus cpuN lines whose
+ * figures are the container's own.
+ *
+ * The cpu lines of the host cannot be used, not even a subset of them. The
+ * container's threads run on every real core, so "the first N host CPUs" only
+ * shows what those N cores happen to be doing, and a container pinned at its
+ * quota reads as nearly idle. This is what LXCFS's cpuview fixes, and the
+ * result here is the same: busy time is the cgroup's, idle is what is left of
+ * the time the quota allowed, so a container at its quota reads 100% however
+ * many real cores it was spread over. Like LXCFS, only user, system and idle
+ * are reported and the rest of the file is the host's.
+ *
+ * LXCFS needs a per-cgroup history to turn deltas into counters. We do not:
+ * the cgroup is created for this boot, so its totals already start at zero
+ * and only grow.
+ *
+ * Without cgroup accounting for the container, fall back to the host's first
+ * max_cpus lines, as LXCFS does too. */
+#define STAT_CPU_FMT "cpu%s %llu 0 %llu %llu 0 0 0 0 0 0\n"
+
 static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
   int max_cpus = container_cpus(cfg);
   FILE *f = fopen("/proc/stat", "r");
@@ -263,10 +294,42 @@ static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
   size_t off = 0;
   char line[2048];
 
-  /* Pass 1: accumulate aggregate from allowed cpuN lines */
+  long long user_us = 0, system_us = 0;
+  long hz = sysconf(_SC_CLK_TCK);
+  int own = cfg->cpu_period > 0 && hz > 0 &&
+            ds_cgroup_cpu_times(cfg->container_name, &user_us, &system_us) == 0;
+  unsigned long long own_user = 0, own_system = 0, own_idle = 0;
+  if (own) {
+    own_user = (unsigned long long)(user_us * hz / 1000000);
+    own_system = (unsigned long long)(system_us * hz / 1000000);
+
+    /* The quota as a core count, not rounded up: half a core fully used must
+     * leave no idle time on the one CPU the container sees. */
+    double allowed = (double)cfg->cpu_quota / (double)cfg->cpu_period;
+    if (allowed > max_cpus)
+      allowed = max_cpus;
+    double idle = allowed * container_uptime_secs(cfg) * (double)hz -
+                  (double)(own_user + own_system);
+
+    /* A counter must not go backwards, and the two clocks behind this one
+     * are read at slightly different moments. A new init means a new boot
+     * with fresh cgroups, so the floor starts over. */
+    static pid_t idle_pid;
+    static unsigned long long idle_floor;
+    if (idle_pid != cfg->container_pid) {
+      idle_pid = cfg->container_pid;
+      idle_floor = 0;
+    }
+    own_idle = idle > 0.0 ? (unsigned long long)idle : 0;
+    if (own_idle < idle_floor)
+      own_idle = idle_floor;
+    idle_floor = own_idle;
+  }
+
+  /* Pass 1 (fallback only): accumulate aggregate from allowed cpuN lines */
   unsigned long long su = 0, sn = 0, ss = 0, si = 0, sio = 0, sir = 0,
                      ssoft = 0, sst = 0, sgu = 0, sgn = 0;
-  while (fgets(line, sizeof(line), f)) {
+  while (!own && fgets(line, sizeof(line), f)) {
     int id;
     if (sscanf(line, "cpu%d", &id) == 1 && id < max_cpus) {
       unsigned long long u, n, s, i, io, ir, sf, st, gu, gn;
@@ -295,7 +358,7 @@ static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
      * enough: size the growth to the actual line length (plus slack for the
      * generated aggregate "cpu" line and the trailing NUL) before either the
      * memcpy passthrough or the snprintf below can write. */
-    size_t need = strlen(line) + 512;
+    size_t need = strlen(line) + 512 + (size_t)max_cpus * 96;
     if (off + need >= cap) {
       while (off + need >= cap)
         cap *= 2;
@@ -306,6 +369,35 @@ static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
         return NULL;
       }
       buf = nb;
+    }
+    if (own) {
+      if (strncmp(line, "cpu", 3) != 0) {
+        size_t len = strlen(line);
+        memcpy(buf + off, line, len);
+        off += len;
+      } else if (!agg_done) {
+        /* The whole cpu block at once: the aggregate, then it split evenly
+         * over the visible CPUs with the remainder on cpu0. LXCFS packs the
+         * usage into them in order; the totals are the same, and this way
+         * one bar is not pinned while the next sits empty. */
+        int n = snprintf(buf + off, cap - off, STAT_CPU_FMT, " ", own_user,
+                         own_system, own_idle);
+        if (n > 0)
+          off += (size_t)n;
+        unsigned long long cpus = (unsigned long long)max_cpus;
+        for (int k = 0; k < max_cpus; k++) {
+          char id[16];
+          snprintf(id, sizeof(id), "%d", k);
+          n = snprintf(buf + off, cap - off, STAT_CPU_FMT, id,
+                       own_user / cpus + (k ? 0 : own_user % cpus),
+                       own_system / cpus + (k ? 0 : own_system % cpus),
+                       own_idle / cpus + (k ? 0 : own_idle % cpus));
+          if (n > 0)
+            off += (size_t)n;
+        }
+        agg_done = 1;
+      }
+      continue;
     }
     if (strncmp(line, "cpu ", 4) == 0) {
       if (!agg_done) {
@@ -332,23 +424,12 @@ static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
   return buf;
 }
 
-/* Read container's CPU busy time (seconds) from cgv2 cpu.stat usage_usec.
- * Ported from lxcfs get_reaper_busy() - cgv1 cpuacct.usage equivalent. */
+/* The container's CPU busy time in seconds, from its cgroup (lxcfs calls this
+ * get_reaper_busy()). -1 when the kernel keeps no such figure for it. */
 static double cg_cpu_busy_secs(const char *container_name) {
-  char safe_name[256];
-  sanitize_container_name(container_name, safe_name, sizeof(safe_name));
-  char path[PATH_MAX], buf[128];
-  snprintf(path, sizeof(path), "/sys/fs/cgroup/droidspaces/%s/cpu.stat",
-           safe_name);
-  if (read_file(path, buf, sizeof(buf)) <= 0)
-    return -1.0;
-  /* cpu.stat first line: "usage_usec <N>" */
-  char *p = strstr(buf, "usage_usec ");
-  if (!p)
-    return -1.0;
-  char *end;
-  long long usec = strtoll(p + 11, &end, 10);
-  return (end == p + 11) ? -1.0 : (double)usec / 1e6;
+  long long usec = -1;
+  ds_cgroup_get_usage(container_name, NULL, NULL, &usec, NULL);
+  return usec < 0 ? -1.0 : (double)usec / 1e6;
 }
 
 /* Read container init PID's start time from /proc/<pid>/stat field 22.
@@ -380,22 +461,7 @@ static double container_start_time_secs(pid_t pid) {
  * idle = up*ncpus - cpu_busy (from cgv2 cpu.stat).
  * Falls back to cfg->start_time only if container_pid is not yet available. */
 static char *gen_uptime(struct ds_config *cfg, size_t *out_len) {
-  struct timespec boot;
-  clock_gettime(CLOCK_BOOTTIME, &boot);
-  double boottime = (double)boot.tv_sec + (double)boot.tv_nsec / 1e9;
-
-  double up = -1.0;
-  if (cfg->container_pid > 0) {
-    double proc_start = container_start_time_secs(cfg->container_pid);
-    if (proc_start > 0.0)
-      up = boottime - proc_start;
-  }
-  if (up < 0.0) {
-    up = boottime - ((double)cfg->start_time.tv_sec +
-                     (double)cfg->start_time.tv_nsec / 1e9);
-  }
-  if (up < 0.0)
-    up = 0.0;
+  double up = container_uptime_secs(cfg);
 
   int ccpus = container_cpus(cfg);
   double busy = cg_cpu_busy_secs(cfg->container_name);
@@ -418,8 +484,76 @@ static char *gen_uptime(struct ds_config *cfg, size_t *out_len) {
   return buf;
 }
 
-/* /proc/loadavg - CPU-ratio scaled */
+/* /proc/loadavg: the container's own load average.
+ *
+ * The kernel's figure counts every runnable task on the machine, so inside a
+ * container it says how busy the phone is, not the container. LXCFS keeps a
+ * per-container one by sampling the cgroup's runnable tasks every five
+ * seconds and feeding them through the kernel's own decay, and this does the
+ * same from the monitor's heartbeat. It starts at 0.00 on every boot.
+ *
+ * Without a cgroup to count, fall back to the host's load scaled by the
+ * share of CPUs the container sees. */
+
+/* The kernel's fixed-point load average, kernel/sched/loadavg.c */
+#define LOAD_FSHIFT 11
+#define LOAD_FIXED_1 (1UL << LOAD_FSHIFT)
+#define LOAD_SAMPLE_SECS 5
+
+static unsigned long calc_load(unsigned long load, unsigned long exp,
+                               unsigned long active) {
+  unsigned long newload = load * exp + active * (LOAD_FIXED_1 - exp);
+  if (active >= load)
+    newload += LOAD_FIXED_1 - 1;
+  return newload / LOAD_FIXED_1;
+}
+
+static char *gen_own_loadavg(struct ds_config *cfg, size_t *out_len) {
+  /* Decay factors for 1, 5 and 15 minutes at a five second sample */
+  static const unsigned long exps[3] = {1884, 2014, 2037};
+  static unsigned long avg[3];
+  static int running, total;
+  static pid_t boot_pid;
+  static time_t sampled;
+
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  if (boot_pid != cfg->container_pid) {
+    /* A new init is a new boot: the load starts over */
+    boot_pid = cfg->container_pid;
+    avg[0] = avg[1] = avg[2] = 0;
+    sampled = 0;
+  }
+  if (!sampled || now.tv_sec - sampled >= LOAD_SAMPLE_SECS) {
+    if (ds_cgroup_count_tasks(cfg->container_name, &running, &total) < 0)
+      return NULL;
+    /* The first sample only seeds the task counts */
+    for (int i = 0; sampled && i < 3; i++)
+      avg[i] =
+          calc_load(avg[i], exps[i], (unsigned long)running * LOAD_FIXED_1);
+    sampled = now.tv_sec;
+  }
+
+  char *buf = malloc(128);
+  if (!buf)
+    return NULL;
+  unsigned long v[3];
+  for (int i = 0; i < 3; i++)
+    v[i] = avg[i] + LOAD_FIXED_1 / 200; /* round to two decimals */
+  int n = snprintf(
+      buf, 128, "%lu.%02lu %lu.%02lu %lu.%02lu %d/%d 0\n", v[0] >> LOAD_FSHIFT,
+      ((v[0] & (LOAD_FIXED_1 - 1)) * 100) >> LOAD_FSHIFT, v[1] >> LOAD_FSHIFT,
+      ((v[1] & (LOAD_FIXED_1 - 1)) * 100) >> LOAD_FSHIFT, v[2] >> LOAD_FSHIFT,
+      ((v[2] & (LOAD_FIXED_1 - 1)) * 100) >> LOAD_FSHIFT, running, total);
+  *out_len = (n > 0 && n < 128) ? (size_t)n : 0;
+  return buf;
+}
+
 static char *gen_loadavg(struct ds_config *cfg, size_t *out_len) {
+  char *own = gen_own_loadavg(cfg, out_len);
+  if (own)
+    return own;
+
   FILE *f = fopen("/proc/loadavg", "r");
   if (!f)
     return NULL;
@@ -519,6 +653,20 @@ static void ds_virtualize_affinity(struct ds_config *cfg) {
       /* Silently ignore if we can't set affinity (e.g. restrictive seccomp
        * on host), but it usually works since we are root here. */
     }
+  }
+}
+
+/* A session entering a running container takes the CPU set its init has.
+ * The limited set is applied to init at boot and inherited by everything it
+ * forks, but an enter or run session is forked on the host and only joins the
+ * namespaces, so without this it would see, and run on, every host CPU while
+ * the rest of the container sees one. Call before setns(): init_pid is a host
+ * PID. */
+void ds_virtualize_join(pid_t init_pid) {
+  cpu_set_t mask;
+  CPU_ZERO(&mask);
+  if (sched_getaffinity(init_pid, sizeof(mask), &mask) == 0 &&
+      sched_setaffinity(0, sizeof(mask), &mask) < 0) {
   }
 }
 

@@ -214,6 +214,8 @@ install_policy_rules(cfg);
 在写任何新东西之前先查这份清单。如果已经有相近的东西，就扩展它，而不是另加一个同类。
 Android 路径相对于 `Android/app/src/main/java/com/droidspaces/app/`，C 路径相对于仓库根目录。
 
+这份清单回答"该用什么"；[DESIGN.md](../../DESIGN.md) 回答"它该长什么样"，用于这里没有东西适用、你必须新建组件的场景。
+
 ### Android：表单与可复用界面
 
 | 符号 | 路径 | 何时使用 |
@@ -227,6 +229,7 @@ Android 路径相对于 `Android/app/src/main/java/com/droidspaces/app/`，C 路
 | `PortForwardingList(portForwards, onPortForwardsChange)` | `ui/component/PortForwardingList.kt` | 可编辑的端口转发列表，自带添加对话框 |
 | `UpstreamInterfaceList(upstreamInterfaces, onInterfacesChange)` | `ui/component/UpstreamInterfaceList.kt` | 可编辑的上行网卡标签列表 |
 | `DsDropdown(label, selected, options, displayName, onSelect, ...)` | `ui/component/DsDropdown.kt` | 任何下拉选择框。不要自己手写 `ExposedDropdownMenuBox` |
+| `DsMenuTheme { }` + `Modifier.dsMenuBorder()` | `ui/component/DsMenuTheme.kt` | 任何需要不透明菜单底色的 `DropdownMenu`。`DsDropdown` 已经内置了它 |
 | `DsTextFieldDefaults.colors()` / `.surfaceColors()` | `ui/component/DsTextFieldDefaults.kt` | 每一个 `OutlinedTextField`。界面用 `colors()`，对话框内用 `surfaceColors()` |
 | `FocusUtils`、`rememberClearFocus()`、`ClearFocusOnClickOutside` | `ui/util/FocusUtils.kt` | 输入法动作，以及点击空白处收起键盘 |
 
@@ -234,7 +237,10 @@ Android 路径相对于 `Android/app/src/main/java/com/droidspaces/app/`，C 路
 
 | 符号 | 路径 | 何时使用 |
 | --- | --- | --- |
-| `DialogFooterRow(dismissLabel, confirmLabel, onDismiss, onConfirm, ...)` | `ui/component/DialogFooterRow.kt` | 每个对话框的取消与确认按钮行。已有十处调用 |
+| `DsDialog(onDismiss, modifier, borderColor, scrollableContent, footer) { }` | `ui/component/DsDialog.kt` | 每个对话框。操作按钮放进 `footer`，绝不要放进内容区，否则在较矮的屏幕上会被挤掉。绝不要设置宽度、内边距或滚动 |
+| `DialogDismissButton(label, onDismiss)` | `ui/component/DialogFooterRow.kt` | 只有"关闭"一个操作的对话框的 `footer` |
+| `DialogCloseButton(onClick, enabled)` | `ui/component/DialogCloseButton.kt` | 对话框标题行上的 36.dp 关闭方块，用于从顶部关闭的信息页（终端日志查看器、关于页） |
+| `DialogFooterRow(dismissLabel, confirmLabel, onDismiss, onConfirm, confirmEnabled, destructive)` | `ui/component/DialogFooterRow.kt` | 每个对话框的取消与确认按钮行，已有十三处调用。删除或清空类操作请传 `destructive = true`，绝不要只改颜色 |
 | `FilePickerDialog(onDismiss, onConfirm, title, showFiles)` | `ui/component/FilePickerDialog.kt` | 选择主机路径或文件 |
 | `EnvironmentVariablesDialog(initialContent, onConfirm, onDismiss, ...)` | `ui/component/EnvironmentVariablesDialog.kt` | 键值形式的环境变量编辑器 |
 | `PrivilegedModeDialog`、`HardwareAccessDialog` | `ui/component/` | 需要手动输入确认短语的开启流程 |
@@ -254,6 +260,7 @@ Android 路径相对于 `Android/app/src/main/java/com/droidspaces/app/`，C 路
 | 符号 | 路径 | 何时使用 |
 | --- | --- | --- |
 | `PrimaryActionBottomBar(label, icon, onClick, ...)` | `ui/component/PrimaryActionBottomBar.kt` | 任何向导或全屏页的"下一步""安装""继续"底栏。已有六个界面在用 |
+| `SaveActionBottomBar(isSaved, isSaving, canSave, onSave, ...)` | `ui/component/SaveActionBottomBar.kt` | 带"保存 / 保存中 / 已保存"状态的保存底栏 |
 | `PullToRefreshWrapper(onRefresh) { ... }` | `ui/component/PullToRefreshWrapper.kt` | 任何下拉刷新的列表或标签页内容 |
 | `showSuccess/showError/showInfo(snackbarHostState, message)` | `ui/util/SnackbarUtils.kt` | 所有 Snackbar。不要直接调用 `showSnackbar` |
 
@@ -275,6 +282,8 @@ Android 路径相对于 `Android/app/src/main/java/com/droidspaces/app/`，C 路
 | 符号 | 路径 | 何时使用 |
 | --- | --- | --- |
 | `StatusPill(label, color)` | `ui/component/StatusPill.kt` | 任何小型状态标签 |
+| `SectionHeader(text)` | `ui/component/SectionHeader.kt` | 卡片分组上方的标题。间距写在修饰符上 |
+| `CardContentPadding`、`CardHeaderHeight` | `ui/component/CardMetrics.kt` | 任何带标题和状态胶囊的卡片。它保证各标签页的分隔线对齐，不要重新抄写这些数值 |
 | `LoadingIndicator(size, color)` + `LoadingSize` | `ui/util/LoadingIndicator.kt` | 行内加载圈。选一个 `LoadingSize`，不要写裸的 `.size(n.dp)` |
 | `FullScreenLoading(message)` | `ui/util/LoadingIndicator.kt` | 全屏加载状态 |
 | `ContainedLoadingIndicator`、`LoadingIndicatorDefaults`、`MaterialShapes` | `ui/util/LoadingIndicator.kt` | 确定进度和形变指示器及其样式常量 |
@@ -289,9 +298,9 @@ Android 路径相对于 `Android/app/src/main/java/com/droidspaces/app/`，C 路
 | `DroidspacesTheme(darkTheme, dynamicColor, amoledMode, themePalette)` | `ui/theme/Theme.kt` | 唯一的主题根，在 `MainActivity` 中应用 |
 | `rememberThemeState()` + `ThemeState` | `ui/theme/ThemeStateHolder.kt` | 读取实时主题偏好 |
 | `ThemePalette` | `ui/theme/Color.kt` | 新增强调色方案。只在这里加 |
-| `MaterialTheme.colorScheme.*` | | 所有颜色。`ui/theme/Color.kt` 里裸的 `PRIMARY`、`GREEN`、`RED` 属于遗留常量，新代码不要用 |
+| `MaterialTheme.colorScheme.*` | | 所有颜色。`ui/theme/Color.kt` 现在只保留 `AMOLED_BLACK` 和调色板 |
 | `MaterialTheme.typography.*`、`JetBrainsMono` | `ui/theme/Type.kt` | 所有文字样式，以及终端、日志和代码文本用的等宽字体 |
-| `ShapeUtils` | `ui/util/DialogUtils.kt` | 圆角半径。`DIALOG_SHAPE`、`CARD_SHAPE`、`BUTTON_SHAPE` 等 |
+| 圆角、间距、字体样式 | [DESIGN.md](../../DESIGN.md) | 所有视觉数值。没有形状常量对象，数值都在 DESIGN.md 里 |
 | `AnimationUtils` | `util/AnimationUtils.kt` | 时长、缓动和 tween 规格。不要写字面量 `tween(300)` |
 | `AccentColorPicker`、`ColorPaletteSwatch` | `ui/component/` | 设置里的配色选择器 |
 
@@ -473,12 +482,15 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `ds_spawn_daemon(child_fn, user_data, log_file, tag, label)` | fork 一个长期存活的辅助进程。通过 ready 管道确认 `execv` 成功，并挂上日志中继 |
 | `ds_daemon_child_preamble()` | 在这类子进程里第一个调用，此时还是 root |
 | `ds_oom_protect()` | 尽力而为的 OOM 分数保护 |
+| `ds_thread_create(tid, fn, arg)` | 在通过 signalfd 等待信号的进程中启动辅助线程。线程启动时屏蔽所有信号，因此不会抢走发给主线程的信号。不要在监视器中直接调用 `pthread_create` |
 | `ds_daemon_read_pid` / `write_pid` / `remove_pid`、`ds_resolve_daemon_pid` | pid 文件生命周期。读取时会检查进程是否存活 |
 | `ds_global_daemon_stop(...)` | 统一的 SIGTERM、轮询、SIGKILL、回收、删除文件流程 |
 | `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | 等待套接字出现，服务端一死就提前返回。用它代替 sleep 轮询 |
 | `ds_send_fd` / `ds_recv_fd` | SCM_RIGHTS 文件描述符传递 |
 | `collect_pids`、`read_and_validate_pid` | 快照 `/proc`，以及读取 pid 文件并检查存活 |
-| `is_external_lock_active(name)` | 检查锁文件，持有者已死的陈旧锁会被自动清除 |
+| `ds_container_lock(name, wait)` / `ds_container_unlock(fd)` | 每个容器的生命周期锁，基于 `flock`。**任何**修改容器磁盘状态（pidfile、附属文件、挂载、cgroup）的操作都必须持有它，监视器也不例外。命令传入 `wait=0` 并在忙时报错；监视器传入 `wait=1`。持锁后根据实际状态决定要做什么 |
+| `ds_container_lock_orphan(name)` | 同一把锁，但仅在该名称没有存活的监视器时才会获得。用于清理残留。返回 -1 时不要动这个容器 |
+| `ds_container_claim_supervision(name)` | 由监视器调用一次。`ds_container_lock_orphan` 检查的正是它 |
 | `DS_SIG_STOP`、`ds_init_type_t`、`detect_container_init()` | 优雅停止。每种 init 都有自己的停止和重启信号，在 procd 下 `SIGTERM` 表示重启 |
 
 ### C 后端：平台判定
@@ -524,7 +536,7 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `setup_volatile_overlay`、`cleanup_volatile_overlay`、`check_volatile_mode` | 易失模式 |
 | `mount_rootfs_img`、`unmount_rootfs_img` | 稀疏镜像的 loop 设备生命周期 |
 | `setup_cgroups`、`ds_cgroup_host_bootstrap` | cgroup 初始化 |
-| `ds_cgroup_attach`、`ds_cgroup_detach`、`ds_cgroup_cleanup_container` | 把进程移入，以及清理 |
+| `ds_cgroup_attach`、`ds_cgroup_cleanup_container` | 把进程移入，以及清理 |
 | `ds_cgroup_apply_limits`、`ds_cgroup_get_usage`、`print_cgroup_status` | 资源限制与用量 |
 | `ds_cg_word_in_list(list, name)` | 判断控制器名是否在列表中。不要对控制器列表用 `strstr` |
 | `get_workspace_dir`、`get_pids_dir`、`get_net_dir`、`get_logs_dir` | 构造工作目录路径的唯一认可方式。它们会在 Android 与 Linux 根目录之间切换 |
@@ -537,28 +549,30 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 
 ### C 后端：网络
 
-`src/net/` 中的一切都直接与内核通信。主路径上没有 `ip` 或 `iptables` 命令调用。
+`src/net/` 中的一切都直接与内核通信。主路径上没有 `ip` 或 `iptables` 命令调用。netfilter 辅助函数接受地址族（`AF_INET` 或 `AF_INET6`），优先使用原始 `ip_tables` / `ip6_tables` 套接字，仅在内核拒绝时回退到 `iptables` / `ip6tables` 二进制。
 
 | 符号 | 何时使用 |
 | --- | --- |
 | `ds_nl_open` / `ds_nl_close` | 打开所有链路、地址、路由和规则调用都需要的 netlink 上下文 |
 | `ds_nl_create_bridge`、`ds_nl_create_veth`、`ds_nl_set_master`、`ds_nl_link_up/down`、`ds_nl_del_link`、`ds_nl_rename`、`ds_nl_set_mac` | 链路操作 |
-| `ds_nl_add_addr4`、`ds_nl_add_route4` | 地址与路由 |
+| `ds_nl_add_addr4`、`ds_nl_add_route4`、`ds_nl_add_addr6`、`ds_nl_add_route6` | 地址与路由。IPv6 路由仅支持链路范围 |
 | `ds_nl_move_to_netns`、`ds_nl_move_to_netns_named` | 把网卡移入命名空间 |
-| `ds_nl_add_rule4`、`ds_nl_del_rule4` | FIB 策略路由规则。优先级取自 `DS_RULE_PRIO_TO_SUBNET`、`DS_RULE_PRIO_TETHER`、`DS_RULE_PRIO_FROM_SUBNET`，必须高于 OEM 保留区间、低于 Android 的 VPN 区间 |
-| `ds_nl_get_iface_table`、`ds_nl_get_table_default_oif`、`ds_nl_get_android_default` | 路由表信息读取 |
+| `ds_nl_add_rule4`、`ds_nl_del_rule4`、`ds_nl_rule6` | FIB 策略路由规则。优先级取自 `DS_RULE_PRIO_TO_SUBNET`、`DS_RULE_PRIO_TETHER`、`DS_RULE_PRIO_FROM_SUBNET`，必须高于 OEM 保留区间、低于 Android 的 VPN 区间 |
+| `ds_nl_get_iface_table`、`ds_nl_get_table_default_oif`、`ds_nl_get_android_default` | 路由表信息读取。三者都需要传入地址族 |
 | `ds_nl_flush_stale_veths`、`ds_nl_list_ifaces`、`ds_nl_count_ifaces_with_prefix` | 枚举与回收 |
 | `ds_ipt_ensure_masquerade`、`ds_ipt_ensure_forward_accept`、`ds_ipt_ensure_input_accept`、`ds_ipt_ensure_mss_clamp` | 写入 netfilter 规则 |
-| `ds_ipt_host_rules_present(iface, src_cidr, expect_dnat)` | 对整套主机规则的不 fork 探测。路由监视器据此决定是否重新写入 |
+| `ds_ipt_host_rules_present(family, iface, src_cidr, expect_dnat)` | 对某一地址族整套主机规则的不 fork 探测。路由监视器据此决定是否重新写入 |
 | `ds_ipt_remove_iface_rules`、`ds_ipt_remove_ds_rules` | 清理 |
+| `ds_ipt6_available` | 内核是否支持 NAT66：ip6 nat 表和 MASQUERADE 目标。运行时和 `droidspaces check` 共用 |
 | `ds_ipt_add_portforwards`、`ds_ipt_remove_portforwards` | 端口转发 |
 | `parse_cidr(cidr, ip_out, mask_out)` | 共享的 CIDR 拆分函数 |
 | `fix_networking_host`、`fix_networking_rootfs`、`setup_veth_host_side`、`setup_veth_child_side_named`、`setup_gateway_veth_side` | 网络建立 |
 | `ds_net_start_route_monitor`、`ds_net_mark_local_forward_active` | 在 netd 清掉规则后重新写回的对账器 |
 | `ds_net_cleanup`、`ds_net_gateway_teardown`、`ds_net_rewire_gateway_clients` | 拆除与网关客户端重连 |
 | `ds_net_validate_static_ip`、`ds_net_check_ip_collision`、`ds_net_resolve_static_ip` | 静态 NAT IP 处理。调用 resolve 之后必须保存配置才能持久化结果 |
-| `ds_dhcp_server_start`、`ds_dhcp_server_stop` | 单租约 DHCP 服务。拆除 veth 之前先停它，否则接收会阻塞 |
-| `ds_get_dns_servers`、`detect_ipv6_in_container`、`ds_net_disable_tx_checksum` | DNS、IPv6 检测、校验和卸载 |
+| `ds_dhcp_server_start`、`ds_dhcp_server_stop` | 单租约 DHCP 服务。拆除 veth 之前先停它，否则接收会阻塞。传入 IPv6 前缀时还会发送路由通告 |
+| `ds_ra_build`、`ds_ra_is_solicit` | DHCP 线程使用的路由通告帧及路由请求判断。有意不携带链路层地址选项 |
+| `ds_get_dns_servers`、`ds_net_disable_tx_checksum` | DNS、校验和卸载 |
 
 ### C 后端：安全守卫
 
@@ -575,15 +589,12 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 
 以下问题目前确实存在，已列入清理计划。请扩展共享版本，不要再加一份。
 
-- `JetBrainsMono` 被声明了四次：`ui/theme/Type.kt` 里的规范版本，加上 `InitServiceScreen.kt`、
-  `UnitDetailScreen.kt` 和 `OverrideEditorScreen.kt` 里的私有副本。请导入主题里的那个。
-- 没有共享的 `DsDialog`。同样的 `Dialog { Surface { ... } }` 结构在大约十六处被手工重写。
-  如果你需要对话框，参照现有实现并在 PR 中说明，更好的做法是把共享组件抽出来。
-- 四处局部的 `RoundedCornerShape` 对话框常量应该改成 `ShapeUtils.DIALOG_SHAPE`。
 - `ToggleCard` 和 `SwitchItem` 是同一种开关行的两种形态。
 - `ContainersScreen` 里内联了一份输入确认短语的逻辑，而 `ConfirmPhraseField` 已经提供了。
+  它还内联了错误色的输入框配色，因为 `DsTextFieldDefaults` 没有错误态变体。请补上这个变体，而不是再加一份拷贝。
 - `SummaryItem` 在 `InstallationSummaryScreen.kt` 中以三个私有重载存在。在第二个界面需要它
   之前，先把它提升到 `ui/component/`。
+- `PrimaryActionBottomBar` 上的 `labelFontSize` 只有一个调用方 `RootCheckScreen`，它把行动号召文字推到 16sp。要么字体比例覆盖它，要么删掉这个参数。不要增加第二个调用方。
 - 若干安装器和检查器仍然用字面引号甚至不加引号把路径拼进 shell 字符串（`BinaryInstaller`、
   `ContainerInstaller`、`SparseImageInstaller`、`ModuleInstaller`、`SymlinkInstaller`）。
   它们已在清理列表上。不要复制这种写法，请用 `ContainerCommandBuilder.quote()`。
@@ -615,6 +626,8 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
    版本。对于 Linux：发行版、内核版本以及架构。
 
 4. **没有回归。** 用你的改动跑一遍现有行为。如果之前能用的功能现在不行了，先修好再发 PR。
+
+5. **对于 UI 改动，说明你遵循了哪些 DESIGN.md 里的规则。** 如果你偏离了某条规则，说明是哪条以及原因。没有理由说明却与 [DESIGN.md](../../DESIGN.md) 不一致的圆角或颜色会被打回。
 
 ## 代码所有权
 

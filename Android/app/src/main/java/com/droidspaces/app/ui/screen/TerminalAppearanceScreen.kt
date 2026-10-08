@@ -40,7 +40,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -60,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.droidspaces.app.R
+import com.droidspaces.app.ui.component.DsSlider
 import com.droidspaces.app.ui.component.SectionHeader
 import com.droidspaces.app.ui.component.SwitchItem
 import com.droidspaces.app.ui.component.TerminalFontDialog
@@ -221,42 +221,14 @@ fun TerminalAppearanceScreen(onBack: () -> Unit) {
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        Slider(
+                        DsSlider(
                             value = fontSizePx,
                             onValueChange = { fontSizePx = it },
                             // Persist on release, not per drag tick
                             onValueChangeFinished = {
                                 prefsManager.terminalFontSizePx = fontSizePx.roundToInt()
                             },
-                            valueRange = FONT_SIZE_MIN_PX..FONT_SIZE_MAX_PX,
-                            // Newer M3 slider look (bar thumb, tall rounded track); the
-                            // stock 1.2.x slider still draws the old dot-on-thin-line style.
-                            thumb = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 5.dp, height = 28.dp)
-                                        .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                )
-                            },
-                            track = { state ->
-                                val fraction = ((state.value - FONT_SIZE_MIN_PX) /
-                                    (FONT_SIZE_MAX_PX - FONT_SIZE_MIN_PX)).coerceIn(0f, 1f)
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(10.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(fraction)
-                                            .fillMaxHeight()
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primary)
-                                    )
-                                }
-                            }
+                            valueRange = FONT_SIZE_MIN_PX..FONT_SIZE_MAX_PX
                         )
                     }
                 }

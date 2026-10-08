@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.droidspaces.app.util.HostCapabilities
 
 /**
  * Application-wide state ViewModel that persists across navigation.
@@ -252,6 +253,9 @@ class AppStateViewModel(application: Application) : AndroidViewModel(application
                                 SymlinkInstaller.enable()
                             }
                         }
+                        // Ask the fresh backend what this kernel can do, so the
+                        // success screen can say so before the user moves on.
+                        HostCapabilities.refresh(context)
                         isInstallSuccess = true
                         isInstalling = false
                         isInstallingModule = false

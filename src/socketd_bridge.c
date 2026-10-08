@@ -485,7 +485,7 @@ static void socketd_pack_inspect_record(
   record->selinux_permissive = cfg->selinux_permissive ? 1u : 0u;
   record->hw_access = cfg->hw_access ? 1u : 0u;
   record->gpu_mode = cfg->gpu_mode ? 1u : 0u;
-  record->termux_x11 = cfg->termux_x11 ? 1u : 0u;
+  record->termux_x11 = cfg->x11 ? 1u : 0u;
   record->reserved0 = 0;
   record->is_img_mount = cfg->is_img_mount ? 1u : 0u;
 

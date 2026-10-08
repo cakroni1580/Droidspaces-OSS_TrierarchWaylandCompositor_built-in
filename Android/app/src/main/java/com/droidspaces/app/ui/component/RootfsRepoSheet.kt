@@ -1,6 +1,10 @@
 package com.droidspaces.app.ui.component
 
+import android.Manifest
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
@@ -38,7 +42,7 @@ import com.droidspaces.app.R
 import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
 import com.droidspaces.app.ui.util.FocusUtils
 import com.droidspaces.app.ui.util.FullScreenLoading
-import com.droidspaces.app.ui.viewmodel.AssetDownloadState
+import com.droidspaces.app.service.AssetDownloadState
 import com.droidspaces.app.ui.viewmodel.RepoUiState
 import com.droidspaces.app.ui.viewmodel.RootfsRepoViewModel
 import com.droidspaces.app.util.IconUtils
@@ -56,6 +60,39 @@ fun RootfsRepoSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var showRepoManager by remember { mutableStateOf(false) }
+
+    val appSettings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+    // API 26-28 has no MediaStore.Downloads, writing public Downloads needs the runtime permission
+    val requestStorage = rememberPermissionRequest(
+        permission = Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        title = context.getString(R.string.repo_storage_permission_title),
+        rationale = context.getString(R.string.repo_storage_permission_rationale),
+        settingsIntent = appSettings
+    )
+    // Downloads run without it, but then progress, Cancel and tap-to-install are all invisible
+    val requestNotifications = rememberPermissionRequest(
+        permission = Manifest.permission.POST_NOTIFICATIONS,
+        title = context.getString(R.string.notification_permission_title),
+        rationale = context.getString(R.string.repo_notification_permission_rationale),
+        settingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    )
+    // Once per sheet, so a user who said no is not nagged on every Download tap
+    var askedNotifications by remember { mutableStateOf(false) }
+    val download: (RootfsAsset) -> Unit = { asset ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !askedNotifications) {
+            askedNotifications = true
+            requestNotifications {}
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            requestStorage { granted ->
+                if (granted) vm.startDownload(asset)
+                else vm.failDownload(asset, context.getString(R.string.repo_dl_error_storage_permission))
+            }
+        } else {
+            vm.startDownload(asset)
+        }
+    }
 
     LaunchedEffect(Unit) {
         snapshotFlow { sheetState.currentValue }
@@ -175,7 +212,7 @@ fun RootfsRepoSheet(
                                 assets         = filteredAssets,
                                 isFiltered     = searchQuery.isNotBlank(),
                                 downloadStates = vm.downloadStates,
-                                onDownload     = { vm.startDownload(it) },
+                                onDownload     = download,
                                 onCancel       = { vm.cancelDownload(it) },
                                 onInstall      = { uri -> onInstall(uri) },
                                 onRetry        = { vm.resetAsset(it.downloadUrl) }

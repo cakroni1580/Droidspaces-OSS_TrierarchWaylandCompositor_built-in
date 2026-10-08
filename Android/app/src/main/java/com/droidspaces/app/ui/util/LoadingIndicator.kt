@@ -71,7 +71,9 @@ import kotlinx.coroutines.launch
 enum class LoadingSize(val size: Dp, val strokeWidth: Dp) {
     Small(16.dp, 2.dp),
     Medium(24.dp, 3.dp),
-    Large(48.dp, 4.dp)
+    Large(48.dp, 4.dp),
+    /** Full-screen setup-flow hero (backend installer). The empty-state icon stays 64. */
+    Hero(96.dp, 6.dp)
 }
 
 /**

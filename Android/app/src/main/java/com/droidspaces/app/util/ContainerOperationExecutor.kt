@@ -118,16 +118,4 @@ object ContainerOperationExecutor {
             false
         }
     }
-
-    /**
-     * Check if a command execution was successful.
-     */
-    suspend fun checkCommandSuccess(command: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val result = Shell.cmd("$command 2>&1").exec()
-            result.isSuccess
-        } catch (e: Exception) {
-            false
-        }
-    }
 }

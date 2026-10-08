@@ -121,9 +121,9 @@ Tailscale 为你的容器提供安全的 P2P 隧道，让你可以从 Tailnet �
 <a id="step-4-secure-the-container-with-ufw-firewall"></a>
 ### 步骤 4：使用 UFW（防火墙）保护容器
 
-由于 Droidspaces 的 NAT 模式目前仅支持 IPv4，我们应在 UFW 中禁用 IPv6 以避免初始化错误。
+NAT 模式为双栈，UFW 也可以管理 IPv6。除非容器以 `--disable-ipv6` 运行（此时 UFW 初始化 IPv6 规则会失败），否则请跳过第一步。
 
-1. **在 UFW 中禁用 IPv6**：
+1. **在 UFW 中禁用 IPv6**（仅在使用 `--disable-ipv6` 时）：
    ```bash
    sed -i 's/IPV6=yes/IPV6=no/' /etc/default/ufw
    ```

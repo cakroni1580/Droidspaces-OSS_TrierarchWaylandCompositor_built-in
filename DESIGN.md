@@ -279,8 +279,11 @@ is centred inside a card, it is probably wrong.
 ## Motion and loading
 
 Spinners come from `LoadingIndicator` with a `LoadingSize`, never a raw `.size(n.dp)` on a
-progress indicator. Whole screen loading is `FullScreenLoading`. Animation timings come from
-`AnimationUtils`.
+progress indicator. Whole screen loading is `FullScreenLoading`. `LoadingSize.Hero` (96) is
+the one setup-flow hero loader, used by the backend installer; the empty-state icon stays 64.
+Animation timings come from `AnimationUtils`.
+Hero state changes use the Material Expressive spring tokens: spatial 0.8 / 380 for
+size and position, effects 1.0 / 1600 for fades. Never `DampingRatioMediumBouncy` on a result.
 
 ## When the rule does not fit
 

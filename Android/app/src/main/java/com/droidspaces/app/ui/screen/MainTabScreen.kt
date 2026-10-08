@@ -43,6 +43,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.sp
 import com.droidspaces.app.R
+import com.droidspaces.app.util.HostCapabilities
+import androidx.compose.runtime.collectAsState
+import com.droidspaces.app.util.Constants
 
 private const val EASTER_EGG_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -82,6 +85,11 @@ fun MainTabScreen(
 
     val tabs = remember { TabItem.values() }
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+
+    // Read once here and handed down as a Boolean, so Home, Containers and the
+    // Panel can never disagree. Unknown counts as supported until the probe lands.
+    val caps by HostCapabilities.state.collectAsState()
+    val isKernelSupported = caps?.requirementsMet != false
     val selectedTab = tabs[pagerState.currentPage]
 
     // Jump to the tab requested by a launcher shortcut, then clear the request.
@@ -134,6 +142,8 @@ fun MainTabScreen(
     // Fetch containers when backend BECOMES available or evaluates to true
     LaunchedEffect(appStateViewModel.isBackendAvailable) {
         if (appStateViewModel.isBackendAvailable) {
+            // Re-probe only after a reboot or a backend update, the cache covers the rest.
+            HostCapabilities.refreshIfStale(context)
             // Because runScan might be running, fetchContainerList is safe because it only
             // cancels previous fetch jobs, and runs concurrently (which is fine, UI populates fast).
             // We only trigger this if it's currently empty, to avoid double-fetching if runScan succeeded,
@@ -220,6 +230,7 @@ fun MainTabScreen(
         if (appStateViewModel.isBackendAvailable) {
             SystemInfoManager.refreshDroidspacesVersion(context)
             SystemInfoManager.refreshBackendMode(context)
+            HostCapabilities.refresh(context)
 
             when (tab) {
                 TabItem.Home, TabItem.Containers -> {
@@ -307,6 +318,7 @@ fun MainTabScreen(
                             droidspacesStatus = droidspacesStatus,
                             isChecking = isChecking,
                             isRootAvailable = appStateViewModel.isRootAvailable,
+                            isKernelSupported = isKernelSupported,
                             onNavigateToInstallation = onNavigateToInstallation,
                             onNavigateToContainers = {
                                 scope.launch {
@@ -328,6 +340,7 @@ fun MainTabScreen(
                         ContainersTabContent(
                             isBackendAvailable = isBackendAvailable,
                             isRootAvailable = appStateViewModel.isRootAvailable,
+                            isKernelSupported = isKernelSupported,
                             onNavigateToInstallation = onNavigateToContainerInstallation,
                             onNavigateToEditContainer = onNavigateToEditContainer,
                             onNavigateToContainerDetails = onNavigateToContainerDetails,
@@ -343,6 +356,7 @@ fun MainTabScreen(
                         ControlPanelTabContent(
                             isBackendAvailable = isBackendAvailable,
                             isRootAvailable = appStateViewModel.isRootAvailable,
+                            isKernelSupported = isKernelSupported,
                             containerViewModel = containerViewModel,
                             onRefresh = { performRefresh(TabItem.ControlPanel) },
                             onNavigateToContainerDetails = onNavigateToContainerDetails,
@@ -381,6 +395,7 @@ private fun HomeTabContent(
     droidspacesStatus: DroidspacesStatus,
     isChecking: Boolean,
     isRootAvailable: Boolean,
+    isKernelSupported: Boolean,
     onNavigateToInstallation: () -> Unit,
     onNavigateToContainers: () -> Unit,
     onNavigateToControlPanel: () -> Unit,
@@ -417,6 +432,7 @@ private fun HomeTabContent(
                 isRootAvailable = isRootAvailable,
                 refreshTrigger = refreshTrigger,
                 appUpdate = appUpdate,
+                isKernelSupported = isKernelSupported,
                 onClick = {
                     if (!isRootAvailable) {
                         // Disabled for non-root users
@@ -431,6 +447,12 @@ private fun HomeTabContent(
                         return@DroidspacesStatusCard
                     }
                     if (droidspacesStatus != DroidspacesStatus.Working) return@DroidspacesStatusCard
+                    if (!isKernelSupported) {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Constants.KERNEL_CONFIG_DOC_URL)))
+                        }
+                        return@DroidspacesStatusCard
+                    }
                     idleTaps++
                     when (idleTaps) {
                         5 -> Toast.makeText(context, R.string.easter_egg_warning, Toast.LENGTH_SHORT).show()
@@ -447,8 +469,9 @@ private fun HomeTabContent(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Only show container and running count cards if root is available
-            if (isRootAvailable) {
+            // The count cards lead to the other tabs, so hide them when those
+            // tabs would only show the root or kernel state.
+            if (isRootAvailable && isKernelSupported) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -550,6 +573,7 @@ private fun HomeTabContent(
 private fun ContainersTabContent(
     isBackendAvailable: Boolean,
     isRootAvailable: Boolean,
+    isKernelSupported: Boolean,
     onNavigateToInstallation: (android.net.Uri) -> Unit,
     onNavigateToEditContainer: (String) -> Unit,
     onNavigateToContainerDetails: (String) -> Unit,
@@ -563,6 +587,7 @@ private fun ContainersTabContent(
         ContainersScreen(
             isBackendAvailable = isBackendAvailable,
             isRootAvailable = isRootAvailable,
+            isKernelSupported = isKernelSupported,
             onNavigateToInstallation = onNavigateToInstallation,
             onNavigateToEditContainer = onNavigateToEditContainer,
             onNavigateToContainerDetails = onNavigateToContainerDetails,
@@ -578,6 +603,7 @@ private fun ContainersTabContent(
 private fun ControlPanelTabContent(
     isBackendAvailable: Boolean,
     isRootAvailable: Boolean,
+    isKernelSupported: Boolean,
     containerViewModel: ContainerViewModel,
     onRefresh: suspend () -> Unit,
     onNavigateToContainerDetails: (String) -> Unit,
@@ -594,6 +620,7 @@ private fun ControlPanelTabContent(
         ControlPanelScreen(
             isBackendAvailable = isBackendAvailable,
             isRootAvailable = isRootAvailable,
+            isKernelSupported = isKernelSupported,
             containerViewModel = containerViewModel,
             onNavigateToContainerDetails = onNavigateToContainerDetails,
             onNavigateToTerminal = onNavigateToTerminal,

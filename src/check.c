@@ -13,6 +13,9 @@
 /* Static status variables */
 
 static int is_root = 0;
+/* check --format: emit one JSON int per probe instead of the text report */
+static int json_mode = 0;
+static int json_first = 1;
 
 /* Output buffering (for one-shot terminal output) */
 
@@ -225,8 +228,12 @@ static int check_fd_feature(int fd) {
   return 0;
 }
 
-void print_ds_check(const char *name, const char *desc, int status,
-                    const char *level) {
+void print_ds_check(const char *key, const char *name, const char *desc,
+                    int status, const char *level) {
+  if (json_mode) {
+    ds_json_int(key, status, &json_first);
+    return;
+  }
   const char *c_sym =
       status ? C_GREEN : (strcmp(level, "MUST") == 0 ? C_RED : C_YELLOW);
   const char *sym = status ? "✓" : "✗";
@@ -243,9 +250,16 @@ void print_ds_check(const char *name, const char *desc, int status,
   }
 }
 
-int check_requirements_detailed(void) {
+int check_requirements_detailed(int format_output) {
   check_buf_pos = 0;
   check_buf[0] = '\0';
+
+  /* In JSON mode the headers and summary still land in check_buf and are
+   * simply never written; cheaper than guarding every check_append. */
+  json_mode = format_output;
+  json_first = 1;
+  if (json_mode)
+    printf("{");
 
   check_root();
 
@@ -263,7 +277,7 @@ int check_requirements_detailed(void) {
 
   if (!is_root)
     missing_must++;
-  print_ds_check("Root privileges",
+  print_ds_check("root", "Root privileges",
                  "Running as root user (required for container operations)",
                  is_root, "MUST");
 
@@ -274,91 +288,96 @@ int check_requirements_detailed(void) {
   int kver_ok = check_kernel_version_supported();
   if (!kver_ok)
     missing_must++;
-  print_ds_check("Linux version", kver_desc, kver_ok, "MUST");
+  print_ds_check("kernel_version", "Linux version", kver_desc, kver_ok, "MUST");
 
   int has_pid_ns = check_ns(CLONE_NEWPID, "pid");
   if (!has_pid_ns)
     missing_must++;
-  print_ds_check("PID namespace", "Process ID namespace isolation", has_pid_ns,
-                 "MUST");
+  print_ds_check("pid_ns", "PID namespace", "Process ID namespace isolation",
+                 has_pid_ns, "MUST");
 
   int has_mnt_ns = check_ns(CLONE_NEWNS, "mnt");
   if (!has_mnt_ns)
     missing_must++;
-  print_ds_check("Mount namespace", "Filesystem namespace isolation",
+  print_ds_check("mnt_ns", "Mount namespace", "Filesystem namespace isolation",
                  has_mnt_ns, "MUST");
 
   int has_uts_ns = check_ns(CLONE_NEWUTS, "uts");
   if (!has_uts_ns)
     missing_must++;
-  print_ds_check("UTS namespace", "Hostname/domainname isolation", has_uts_ns,
-                 "MUST");
+  print_ds_check("uts_ns", "UTS namespace", "Hostname/domainname isolation",
+                 has_uts_ns, "MUST");
 
   int has_ipc_ns = check_ns(CLONE_NEWIPC, "ipc");
   if (!has_ipc_ns)
     missing_must++;
-  print_ds_check("IPC namespace", "Inter-process communication isolation",
-                 has_ipc_ns, "MUST");
+  print_ds_check("ipc_ns", "IPC namespace",
+                 "Inter-process communication isolation", has_ipc_ns, "MUST");
 
   int has_pivot = check_pivot_root();
   if (!has_pivot)
     missing_must++;
-  print_ds_check("pivot_root syscall",
+  print_ds_check("pivot_root", "pivot_root syscall",
                  "Kernel support for the pivot_root syscall", has_pivot,
                  "MUST");
 
   int has_proc_fs = access("/proc/self", F_OK) == 0;
   if (!has_proc_fs)
     missing_must++;
-  print_ds_check("/proc filesystem", "Proc filesystem mount support",
+  print_ds_check("procfs", "/proc filesystem", "Proc filesystem mount support",
                  has_proc_fs, "MUST");
 
   int has_sys_fs = access("/sys/kernel", F_OK) == 0;
   if (!has_sys_fs)
     missing_must++;
-  print_ds_check("/sys filesystem", "Sys filesystem mount support", has_sys_fs,
-                 "MUST");
+  print_ds_check("sysfs", "/sys filesystem", "Sys filesystem mount support",
+                 has_sys_fs, "MUST");
 
   int has_seccomp = check_seccomp();
   if (!has_seccomp)
     missing_must++;
-  print_ds_check("Seccomp support", "Kernel support for Seccomp (Bypass Mode)",
-                 has_seccomp, "MUST");
+  print_ds_check("seccomp", "Seccomp support",
+                 "Kernel support for Seccomp (Bypass Mode)", has_seccomp,
+                 "MUST");
 
   /* RECOMMENDED */
   check_append("\n" C_BOLD "[RECOMMENDED]" C_RESET
                "\nThese features improve functionality but are not strictly "
                "required:\n\n");
 
-  print_ds_check("epoll support", "Efficient I/O event notification",
+  print_ds_check("epoll", "epoll support", "Efficient I/O event notification",
                  check_fd_feature(epoll_create1(0)), "OPT");
 
   sigset_t mask;
   sigemptyset(&mask);
-  print_ds_check("signalfd support", "Signal handling via file descriptors",
+  print_ds_check("signalfd", "signalfd support",
+                 "Signal handling via file descriptors",
                  check_fd_feature(signalfd(-1, &mask, 0)), "OPT");
 
-  print_ds_check("PTY support", "Unix98 PTY support",
+  print_ds_check("pty", "PTY support", "Unix98 PTY support",
                  access("/dev/ptmx", F_OK) == 0, "OPT");
 
-  print_ds_check("devpts support", "Virtual terminal filesystem support",
+  print_ds_check("devpts", "devpts support",
+                 "Virtual terminal filesystem support",
                  access("/dev/pts", F_OK) == 0, "OPT");
 
-  print_ds_check("Loop device", "Required for rootfs.img mounting",
+  print_ds_check("loop", "Loop device", "Required for rootfs.img mounting",
                  check_loop(), "OPT");
 
-  print_ds_check("ext4 filesystem", "Ext4 filesystem support",
+  print_ds_check("ext4", "ext4 filesystem", "Ext4 filesystem support",
                  grep_file("/proc/filesystems", "ext4"), "OPT");
 
-  print_ds_check("Cgroup v2 support", "Unified Control Group hierarchy support",
+  print_ds_check("cgroup2", "Cgroup v2 support",
+                 "Unified Control Group hierarchy support",
                  grep_file("/proc/filesystems", "cgroup2"), "OPT");
 
-  print_ds_check("Cgroup namespace", "Control Group namespace isolation",
+  print_ds_check("cgroup_ns", "Cgroup namespace",
+                 "Control Group namespace isolation",
                  check_ns(CLONE_NEWCGROUP, "cgroup"), "OPT");
 
   int has_devtmpfs = grep_file("/proc/filesystems", "devtmpfs");
   print_ds_check(
-      "devtmpfs support",
+      "devtmpfs", "devtmpfs support",
       "Required for hardware access mode; tmpfs fallback used otherwise",
       has_devtmpfs, "OPT");
 
@@ -367,27 +386,65 @@ int check_requirements_detailed(void) {
                "\nThese features are optional and only used for specific "
                "functionality:\n\n");
 
-  print_ds_check("IPv6 support", "IPv6 networking support",
-                 access("/proc/sys/net/ipv6", F_OK) == 0, "OPT");
-  print_ds_check("FUSE support", "Filesystem in Userspace support",
+  print_ds_check("fuse", "FUSE support", "Filesystem in Userspace support",
                  access("/dev/fuse", F_OK) == 0 ||
                      grep_file("/proc/filesystems", "fuse"),
                  "OPT");
-  print_ds_check("TUN/TAP support", "Virtual network device support",
+  print_ds_check("tun", "TUN/TAP support", "Virtual network device support",
                  access("/dev/net/tun", F_OK) == 0, "OPT");
-  print_ds_check("OverlayFS support", "Required for --volatile mode",
+  print_ds_check("overlayfs", "OverlayFS support",
+                 "Required for --volatile mode",
                  grep_file("/proc/filesystems", "overlay"), "OPT");
-  print_ds_check("Network namespace",
+  print_ds_check("net_ns", "Network namespace",
                  "Network namespace isolation for --net=nat/none",
                  check_ns(CLONE_NEWNET, "net"), "OPT");
-  print_ds_check("Bridge device support",
+  print_ds_check("bridge", "Bridge device support",
                  "Required for --net=nat (bridge mode); bridgeless fallback "
                  "used if absent",
                  check_bridge_support(), "OPT");
-  print_ds_check("Veth pair support",
+  print_ds_check("veth", "Veth pair support",
                  "Required for --net=nat; no fallback exists if absent",
                  check_veth_support(), "OPT");
-  print_ds_check("Sandboxing (user namespaces)",
+  /* An IPv6 stack alone is not enough for NAT mode, which also needs the
+   * IPv6 nat table. This is the probe the runtime runs before it gives a
+   * container IPv6, so it is the only IPv6 line worth showing. */
+  print_ds_check("ipv6_nat", "IPv6 NAT support",
+                 "CONFIG_IP6_NF_NAT and CONFIG_IP6_NF_TARGET_MASQUERADE; "
+                 "--net=nat containers are IPv4 only if absent",
+                 is_root && ds_ipt6_available(), "OPT");
+  /* Asked of the running kernel, not of a config dump. A limit is applied on
+   * whichever cgroup hierarchy owns its controller, so the controller
+   * existing is enough. CPU quota is a feature of the cpu controller, and
+   * its sysctl is only registered with CONFIG_CFS_BANDWIDTH. */
+  print_ds_check("memory_limit", "Memory limit support",
+                 "CONFIG_MEMCG, and no cgroup_disable=memory on the kernel "
+                 "command line; --memory is skipped if absent",
+                 ds_cgroup_has_controller("memory"), "OPT");
+  print_ds_check(
+      "cpu_limit", "CPU limit support",
+      "CONFIG_CFS_BANDWIDTH, and no cgroup_disable=cpu on the kernel command "
+      "line; --cpus is skipped if absent",
+      access("/proc/sys/kernel/sched_cfs_bandwidth_slice_us", F_OK) == 0 &&
+          ds_cgroup_has_controller("cpu"),
+      "OPT");
+  /* A container's CPU time comes from cpu.stat in cgroup2, which the root
+   * only has where every cgroup has it (4.15 and later), or else from the
+   * v1 cpuacct controller. */
+  print_ds_check(
+      "cpu_accounting", "CPU usage accounting",
+      "CONFIG_CGROUP_CPUACCT on kernels before 4.15, and no "
+      "cgroup_disable=cpuacct on the kernel command line; without it "
+      "info shows no CPU usage and a CPU-limited container sees "
+      "the host's figures in /proc/stat",
+      access("/sys/fs/cgroup/cpu.stat", F_OK) == 0 ||
+          ds_cgroup_has_controller("cpuacct"),
+      "OPT");
+  print_ds_check("pids_limit", "Process limit support",
+                 "CONFIG_CGROUP_PIDS, and no cgroup_disable=pids on the kernel "
+                 "command line; --pids-limit is skipped if absent",
+                 ds_cgroup_has_controller("pids"), "OPT");
+
+  print_ds_check("user_ns", "Sandboxing (user namespaces)",
                  "CONFIG_USER_NS; enable per container with "
                  "--allow-sandboxing. Needed by unprivileged Docker and "
                  "Podman, by sandboxed apps (Flatpak, Bubblewrap, browsers) "
@@ -409,6 +466,13 @@ int check_requirements_detailed(void) {
                                  "may be inaccurate.\n" C_RESET);
   }
   check_append("\n");
+
+  if (json_mode) {
+    ds_json_str("version", DS_VERSION, &json_first);
+    ds_json_int("requirements_met", missing_must == 0, &json_first);
+    printf("}\n");
+    return 0;
+  }
 
   /* One-shot output to terminal */
   fwrite(check_buf, 1, check_buf_pos, stdout);

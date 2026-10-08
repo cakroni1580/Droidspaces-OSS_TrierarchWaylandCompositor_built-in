@@ -42,6 +42,8 @@
 #define DS_MAX_ARGC 64
 #define DS_MAX_ARG 8192
 #define DS_IOBUF 8192
+/* Client input queued toward the child: the pty master in PTY mode, the
+ * command's stdin pipe in pipe mode. */
 #define PTY_WBUF_MAX                                                           \
   (256 * 1024)                     /* absolute buffer cap for PTY master input \
                                     */
@@ -54,6 +56,7 @@
 #define MSG_EXIT ((uint8_t)0xFF)
 
 #define REQ_FLAG_PTY (1u << 0)
+#define REQ_FLAG_STDIN (1u << 1) /* pipe mode: client relays its stdin */
 #define EXIT_PENDING (-1)
 
 static FILE *g_daemon_log_fp = NULL;
@@ -289,12 +292,20 @@ static void drain_fd(int fd, int conn, uint8_t type) {
   fcntl(fd, F_SETFL, fl);
 }
 
+static void close_pipe(int p[2]) {
+  if (p[0] >= 0)
+    close(p[0]);
+  if (p[1] >= 0)
+    close(p[1]);
+  p[0] = p[1] = -1;
+}
+
 /* unified session handler for both pty and pipe modes */
 
 static void handle_session(int conn, ds_req_t *r) {
   int is_pty = (r->flags & REQ_FLAG_PTY);
   int master = -1, slave = -1;
-  int out[2] = {-1, -1}, err[2] = {-1, -1};
+  int out[2] = {-1, -1}, err[2] = {-1, -1}, in[2] = {-1, -1};
   char buf[DS_IOBUF];
 
   if (is_pty) {
@@ -319,17 +330,15 @@ static void handle_session(int conn, ds_req_t *r) {
      * fork and after the write ends have been closed.  The child's write
      * ends are a separate file description and remain blocking.
      */
-    if (pipe2(out, O_CLOEXEC) < 0 || pipe2(err, O_CLOEXEC) < 0) {
+    /* Without REQ_FLAG_STDIN the child reads EOF from /dev/null, as every
+     * caller that shares its stdin with a command shell (libsu) relies on. */
+    if (pipe2(out, O_CLOEXEC) < 0 || pipe2(err, O_CLOEXEC) < 0 ||
+        ((r->flags & REQ_FLAG_STDIN) && pipe2(in, O_CLOEXEC) < 0)) {
       send_frame(conn, MSG_ERR, "daemon: pipe2 failed\n", 21);
       send_exit(conn, 1);
-      if (out[0] >= 0) {
-        close(out[0]);
-        close(out[1]);
-      }
-      if (err[0] >= 0) {
-        close(err[0]);
-        close(err[1]);
-      }
+      close_pipe(out);
+      close_pipe(err);
+      close_pipe(in);
       return;
     }
   }
@@ -340,10 +349,9 @@ static void handle_session(int conn, ds_req_t *r) {
       close(master);
       close(slave);
     } else {
-      close(out[0]);
-      close(out[1]);
-      close(err[0]);
-      close(err[1]);
+      close_pipe(out);
+      close_pipe(err);
+      close_pipe(in);
     }
     send_exit(conn, 1);
     return;
@@ -356,10 +364,9 @@ static void handle_session(int conn, ds_req_t *r) {
       close(master);
       close(slave);
     } else {
-      close(out[0]);
-      close(out[1]);
-      close(err[0]);
-      close(err[1]);
+      close_pipe(out);
+      close_pipe(err);
+      close_pipe(in);
     }
     send_frame(conn, MSG_ERR, "daemon: fork failed\n", 20);
     send_exit(conn, 1);
@@ -380,12 +387,14 @@ static void handle_session(int conn, ds_req_t *r) {
     } else {
       close(out[0]);
       close(err[0]);
-      int dn = open("/dev/null", O_RDWR);
+      int dn = in[0] >= 0 ? in[0] : open("/dev/null", O_RDWR);
       if (dn >= 0) {
         dup2(dn, STDIN_FILENO);
         if (dn > STDERR_FILENO)
           close(dn);
       }
+      if (in[1] >= 0)
+        close(in[1]);
       dup2(out[1], STDOUT_FILENO);
       dup2(err[1], STDERR_FILENO);
       close(out[1]);
@@ -404,10 +413,9 @@ static void handle_session(int conn, ds_req_t *r) {
       close(master);
       close(slave);
     } else {
-      close(out[0]);
-      close(out[1]);
-      close(err[0]);
-      close(err[1]);
+      close_pipe(out);
+      close_pipe(err);
+      close_pipe(in);
     }
     kill(child, SIGTERM);
     waitpid(child, NULL, 0);
@@ -441,6 +449,11 @@ static void handle_session(int conn, ds_req_t *r) {
      * here so epoll's edge reads can drain without blocking. */
     fcntl(out[0], F_SETFL, O_NONBLOCK);
     fcntl(err[0], F_SETFL, O_NONBLOCK);
+    if (in[0] >= 0) {
+      close(in[0]);
+      in[0] = -1;
+      fcntl(in[1], F_SETFL, O_NONBLOCK);
+    }
     ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
     ev.data.fd = out[0];
     epoll_ctl(epfd, EPOLL_CTL_ADD, out[0], &ev);
@@ -450,26 +463,29 @@ static void handle_session(int conn, ds_req_t *r) {
     active_reads = 2;
   }
 
+  /* Where client input goes: the pty master, the command's stdin pipe, or
+   * nowhere (-1) when the client did not ask to relay stdin. */
+  int in_fd = is_pty ? master : in[1];
+  int in_eof = 0; /* pipe mode: close in_fd once the write buffer drains */
+
   if (sfd >= 0) {
     ev.events = EPOLLIN;
     ev.data.fd = sfd;
     epoll_ctl(epfd, EPOLL_CTL_ADD, sfd, &ev);
   }
 
-  /* watch the connection for dead clients or pty input */
-  ev.events = EPOLLHUP | EPOLLERR;
-  if (is_pty)
-    ev.events |= EPOLLIN;
+  /* watch the connection for dead clients and client input */
+  ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
   ev.data.fd = conn;
   epoll_ctl(epfd, EPOLL_CTL_ADD, conn, &ev);
 
   int exit_code = EXIT_PENDING;
   int child_done = 0; /* 0=running, 1=killed, 2=normal-exit-seen */
 
-  /* Non-blocking write buffer for PTY master input.
-   * Prevents blocking the event loop when the PTY kernel buffer is full
-   * (e.g. large paste). Excess bytes are queued here and flushed via
-   * EPOLLOUT on master. */
+  /* Non-blocking write buffer for client input on its way to in_fd.
+   * Prevents blocking the event loop when the pty or pipe is full (a large
+   * paste, a slow reader). Excess bytes are queued here and flushed via
+   * EPOLLOUT on in_fd. */
   uint8_t *pty_wbuf = NULL;
   size_t pty_wbuf_len = 0;
   size_t pty_wbuf_cap = 0;
@@ -502,21 +518,34 @@ static void handle_session(int conn, ds_req_t *r) {
           waitpid(child, NULL, 0);
           goto session_end;
         }
-        if (is_pty && (events[i].events & EPOLLIN)) {
+        if (events[i].events & EPOLLIN) {
           uint8_t type;
           uint32_t mlen;
           if (recv_frame_hdr(conn, &type, &mlen) < 0) {
-            kill(child, SIGHUP);
+            kill(child, is_pty ? SIGHUP : SIGTERM);
             waitpid(child, NULL, 0);
             goto session_end;
           }
-          if (type == MSG_OUT && mlen > 0 && mlen <= (uint32_t)sizeof(buf)) {
-            if (read_exact(conn, buf, mlen) == 0) {
-              /* Non-blocking write to PTY master; queue overflow into wbuf. */
+          if (type == MSG_OUT && mlen <= (uint32_t)sizeof(buf)) {
+            /* Input with nowhere to go is read off the wire and dropped. */
+            int got = read_exact(conn, buf, mlen) == 0 && in_fd >= 0;
+            if (got && mlen == 0) {
+              /* The client's stdin hit EOF. A pty has no EOF to pass on, so
+               * only the stdin pipe is closed, once what is queued for it
+               * has drained. */
+              if (!is_pty && pty_wbuf_len > 0) {
+                in_eof = 1;
+              } else if (!is_pty) {
+                close(in_fd);
+                in_fd = in[1] = -1;
+              }
+            } else if (got) {
+              /* Non-blocking write toward the child; queue overflow into
+               * wbuf. */
               size_t written = 0;
               if (pty_wbuf_len == 0) {
                 /* Fast path: no pending data, try direct write first. */
-                ssize_t w = write(master, buf, mlen);
+                ssize_t w = write(in_fd, buf, mlen);
                 if (w > 0)
                   written = (size_t)w;
               }
@@ -550,10 +579,15 @@ static void handle_session(int conn, ds_req_t *r) {
                   if (pty_wbuf_len + rem <= pty_wbuf_cap) {
                     memcpy(pty_wbuf + pty_wbuf_len, buf + written, rem);
                     pty_wbuf_len += rem;
-                    /* Arm EPOLLOUT on master to flush wbuf. */
-                    ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR;
-                    ev.data.fd = master;
-                    epoll_ctl(epfd, EPOLL_CTL_MOD, master, &ev);
+                    /* Arm EPOLLOUT on in_fd to flush wbuf. The pipe end is
+                     * only registered while a flush is pending, so EEXIST on
+                     * a re-arm is harmless. */
+                    ev.events = EPOLLOUT | EPOLLHUP | EPOLLERR;
+                    if (is_pty)
+                      ev.events |= EPOLLIN;
+                    ev.data.fd = in_fd;
+                    epoll_ctl(epfd, is_pty ? EPOLL_CTL_MOD : EPOLL_CTL_ADD,
+                              in_fd, &ev);
                     /* High-watermark: suspend conn input to apply backpressure.
                      * Prevents unbounded growth; conn resumes at low-watermark.
                      */
@@ -570,7 +604,7 @@ static void handle_session(int conn, ds_req_t *r) {
             }
           } else if (type == MSG_WINCH && mlen == 4) {
             uint16_t wd[2];
-            if (read_exact(conn, wd, 4) == 0) {
+            if (read_exact(conn, wd, 4) == 0 && is_pty) {
               struct winsize nws = {ntohs(wd[0]), ntohs(wd[1]), 0, 0};
               ioctl(master, TIOCSWINSZ, &nws);
               kill(child, SIGWINCH);
@@ -587,25 +621,37 @@ static void handle_session(int conn, ds_req_t *r) {
             }
           }
         }
-      } else if (is_pty && fd == master && (events[i].events & EPOLLOUT)) {
-        /* Flush pending wbuf to PTY master. */
+      } else if (fd == in_fd && (!is_pty || (events[i].events & EPOLLOUT))) {
+        /* Flush pending wbuf toward the child. */
         while (pty_wbuf_len > 0) {
-          ssize_t w = write(master, pty_wbuf, pty_wbuf_len);
+          ssize_t w = write(in_fd, pty_wbuf, pty_wbuf_len);
           if (w > 0) {
             pty_wbuf_len -= (size_t)w;
             if (pty_wbuf_len > 0)
               memmove(pty_wbuf, pty_wbuf + w, pty_wbuf_len);
           } else if (w < 0 && errno == EAGAIN) {
-            break; /* PTY buffer still full; wait for next EPOLLOUT */
+            break; /* still full; wait for the next EPOLLOUT */
           } else {
+            /* Reader gone (EIO on the master, EPIPE on the pipe). Nothing is
+             * left to flush to, and keeping the bytes would spin on EPOLLERR.
+             */
+            pty_wbuf_len = 0;
             break;
           }
         }
         if (pty_wbuf_len == 0) {
           /* All flushed; stop watching for writability. */
-          ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
-          ev.data.fd = master;
-          epoll_ctl(epfd, EPOLL_CTL_MOD, master, &ev);
+          if (is_pty) {
+            ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+            ev.data.fd = in_fd;
+            epoll_ctl(epfd, EPOLL_CTL_MOD, in_fd, &ev);
+          } else {
+            epoll_ctl(epfd, EPOLL_CTL_DEL, in_fd, NULL);
+            if (in_eof) {
+              close(in_fd);
+              in_fd = in[1] = -1;
+            }
+          }
         }
         /* Low-watermark: resume conn input once pressure drops. */
         if (conn_suspended && pty_wbuf_len < PTY_WBUF_LOW) {
@@ -615,7 +661,7 @@ static void handle_session(int conn, ds_req_t *r) {
           conn_suspended = 0;
         }
         /* Also service any pending output from master in this iteration. */
-        if (events[i].events & EPOLLIN) {
+        if (is_pty && (events[i].events & EPOLLIN)) {
           for (;;) {
             ssize_t n = read(master, buf, sizeof(buf));
             if (n > 0) {
@@ -704,6 +750,8 @@ session_end:
   close(epfd);
   if (master >= 0)
     close(master);
+  if (in[1] >= 0)
+    close(in[1]);
   if (out[0] >= 0)
     close(out[0]);
   if (err[0] >= 0)
@@ -1122,8 +1170,7 @@ int ds_daemon_probe(void) {
 
 /* connect to the daemon and relay our command */
 
-static int send_request(int sock, int argc, char **argv, int interactive) {
-  uint32_t flags = interactive ? REQ_FLAG_PTY : 0u;
+static int send_request(int sock, int argc, char **argv, uint32_t flags) {
   uint32_t nf = htonl(flags), na = htonl((uint32_t)argc);
   if (write_all(sock, &nf, 4) < 0 || write_all(sock, &na, 4) < 0)
     return -1;
@@ -1134,7 +1181,7 @@ static int send_request(int sock, int argc, char **argv, int interactive) {
     if (al && write_all(sock, argv[i], al) < 0)
       return -1;
   }
-  if (interactive) {
+  if (flags & REQ_FLAG_PTY) {
     struct winsize ws = {24, 80, 0, 0};
     ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
     uint16_t wd[2] = {htons(ws.ws_row), htons(ws.ws_col)};
@@ -1144,62 +1191,42 @@ static int send_request(int sock, int argc, char **argv, int interactive) {
   return 0;
 }
 
-int ds_client_run(int argc, char **argv) {
+int ds_client_run(int argc, char **argv, const char *cmd, int want_stdin) {
   if (argc < 1)
     return -2;
+  if (!cmd)
+    cmd = "";
 
-  int interactive = 0;
-  for (int i = 0; i < argc; i++) {
-    if (strcmp(argv[i], "enter") == 0 || strcmp(argv[i], "run") == 0 ||
-        strcmp(argv[i], "start") == 0 || strcmp(argv[i], "restart") == 0) {
-      interactive = 1;
-      break;
-    }
-  }
-
+  int is_enter = strcmp(cmd, "enter") == 0;
+  int is_boot = strcmp(cmd, "start") == 0 || strcmp(cmd, "restart") == 0;
+  int interactive = is_enter || is_boot || strcmp(cmd, "run") == 0;
   int has_tty = isatty(STDIN_FILENO) && isatty(STDOUT_FILENO);
 
   if (interactive && !has_tty) {
-    int forces_tty = 0;
-    int is_enter = 0;
-    for (int i = 0; i < argc; i++) {
-      if (strcmp(argv[i], "enter") == 0) {
-        forces_tty = 1;
-        is_enter = 1;
-        break;
-      }
-      if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--foreground") == 0) {
-        for (int j = 0; j < argc; j++) {
-          if (strcmp(argv[j], "start") == 0 ||
-              strcmp(argv[j], "restart") == 0) {
-            forces_tty = 1;
-            break;
-          }
-        }
-        if (forces_tty)
-          break;
-      }
+    if (is_enter) {
+      ds_error("Interactive terminal is required for the enter command\n");
+      return 1;
     }
-    if (forces_tty) {
-      if (is_enter) {
-        ds_error("Interactive terminal is required for the enter command\n");
-        return 1;
-      } else {
-        /* Strip -f/--foreground; start_rootfs() will warn and flip the switch.
-         */
-        for (int i = 0; i < argc; i++) {
-          if (strcmp(argv[i], "-f") == 0 ||
-              strcmp(argv[i], "--foreground") == 0) {
-            for (int j = i; j < argc - 1; j++)
-              argv[j] = argv[j + 1];
-            argv[--argc] = NULL;
-            break;
-          }
+    /* Strip -f/--foreground; start_rootfs() will warn and flip the switch. */
+    if (is_boot) {
+      for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "-f") == 0 ||
+            strcmp(argv[i], "--foreground") == 0) {
+          for (int j = i; j < argc - 1; j++)
+            argv[j] = argv[j + 1];
+          argv[--argc] = NULL;
+          break;
         }
       }
     }
     interactive = 0;
   }
+
+  /* --stdin on a pipe-mode run: relay our stdin to the command the way lxc
+   * exec does. Never by default, because libsu style callers share their
+   * stdin with the shell that is feeding them commands and we would eat the
+   * next line. A terminal session relays stdin anyway. */
+  int relay_stdin = want_stdin && !interactive && strcmp(cmd, "run") == 0;
 
   /* try to connect - single pass for execution path, retry loop only for 1st
    * connect */
@@ -1228,7 +1255,9 @@ int ds_client_run(int argc, char **argv) {
 
   /* EPIPE means the daemon already closed. Its verdict (an error frame and
    * the exit code) is queued on our socket, so fall through and relay it. */
-  if (send_request(sock, argc, argv, interactive) < 0 && errno != EPIPE)
+  uint32_t flags =
+      (interactive ? REQ_FLAG_PTY : 0u) | (relay_stdin ? REQ_FLAG_STDIN : 0u);
+  if (send_request(sock, argc, argv, flags) < 0 && errno != EPIPE)
     goto send_err;
 
   /* run the relay loop */
@@ -1253,10 +1282,22 @@ int ds_client_run(int argc, char **argv) {
   int epfd = epoll_create1(EPOLL_CLOEXEC);
   struct epoll_event ev, events[4];
 
-  if (raw_tty_active) {
+  /* A regular file on stdin cannot be polled (EPERM), so it is pumped one
+   * chunk per loop turn instead. */
+  int stdin_file = 0;
+  /* Set while stdin has data but the socket is too full to take a frame
+   * without blocking: a blocked client cannot drain the daemon's output, and
+   * with both directions full the two would deadlock. Wake on EPOLLOUT. */
+  int wait_out = 0;
+  if (raw_tty_active || relay_stdin) {
     ev.events = EPOLLIN;
     ev.data.fd = STDIN_FILENO;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev);
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev) < 0) {
+      if (relay_stdin && errno == EPERM)
+        stdin_file = 1;
+      else if (relay_stdin)
+        send_frame(sock, MSG_OUT, NULL, 0); /* no stdin at all: EOF now */
+    }
   }
   if (winch_sfd >= 0) {
     ev.events = EPOLLIN;
@@ -1271,11 +1312,11 @@ int ds_client_run(int argc, char **argv) {
   char buf[DS_IOBUF];
 
   for (;;) {
-    int nfds = epoll_wait(epfd, events, 4, -1);
+    int nfds = epoll_wait(epfd, events, 4, (stdin_file && !wait_out) ? 0 : -1);
     if (nfds < 0 && errno != EINTR)
       break;
 
-    int done = 0;
+    int done = 0, stdin_ready = stdin_file;
     for (int i = 0; i < nfds && !done; i++) {
       int fd = events[i].data.fd;
 
@@ -1288,14 +1329,23 @@ int ds_client_run(int argc, char **argv) {
           send_frame(sock, MSG_WINCH, wd2, 4);
         }
       } else if (fd == STDIN_FILENO) {
-        ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
-        if (n > 0) {
-          if (send_frame(sock, MSG_OUT, buf, (uint32_t)n) < 0)
-            done = 1;
-        } else {
-          done = 1;
-        }
+        stdin_ready = 1;
       } else if (fd == sock) {
+        if (wait_out && (events[i].events & EPOLLOUT)) {
+          wait_out = 0;
+          ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+          ev.data.fd = sock;
+          epoll_ctl(epfd, EPOLL_CTL_MOD, sock, &ev);
+          /* A file is always readable; a pipe may be empty, so let its own
+           * EPOLLIN drive the next read instead of blocking in read(). */
+          if (stdin_file) {
+            stdin_ready = 1;
+          } else {
+            ev.events = EPOLLIN;
+            ev.data.fd = STDIN_FILENO;
+            epoll_ctl(epfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev);
+          }
+        }
         if (events[i].events & EPOLLIN) {
           /* drain all available frames without a redundant poll() probe */
           for (;;) {
@@ -1342,6 +1392,43 @@ int ds_client_run(int argc, char **argv) {
           done = 1;
           break;
         }
+      }
+    }
+
+    /* A unix socket reports POLLOUT only with most of its send buffer free,
+     * far more than one frame, so a write after a positive poll never blocks.
+     */
+    struct pollfd pw = {sock, POLLOUT, 0};
+    if (!done && stdin_ready &&
+        (poll(&pw, 1, 0) <= 0 || !(pw.revents & POLLOUT))) {
+      wait_out = 1;
+      stdin_ready = 0;
+      ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR;
+      ev.data.fd = sock;
+      epoll_ctl(epfd, EPOLL_CTL_MOD, sock, &ev);
+      /* Level-triggered: a readable stdin would wake us every turn. */
+      if (!stdin_file)
+        epoll_ctl(epfd, EPOLL_CTL_DEL, STDIN_FILENO, NULL);
+    }
+    if (!done && stdin_ready) {
+      ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
+      int stop = 0;
+      if (n > 0) {
+        /* A failed send means the daemon stopped reading, normally because
+         * the command is gone. Its exit frame is still queued for us, so
+         * stop relaying and let the socket branch collect it. */
+        stop = send_frame(sock, MSG_OUT, buf, (uint32_t)n) < 0;
+      } else if (raw_tty_active) {
+        done = 1;
+      } else {
+        /* EOF: tell the daemon, then keep going for output and the exit code.
+         */
+        send_frame(sock, MSG_OUT, NULL, 0);
+        stop = 1;
+      }
+      if (stop) {
+        epoll_ctl(epfd, EPOLL_CTL_DEL, STDIN_FILENO, NULL);
+        stdin_file = 0;
       }
     }
     if (done)

@@ -108,7 +108,6 @@
     <string name="edit_container_configuration">កែសម្រួលការកំណត់រចនាសម្ព័ន្ធកុងតឺន័រ</string>
     <string name="feat_autoboot_title">ចាប់ផ្ដើមដំណើរការដោយស្វ័យប្រវត្តិនៅពេលបើកម៉ាស៊ីន</string>
     <string name="install">តម្លើង</string>
-    <string name="hostname_label">ឈ្មោះម៉ាស៊ីន: %1$s</string>
     <string name="symlink_integration_description">បង្កើត Symlink នៅត្រង់ /system/bin ដើម្បីចូលប្រើប្រាស់បញ្ជា (Command) droidspaces នៅក្នុង Android Root Shell។ការព្រមាន៖ ការបើកមុខងារនេះនឹងបង្កឱ្យមានបញ្ហាគាំងបើកឧបករណ៍មិនឡើង (Bootloop) ប្រសិនបើប្រព័ន្ធ Mount របស់អ្នកជាប្រភេទ OverlayFS Meta Modules។ សូមប្រើប្រាស់ជម្រើសនេះ តែក្នុងករណីដែលអ្នកកំពុងប្រើប្រាស់ប្រព័ន្ធ Mount ផ្អែកលើ Magic Mount តែប៉ុណ្ណោះ (តម្រូវឱ្យចាប់ផ្តើមឧបករណ៍ឡើងវិញ)។</string>
     <string name="feat_unkillable_title">រចនាឡើងមិនអាចបំផ្លាញបាន</string>
     <string name="kernel_requirements_nongki">តម្រូវការខឺណែលមិនមែន GKI (&lt;=4.19)</string>
@@ -151,7 +150,6 @@
     <string name="changes_take_effect_after_restart">ការផ្លាស់ប្ដូរនឹងមានប្រសិទ្ធភាពបន្ទាប់ពីចាប់ផ្ដើមឡើងវិញ</string>
     <string name="disable_ipv6">បិទ IPv6</string>
     <string name="disable_ipv6_description">បិទ IPv6 នៅក្នុងកុងតឺន័រនេះ។ ការបិទ IPv6 អាចធ្វើឱ្យកម្មវិធី VPN ដែលកំពុងដំណើរការនៅក្នុងម៉ាស៊ីនខូច។</string>
-    <string name="disable_ipv6_nat_forced">IPv6 តែងតែត្រូវបានបិទនៅក្នុងរបៀបបណ្តាញ NAT និង None។</string>
     <string name="android_storage">ឧបករណ៍ផ្ទុកទិន្នន័យ Android</string>
     <string name="android_storage_description">ម៉ោនឧបករណ៍ផ្ទុកទិន្នន័យ Android</string>
     <string name="hardware_access">ការចូលប្រើផ្នែករឹង</string>
@@ -244,27 +242,14 @@
     <string name="installation_complete">ការដំឡើងបានបញ្ចប់</string>
     <string name="installation_failed">ការដំឡើងបរាជ័យ</string>
     <string name="done">រួចរាល់</string>
-    <string name="installing_module">កំពុងដំឡើងម៉ូឌុល</string>
     <string name="installing_droidspaces">កំពុងដំឡើង Droidspaces</string>
-    <string name="module_installed_success">ម៉ូឌុល Magisk ត្រូវបានដំឡើងដោយជោគជ័យ</string>
     <string name="backend_installed_success">បានដំឡើងផ្នែកខាងក្រោយ Droidspaces ដោយជោគជ័យ</string>
     <string name="module_installation_failed">ការដំឡើងម៉ូឌុលបានបរាជ័យ</string>
     <string name="binary_installation_failed">ការដំឡើងប្រព័ន្ធគោលពីរបានបរាជ័យ</string>
-    <string name="removing_old_module">ការដកម៉ូឌុលចាស់ចេញ...</string>
-    <string name="installing_module_step">កំពុងដំឡើងម៉ូឌុល...</string>
-    <string name="setting_permissions">ការកំណត់សិទ្ធិអនុញ្ញាត...</string>
-    <string name="verifying_installation">កំពុងផ្ទៀងផ្ទាត់ការដំឡើង...</string>
-    <string name="preparing_module_installation">កំពុងរៀបចំដំឡើងម៉ូឌុល...</string>
-    <string name="detected_architecture">ស្ថាបត្យកម្មដែលបានរកឃើញ៖ %1$s</string>
-    <string name="creating_directories">កំពុងបង្កើតថតឯកសារ...</string>
-    <string name="installing_binary">កំពុងដំឡើងប្រព័ន្ធគោលពីរ៖ %1$s</string>
-    <string name="granting_permissions">កំពុងផ្តល់សិទ្ធិ...</string>
-    <string name="preparing_installation">កំពុងរៀបចំដំឡើង...</string>
     <string name="filter_absolute_path_hint">ត្រង ឬវាយបញ្ចូលផ្លូវដាច់ខាត…</string>
     <string name="no_matches">គ្មាន​ការ​ផ្គូផ្គង​ទេ</string>
     <string name="empty_directory">ថតឯកសារទទេ</string>
     <string name="select_folder">ជ្រើសរើសថតឯកសារ</string>
-    <string name="extracting_module_files">កំពុងស្រង់ឯកសារម៉ូឌុល...</string>
     <string name="cpu">CPU:</string>
     <string name="ram">RAM:</string>
     <string name="terminal_logs">កំណត់ហេតុស្ថានីយ</string>
@@ -277,7 +262,6 @@
     <string name="cpu_usage_label">ការប្រើប្រាស់ស៊ីភីយូ</string>
     <string name="ram_usage_label">ការប្រើប្រាស់ RAM</string>
     <string name="cpu_percent_label">%1$.1f%%</string>
-    <string name="ram_percent_label">%1$d មេកាបៃ (%2$.1f%%)</string>
     <string name="sessions_running_plural">កំពុងដំណើរការវគ្គ %1$d · ចុចដើម្បីស្ដារ</string>
     <string name="session_running_singular">កំពុងដំណើរការវគ្គចំនួន 1 · ចុចដើម្បីស្ដារ</string>
     <string name="systemd_services">សេវាកម្មប្រព័ន្ធ</string>
@@ -412,14 +396,8 @@
     <string name="repo_notification_description">ទាញយក Droidspaces rootfs</string>
     <string name="repo_error_no_assets">រកមិនឃើញ rootfs tarballs នៅក្នុងការចេញផ្សាយចុងក្រោយបំផុតទេ</string>
     <string name="repo_dl_error_unknown">កំហុសមិនស្គាល់ ឬ មានកំហុសមិនស្គាល់អត្តសញ្ញាណ</string>
-    <string name="repo_dl_error_cannot_resume">មិនអាចបន្តការទាញយកបានទេ</string>
-    <string name="repo_dl_error_device_not_found">រកមិនឃើញទំហំផ្ទុកទិន្នន័យទេ</string>
-    <string name="repo_dl_error_file_exists">ឯកសារមានរួចហើយ</string>
     <string name="repo_dl_error_file_error">កំហុសប្រព័ន្ធឯកសារ</string>
     <string name="repo_dl_error_http_data">កំហុសទិន្នន័យ HTTP</string>
-    <string name="repo_dl_error_no_space">ទំហំផ្ទុកមិនគ្រប់គ្រាន់</string>
-    <string name="repo_dl_error_too_many_redirects">ការបញ្ជូនបន្តច្រើនដងពេក</string>
-    <string name="repo_dl_error_unhandled_http">ការឆ្លើយតប HTTP មិនរំពឹងទុក</string>
     <string name="repo_dl_error_not_found">រកមិនឃើញឯកសារ (404)</string>
     <string name="repo_dl_error_code">លេខកូដកំហុស %1$d</string>
     <string name="repo_status_ready">រួចរាល់</string>

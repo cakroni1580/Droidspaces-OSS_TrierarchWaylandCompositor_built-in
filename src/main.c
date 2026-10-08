@@ -29,7 +29,7 @@ void print_usage(void) {
          "  stop                      Stop one or more containers\n"
          "  restart                   Restart a container\n"
          "  enter [user]              Enter a running container\n"
-         "  run <cmd> [args]          Run a command in a running container\n"
+         "  run [--] <cmd> [args]     Run a command in a running container\n"
          "  info                      Show detailed container info\n"
          "  pid                       Show the live PID of the container init\n"
          "  show                      List all running containers\n"
@@ -80,7 +80,7 @@ void print_usage(void) {
       "                            Mount Android internal storage (/sdcard)\n"
       "  -H, --hw-access           Enable direct hardware access (/dev nodes)\n"
       "      --gpu                 Enable GPU acceleration nodes\n"
-      "  -X, --termux-x11          Configure Termux-X11 display support\n"
+      "  -X, --x11                 Bridge host X11 display into the container\n"
       "      --tx11-flags=\"FLAGS\"    Extra flags passed to termux-x11\n"
       "      --virgl               Configure VirGL 3D acceleration support\n"
       "      --virgl-flags=\"FLAGS\"   Extra flags passed to "
@@ -112,6 +112,9 @@ void print_usage(void) {
       "      --init=PATH           Custom init binary (default: /sbin/init)\n"
       "  -u, --user=USER           Run command as USER (for 'run' command "
       "only)\n"
+      "      --stdin               Forward stdin to the 'run' command through "
+      "the\n"
+      "                            daemon (default is /dev/null)\n"
       "  -E, --env=PATH            Load environment variables from file\n"
       "  -B, --bind=SRC:DEST[:ro]  Bind mount host directory into container\n"
       "                            Supports multiple flags or "
@@ -120,7 +123,7 @@ void print_usage(void) {
       "                            e.g. -B /data:/data,/tmp:/tmp\n"
       "      --reset               Reset config to defaults (keeps "
       "name/rootfs)\n"
-      "      --format              JSON output (show, info)\n"
+      "      --format              JSON output (show, info, check)\n"
       "      --help                Show this help message\n\n");
 
   printf(C_BOLD
@@ -277,29 +280,7 @@ static int auto_resolve_container_name(struct ds_config *cfg) {
 
 /* Command Dispatch */
 
-static void enforce_nat_safety(struct ds_config *cfg, int argc, char **argv) {
-  int is_nat = (cfg->net_mode == DS_NET_NAT);
-  int is_disable_ipv6 = cfg->disable_ipv6;
-
-  /* Nuke config reliance: parse argv directly to guarantee the warning
-   * triggers regardless of what ds_config_load() wiped during restart. */
-  if (argv != NULL) {
-    for (int i = 1; i < argc; i++) {
-      if (strcmp(argv[i], "--net=nat") == 0)
-        is_nat = 1;
-      if (strcmp(argv[i], "--net") == 0 && i + 1 < argc &&
-          strcmp(argv[i + 1], "nat") == 0)
-        is_nat = 1;
-      if (strcmp(argv[i], "-I") == 0 || strcmp(argv[i], "--disable-ipv6") == 0)
-        is_disable_ipv6 = 1;
-    }
-  }
-
-  if (is_nat && is_disable_ipv6) {
-    ds_log(
-        "IPv6 is already inactive in NAT mode - --disable-ipv6 has no effect.");
-  }
-
+static void enforce_nat_safety(struct ds_config *cfg) {
   if (cfg->net_mode == DS_NET_NAT || cfg->net_mode == DS_NET_NONE ||
       cfg->net_mode == DS_NET_GATEWAY) {
     if (!check_ns(CLONE_NEWNET, "net")) {
@@ -371,7 +352,8 @@ static struct option long_options[] = {
     {"dns", required_argument, 0, 'd'},
     {"foreground", no_argument, 0, 'f'},
     {"hw-access", no_argument, 0, 'H'},
-    {"termux-x11", no_argument, 0, 'X'},
+    {"x11", no_argument, 0, 'X'},
+    {"termux-x11", no_argument, 0, 'X'}, /* old name, kept for scripts */
     {"tx11-flags", required_argument, 0, 271},
     {"disable-ipv6", no_argument, 0, 'I'},
     {"enable-android-storage", no_argument, 0, 'S'},
@@ -386,6 +368,7 @@ static struct option long_options[] = {
     {"config", required_argument, 0, 'C'},
     {"env", required_argument, 0, 'E'},
     {"user", required_argument, 0, 'u'},
+    {"stdin", no_argument, 0, 280},
     {"net", required_argument, 0, 257},
     {"port", required_argument, 0, 258},
     {"upstream", required_argument, 0, 259},
@@ -479,7 +462,7 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       cfg->hw_access = 1;
       break;
     case 'X':
-      cfg->termux_x11 = 1;
+      cfg->x11 = 1;
       break;
     case 271:
       free(cfg->tx11_extra_flags);
@@ -859,9 +842,10 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       /* Add a sane upper bound (4194304 = 2^22) matching the Linux kernel's
        * default pid_max ceiling. Values above this are almost certainly
        * user errors and would be rejected by the kernel with EINVAL. */
-      if (errno || end == optarg || *end != '\0' || p <= 0 || p > 4194304LL) {
-        ds_error("--pids-limit: invalid value (must be 1..4194304): %s",
-                 optarg);
+      if (errno || end == optarg || *end != '\0' || p < DS_MIN_PIDS_LIMIT ||
+          p > 4194304LL) {
+        ds_error("--pids-limit: invalid value (must be %d..4194304): %s",
+                 DS_MIN_PIDS_LIMIT, optarg);
         return -1;
       }
       cfg->pids_limit = p;
@@ -920,6 +904,7 @@ int main(int argc, char **argv) {
   const char *discovered_cmd = NULL;
   char temp_r[PATH_MAX] = {0}, temp_i[PATH_MAX] = {0};
   char run_user[256] = {0};
+  int run_stdin = 0;
   int opt;
 
   /* 1. Discovery Pass: Capture identity and command without permuting argv.
@@ -949,6 +934,8 @@ int main(int argc, char **argv) {
       safe_strncpy(temp_i, optarg, sizeof(temp_i));
     } else if (opt == 'u') {
       safe_strncpy(run_user, optarg, sizeof(run_user));
+    } else if (opt == 280) {
+      run_stdin = 1;
     }
     /* Discover --net early so kernel probe can run before config load */
     if (opt == 257) {
@@ -991,7 +978,8 @@ int main(int argc, char **argv) {
                           strcmp(discovered_cmd, "check") == 0));
 
   if (!is_daemon_cmd && !is_no_root_cmd && getenv("DS_NO_PROXY") == NULL) {
-    int proxy_ret = ds_client_run(argc - 1, argv + 1);
+    int proxy_ret =
+        ds_client_run(argc - 1, argv + 1, discovered_cmd, run_stdin);
     if (proxy_ret != -2) {
       ret = proxy_ret;
       goto cleanup;
@@ -1104,7 +1092,7 @@ int main(int argc, char **argv) {
 
   /* Basic info commands */
   if (strcmp(cmd, "check") == 0) {
-    ret = check_requirements_detailed();
+    ret = check_requirements_detailed(cfg.format_output);
     goto cleanup;
   }
   if (strcmp(cmd, "version") == 0) {
@@ -1161,7 +1149,7 @@ int main(int argc, char **argv) {
       ret = 1;
       goto cleanup;
     }
-    enforce_nat_safety(&cfg, argc, argv);
+    enforce_nat_safety(&cfg);
     print_ds_banner();
     ds_cgroup_host_bootstrap(cfg.force_cgroupv1);
     if (cfg.container_name[0] == '\0' && cfg.rootfs_path[0])
@@ -1187,7 +1175,7 @@ int main(int argc, char **argv) {
       ret = 1;
       goto cleanup;
     }
-    enforce_nat_safety(&cfg, argc, argv);
+    enforce_nat_safety(&cfg);
     ds_cgroup_host_bootstrap(cfg.force_cgroupv1);
     ret = restart_rootfs(&cfg, argc, argv);
     goto cleanup;
@@ -1225,14 +1213,18 @@ int main(int argc, char **argv) {
       ret = 1;
       goto cleanup;
     }
-    if (optind + 1 >= argc) {
+    /* run [--] <cmd>: a leading "--" fences off a command that itself starts
+     * with a dash, the way env(1) takes it. */
+    char **run_argv = argv + optind + 1;
+    if (*run_argv && strcmp(*run_argv, "--") == 0)
+      run_argv++;
+    if (!*run_argv) {
       ds_error("Command required for 'run'");
       ret = 1;
       goto cleanup;
     }
     const char *as_user = (run_user[0] != '\0') ? run_user : NULL;
-    ret =
-        run_in_rootfs(&cfg, argc - (optind + 1), argv + (optind + 1), as_user);
+    ret = run_in_rootfs(&cfg, run_argv, as_user);
     goto cleanup;
   }
 

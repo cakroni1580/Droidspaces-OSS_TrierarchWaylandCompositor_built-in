@@ -239,7 +239,7 @@ After=graphical.target
 [Service]
 Type=simple
 User=root
-ExecCondition=/bin/sh -c "grep -q 'enable_termux_x11=1' /run/droidspaces/container.config"
+ExecCondition=/bin/sh -c "grep -q 'enable_x11=1' /run/droidspaces/container.config"
 ExecCondition=/bin/sh -c "test -S /tmp/.X11-unix/X5"
 ExecStart=/usr/local/bin/xfce-start
 Restart=on-failure
@@ -349,7 +349,7 @@ After=graphical.target
 
 [Service]
 Type=simple
-ExecCondition=/bin/sh -c "grep -q 'enable_termux_x11=1' /run/droidspaces/container.config"
+ExecCondition=/bin/sh -c "grep -q 'enable_x11=1' /run/droidspaces/container.config"
 ExecCondition=/bin/sh -c "test -S /tmp/.X11-unix/X5"
 ExecStart=/usr/local/bin/de-start
 Restart=on-failure

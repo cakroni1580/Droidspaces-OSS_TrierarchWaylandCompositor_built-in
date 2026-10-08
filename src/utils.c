@@ -2269,6 +2269,24 @@ void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
 }
 
 /* Set oom_score_adj to -1000 (unkillable).  Best-effort, no error return. */
+/* pthread_create for a helper thread that must never receive signals.
+ *
+ * A thread inherits its creator's signal mask, and a process-directed signal
+ * goes to any thread that has it unblocked. The monitor waits for its
+ * container through a signalfd on SIGCHLD, so a helper thread created with
+ * SIGCHLD unblocked can take that signal and throw it away, and the monitor
+ * then only notices the container died when its 500 ms poll times out.
+ * Blocking everything around the create call gives the new thread a full mask
+ * from its first instruction and leaves the caller's mask as it was. */
+int ds_thread_create(pthread_t *tid, void *(*fn)(void *), void *arg) {
+  sigset_t all, old;
+  sigfillset(&all);
+  pthread_sigmask(SIG_BLOCK, &all, &old);
+  int ret = pthread_create(tid, NULL, fn, arg);
+  pthread_sigmask(SIG_SETMASK, &old, NULL);
+  return ret;
+}
+
 void ds_oom_protect(void) {
   FILE *f = fopen("/proc/self/oom_score_adj", "w");
   if (f) {

@@ -35,7 +35,7 @@ keywords: droidspaces, networking, gateway, openwrt, nat, dhcp, dns, lan, wan, v
 - [第九部分：全新的网关模式——融会贯通](#第九部分全新的网关模式融会贯通)
     - [为什么要有网关模式？](#为什么要有网关模式)
     - [架构总览](#架构总览)
-    - [逐步说明——启动网关模式容器时会发生什么](#逐步说明启动网关模式容器时会发生什么)
+    - [逐步说明——启动网关模式容器时发生了什么](#逐步说明启动网关模式容器时发生了什么)
     - ["延迟挂接"的含义](#延迟挂接的含义)
     - [为什么网关模式下不修改 resolv.conf](#为什么网关模式下不修改-resolvconf)
     - [为什么 bridge-nf-call-iptables 要设为 0](#为什么-bridge-nf-call-iptables-要设为-0)
@@ -46,6 +46,7 @@ keywords: droidspaces, networking, gateway, openwrt, nat, dhcp, dns, lan, wan, v
     - [--gateway-net 的作用](#--gateway-net-的作用)
     - [--gateway-iface 的作用](#--gateway-iface-的作用)
     - [必须避免的标志冲突](#必须避免的标志冲突)
+    - [通过网关使用 IPv6](#通过网关使用-ipv6)
     - [验证规则与内核要求](#验证规则与内核要求)
 - [第十一部分：所有网络模式对比](#第十一部分所有网络模式对比)
 - [第十二部分：网关模式的真实使用场景](#第十二部分网关模式的真实使用场景)
@@ -241,6 +242,7 @@ ISP 只给你**一个**公网 IP 地址。但你家有 10 台设备。这 10 台
 - Droidspaces 安装 iptables `MASQUERADE` 规则（这是 Linux 中实现 NAT 目标的名称），外加 FORWARD 接受规则和 MSS 钳制规则，确保流量真正流通
 - 容器可以访问互联网；互联网看到的是 Android 的 IP，而不是容器的 IP
 - Droidspaces 还会为容器运行一个嵌入式 DHCP 服务器并配置其 DNS
+- 容器同时获得 IPv6。Droidspaces 通过路由通告 (RA) 发布一个私有前缀（`fd64:7370::/64`），容器据此自行配置地址，出站时由 IPv6 版本的 `MASQUERADE` 进行转换。这需要内核提供 IPv6 NAT 表，否则容器仅有 IPv4
 - 在 Android 上，后台路由监视器会自动检测活跃的互联网上行链路（通过读取内核的路由规则），并在活跃网络切换时（例如 Wi-Fi 到移动数据切换）立即将容器流量重新指向正确的接口
 
 ### NAT 模式如何选择 WAN 上行链路（自动）
@@ -507,6 +509,11 @@ OpenWRT 的防火墙看到 Kali 的全部流量，并可以应用任何规则：
 
 在网关模式中，Droidspaces **不**写入 `resolv.conf`（除非你显式传入 `--dns`）。这是因为 OpenWRT 的 `dnsmasq` 会通过 DHCP 租约将 DNS 服务器地址分发给容器。如果 Droidspaces 也写入了 `resolv.conf`，就会与 dnsmasq 提供的内容冲突——容器将使用错误的 DNS，完全绕过 OpenWRT 的 DNS 过滤/缓存。
 
+如何接线取决于客户端使用的 init 系统：
+
+- **systemd 容器：** `/etc/resolv.conf` 是指向 `/run/systemd/resolve/resolv.conf` 的符号链接，由 systemd-resolved 根据 DHCP 租约填充。
+- **非 systemd 容器：** Droidspaces 完全不碰 `/etc/resolv.conf`，由容器自己的 DHCP 客户端（udhcpc/dhclient）根据网关的租约写入 nameserver。早期版本会在这里硬编码写入 `1.1.1.1`/`8.8.8.8`，静默绕过了网关的 DNS；该问题已修复。如果精简 rootfs 没有自带 DHCP 的 resolv.conf 钩子，可传入 `--dns` 显式设置。
+
 ### 为什么 bridge-nf-call-iptables 要设为 0
 
 网桥 `ds-lan` 承载着 OpenWRT 和 Kali 之间的流量。默认情况下，Linux 可以将桥接流量通过宿主机的 iptables 处理。这意味着 Android 的 iptables 规则（可能会意外丢弃或 NAT 某些流量）会干扰本该由 OpenWRT 管理的流量。
@@ -647,6 +654,95 @@ droidspaces --name=torbox --net=gateway --gateway=openwrt --gateway-net=vpn --ga
 --gateway-net=vpn  --gateway-iface=eth2   ->  OpenWRT 内的 eth2（VPN 网段）
 ```
 
+### 通过网关使用 IPv6
+
+NAT 模式除了 IPv4 之外也会给容器提供 IPv6：Droidspaces 通过路由通告 (RA) 发布一个私有 IPv6 前缀（`fd64:7370::/64`），并在出站时进行地址转换，原理与 IPv4 NAT 相同。网关容器的 WAN 口就是一个 NAT 接口，所以 OpenWRT 也可以获得 IPv6。但它不会自动配置好，开始之前需要先了解两点：
+
+- **Droidspaces 只给 OpenWRT 一个地址，而不是一段可以继续分发的地址。** 因此 OpenWRT 用自己的私有前缀 (ULA) 为 LAN 编址，并在 WAN 口再做一次 IPv6 NAT。客户端流量会被转换两次，一次由 OpenWRT，一次由 Droidspaces。这样可以正常工作，只是与真实运营商线路上使用 IPv6 的方式不同。
+- **两者都依赖宿主内核。** 容器共享宿主的内核，所以 Droidspaces 和 OpenWRT 都需要内核启用 `CONFIG_IP6_NF_NAT` 和 `CONFIG_IP6_NF_TARGET_MASQUERADE`。`droidspaces check` 会以 "IPv6 NAT support" 显示这一项。
+
+Droidspaces rootfs 仓库提供的 OpenWRT 镜像已经包含第 1、2、4 步，使用它时只需为每个 LAN 执行第 3 步。其他 OpenWRT 镜像需要在网关容器内执行全部步骤。
+
+**1. 在 `eth0` 上添加 IPv6 WAN**
+
+```bash
+uci set network.wan6=interface
+uci set network.wan6.device='eth0'
+uci set network.wan6.proto='dhcpv6'
+uci set network.wan6.sourcefilter='0'
+```
+
+`sourcefilter '0'` 很重要。OpenWRT 默认把 IPv6 默认路由安装成"仅适用于源地址属于 WAN 前缀的数据包"。这会带来两个问题：Android 内核没有启用 `CONFIG_IPV6_SUBTREES`，这条路由会静默安装失败；而且 LAN 客户端的源地址本来就不同，这条路由对它们也不生效。
+
+**2. 确认 OpenWRT 有自己的私有前缀**
+
+```bash
+uci get network.globals.ula_prefix
+```
+
+如果输出一个以 `fd` 开头的前缀，就不用再做什么。如果提示 "Entry not found"，就设置一个。任何带有 10 位随机十六进制数的 `fd` 前缀都可以：
+
+```bash
+uci set network.globals=globals
+uci set network.globals.ula_prefix='fd3a:91c2:7b4e::/48'
+```
+
+**3. 为每个 LAN 启用 IPv6**
+
+把 `lan` 换成你的接口名称。每个需要 IPv6 的 LAN 网段都要执行一次。
+
+```bash
+uci set network.lan.ip6assign='64'
+uci set dhcp.lan.ra='server'
+uci set dhcp.lan.dhcpv6='server'
+uci set dhcp.lan.ra_default='1'
+```
+
+`ip6assign` 从私有前缀中给该接口分配一个 `/64`。`ra` 和 `dhcpv6` 让 OpenWRT 向客户端通告它。`ra_default '1'` 让客户端把 OpenWRT 当作 IPv6 网关，即使前缀是私有的；否则 OpenWRT 不会这样通告。
+
+**4. 防火墙：放行 IPv6 入站，并在出站时转换**
+
+把 `wan6` 放进与 `wan` 相同的区域，这样同一套转发规则也适用于它。如果你的区域拒绝入站，还需要放行 ICMPv6 和 DHCPv6，否则 IPv6 无法发现邻居和路由器。
+
+使用 iptables 防火墙的镜像（fw3，Android 上需要它）通过一个小脚本添加 IPv6 NAT：
+
+```bash
+cat > /etc/firewall.nat6 <<'EOF'
+ip6tables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null ||
+	ip6tables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+EOF
+uci set firewall.nat6=include
+uci set firewall.nat6.path='/etc/firewall.nat6'
+uci set firewall.nat6.reload='1'
+```
+
+使用 nftables 防火墙的镜像（fw4，Linux 宿主上 OpenWRT 的默认防火墙）只需在 `wan` 区域加一个选项：`option masq6 '1'`。
+
+**5. 应用并检查**
+
+```bash
+uci commit
+/etc/init.d/network reload
+/etc/init.d/firewall restart
+/etc/init.d/odhcpd restart
+```
+
+等待大约二十秒，然后：
+
+```bash
+ip -6 addr show eth0        # 一个 fd64:7370:: 地址
+ip -6 route | grep default  # default via fe80::1 dev eth0
+ping6 -c3 google.com
+```
+
+之后 LAN 上的客户端容器会从 OpenWRT 的私有前缀获得地址，并且可以 `ping6` 互联网。
+
+需要了解的三点：
+
+- **对于同时支持两种协议的站点，客户端仍然优先使用 IPv4。** 操作系统会把私有 IPv6 源地址排在 IPv4 之后，因此 IPv6 主要用于只有 IPv6 的目标。
+- **同步你的隔离规则。** 如果防火墙禁止客户端访问 Droidspaces NAT 网络 `172.28.0.0/16`，请为 `fd64:7370::/48` 添加同样的规则并加上 `option family 'ipv6'`，否则客户端可以通过 IPv6 访问其他 NAT 容器。
+- **在网关容器上使用 `--disable-ipv6` 会关闭以上全部功能**，在客户端容器上使用则只关闭该客户端的 IPv6。
+
 ### 验证规则与内核要求
 
 Droidspaces 在启动时强制执行几条规则，违规则拒绝启动：
@@ -672,6 +768,7 @@ Droidspaces 在启动时强制执行几条规则，违规则拒绝启动：
 | 谁管理 DNS？ | Droidspaces | Android | 无 | OpenWRT dnsmasq |
 | 容器与宿主机网络隔离？ | 是 | 否 | 是 | 是 |
 | 互联网访问？ | 是 | 是 | 否 | 是（通过网关容器） |
+| IPv6？ | 支持，使用 NAT66（需要内核支持） | 取决于 Android | 仅回环 | 支持，需先配置 OpenWRT（见第 10 部分） |
 | 需要第二个容器才能工作？ | 否 | 否 | 否 | 是（网关容器） |
 | 适用于 | 简单的互联网访问 | 最大性能，零开销 | 离线 / 沙盒环境 | 路由器设备、VPN 网关、分段局域网 |
 
@@ -720,6 +817,9 @@ OpenWRT 的 `tc`（流量控制）和 `sqm-scripts` 可以按容器进行带宽�
 | **netifd** | OpenWRT 的网络接口守护进程——管理接口和 DHCP |
 | **dnsmasq** | OpenWRT 使用的轻量级 DHCP 和 DNS 服务器 |
 | **MASQUERADE** | 实现 NAT 的 Linux iptables 规则（改写源 IP） |
+| **NAT66** | IPv6 的 NAT：私有 IPv6 地址在出站时被改写为上行链路的地址 |
+| **ULA** | 以 `fd` 开头的私有 IPv6 前缀，相当于 IPv6 中的 `192.168.x.x` |
+| **路由通告 (RA)** | IPv6 路由器发出的消息，设备据此自行配置地址和网关，取代了 DHCP 的大部分作用 |
 | **委托 LAN** | Droidspaces 在网关模式中创建的网桥网络——策略由网关容器而非 Droidspaces 掌管 |
 | **网段** | 由 `--gateway-net` 标识的一个隔离 LAN——每个网段获得自己的网桥和在网关容器内的独立接口 |
 | **延迟挂接** | 网关的 LAN 侧 veth 仅在第一个客户端容器启动时创建，而非网关容器启动时创建 |

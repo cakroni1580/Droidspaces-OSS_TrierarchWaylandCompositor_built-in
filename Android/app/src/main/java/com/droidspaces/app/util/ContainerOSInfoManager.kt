@@ -1,5 +1,6 @@
 package com.droidspaces.app.util
 
+import com.droidspaces.app.R
 import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,9 +40,20 @@ object ContainerOSInfoManager {
         val ipAddress: String?,
         val uptime: String? = null,
         val cpuUsage: Double? = null,
-        val ramUsageMb: Long? = null,
-        val ramPercent: Double? = null
-    )
+        val ramUsedKb: Long? = null,
+        val ramPercent: Double? = null,
+        /** The memory limit in force. Null when unlimited, and then [ramPercent] is of the host's RAM. */
+        val ramLimitKb: Long? = null
+    ) {
+        /** "13.50 MB / 1.50 GB (1%)" under a limit, "13.50 MB (0.2%)" of the host without one.
+         * Each side picks its own unit, the way fastfetch prints memory. */
+        fun ramLabel(context: Context): String? {
+            val used = ResourceLimits.formatMemoryUsage(context, ramUsedKb ?: return null)
+            val percent = ramPercent ?: 0.0
+            return if (ramLimitKb != null) context.getString(R.string.ram_used_of_limit_label, used, ResourceLimits.formatMemoryUsage(context, ramLimitKb), percent)
+            else context.getString(R.string.ram_used_label, used, percent)
+        }
+    }
 
     /**
      * Lightweight fetch: reads only /etc/os-release to get PRETTY_NAME, then caches it.
@@ -109,6 +121,13 @@ object ContainerOSInfoManager {
 
     private fun toOSInfo(obj: JSONObject, ramTotalKb: Long): OSInfo {
         val ramUsedKb = obj.optLong("ram_used_kb")
+        // Limits in force, 0 when unlimited or when the backend predates them.
+        // Usage is then shown against the container's own allowance instead of
+        // the whole host.
+        val ramLimitKb = obj.optLong("ram_limit_kb")
+        val cpuLimitPermill = obj.optLong("cpu_limit_permill")
+        val ramBaseKb = if (ramLimitKb > 0) ramLimitKb else ramTotalKb
+        val cpuPermill = obj.optLong("cpu_permill")
         return OSInfo(
             prettyName = obj.optString("os").ifEmpty { null },
             name = null,
@@ -118,9 +137,10 @@ object ContainerOSInfoManager {
             hostname = obj.optString("hostname").ifEmpty { null },
             ipAddress = obj.optString("ip").ifEmpty { null },
             uptime = obj.optString("uptime").ifEmpty { null },
-            cpuUsage = (obj.optLong("cpu_permill") / 10.0).coerceIn(0.0, 100.0),
-            ramUsageMb = if (ramTotalKb > 0) ramUsedKb / 1024 else null,
-            ramPercent = if (ramTotalKb > 0) (ramUsedKb.toDouble() / ramTotalKb * 100.0).coerceIn(0.0, 100.0) else null
+            cpuUsage = (if (cpuLimitPermill > 0) cpuPermill * 100.0 / cpuLimitPermill else cpuPermill / 10.0).coerceIn(0.0, 100.0),
+            ramUsedKb = if (ramTotalKb > 0) ramUsedKb else null,
+            ramPercent = if (ramTotalKb > 0) (ramUsedKb.toDouble() / ramBaseKb * 100.0).coerceIn(0.0, 100.0) else null,
+            ramLimitKb = ramLimitKb.takeIf { it > 0 }
         )
     }
 

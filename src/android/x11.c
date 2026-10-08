@@ -184,7 +184,7 @@ static pid_t spawn_xserver(int uid, const char *display,
 /* public API */
 
 int ds_x11_daemon_start(struct ds_config *cfg) {
-  if (!cfg || !cfg->termux_x11 || !is_android())
+  if (!cfg || !cfg->x11 || !is_android())
     return -1;
   if (getuid() != 0) {
     ds_error("[X11] not running as root");
@@ -224,6 +224,9 @@ void ds_x11_daemon_stop(struct ds_config *cfg) {
 /* socket bridge */
 
 int ds_setup_x11_socket(struct ds_config *cfg) {
+  if (!cfg->x11)
+    return 0;
+
   if (!is_android()) {
     /* Desktop Linux path */
     char src[PATH_MAX], dst[PATH_MAX];
@@ -241,9 +244,6 @@ int ds_setup_x11_socket(struct ds_config *cfg) {
   }
 
   /* Android path */
-  if (!cfg->termux_x11)
-    return 0;
-
   char src_dir[PATH_MAX], src[PATH_MAX], dst[PATH_MAX];
   snprintf(src_dir, sizeof(src_dir), "%s/.X11-unix", DS_TERMUX_TMP_OLDROOT);
   snprintf(src, sizeof(src), "%s/.X11-unix/" TX11_DISPLAY_SOCK,

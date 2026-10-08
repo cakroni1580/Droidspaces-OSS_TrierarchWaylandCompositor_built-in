@@ -90,7 +90,6 @@
     <string name="status_running">LÄUFT</string>
     <string name="status_stopped">GESTOPPT</string>
     <string name="pid_label">PID: %1$d</string>
-    <string name="hostname_label">Hostname: %1$s</string>
     <string name="options_label">Optionen: %1$s</string>
     <string name="start">Start</string>
     <string name="stop">Stopp</string>
@@ -115,7 +114,6 @@
     <string name="changes_take_effect_after_restart">Änderungen werden nach Neustart wirksam</string>
     <string name="disable_ipv6">IPv6 deaktivieren</string>
     <string name="disable_ipv6_description">IPv6 in diesem Container deaktivieren. Das Deaktivieren von IPv6 kann VPN-Apps auf dem Host beeinträchtigen.</string>
-    <string name="disable_ipv6_nat_forced">IPv6 ist in den Modi NAT und ohne Netzwerk immer deaktiviert.</string>
     <string name="android_storage">Android-Speicher</string>
     <string name="android_storage_description">Android-Speicher einbinden</string>
     <string name="hardware_access">Hardware-Zugriff</string>
@@ -144,23 +142,10 @@
     <!-- Installation Screen -->
     <string name="installation_complete">Installation abgeschlossen</string>
     <string name="installation_failed">Installation fehlgeschlagen</string>
-    <string name="installing_module">Modul wird installiert</string>
     <string name="installing_droidspaces">Droidspaces wird installiert</string>
-    <string name="module_installed_success">Magisk-Modul erfolgreich installiert</string>
     <string name="backend_installed_success">Droidspaces-Backend erfolgreich installiert</string>
     <string name="module_installation_failed">Modulinstallation fehlgeschlagen</string>
     <string name="binary_installation_failed">Binary-Installation fehlgeschlagen</string>
-    <string name="removing_old_module">Altes Modul wird entfernt...</string>
-    <string name="extracting_module_files">Moduldateien werden entpackt...</string>
-    <string name="installing_module_step">Modul wird installiert...</string>
-    <string name="setting_permissions">Berechtigungen werden gesetzt...</string>
-    <string name="verifying_installation">Installation wird geprüft...</string>
-    <string name="preparing_module_installation">Vorbereitung der Modulinstallation...</string>
-    <string name="detected_architecture">Erkannte Architektur: %1$s</string>
-    <string name="creating_directories">Verzeichnisse werden angelegt...</string>
-    <string name="installing_binary">Binary wird installiert: %1$s</string>
-    <string name="granting_permissions">Berechtigungen werden vergeben...</string>
-    <string name="preparing_installation">Vorbereitung der Installation...</string>
     <!-- Control Panel Screen -->
     <string name="no_containers_running">Keine laufenden Container</string>
     <string name="start_container_first">Zuerst einen Container starten, um ihn hier zu sehen</string>
@@ -382,7 +367,6 @@
     <string name="cpu_usage_label">CPU-Auslastung</string>
     <string name="ram_usage_label">RAM-Auslastung</string>
     <string name="cpu_percent_label">%1$.1f%%</string>
-    <string name="ram_percent_label">%1$d MB (%2$.1f%%)</string>
     <string name="sessions_running_plural">%1$d Sitzungen laufen · Zur Rückkehr antippen</string>
     <string name="session_running_singular">1 Sitzung läuft · Zur Rückkehr antippen</string>
     <string name="please_wait_hint">Bitte warten, während wir Ihre Anfrage bearbeiten...</string>
@@ -420,12 +404,9 @@
     <string name="privileged_nomask_desc">Jail-Masken deaktivieren, um Schreibzugriff auf /proc und /sys zu ermöglichen. Hinweis: /sys bleibt schreibgeschützt, sofern nicht auch der Hardwarezugriff aktiviert ist.</string>
     <string name="privileged_nocaps_desc">Auf keinerlei Linux-Funktionen verzichten (vollständige Root-Rechte).</string>
     <string name="privileged_noseccomp_desc">Seccomp-Syscall-Filterung deaktivieren. Dadurch werden erweiterte Kernel-Funktionen wie nicht privilegierte Benutzernamensräume aktiviert, die für verschachtelte Sandboxing-Umgebungen (Bubblewrap, Flatpak) zwingend erforderlich sind, und es wird das Laden von Kernel-Modulen außerhalb des Kernel-Baums ermöglicht.</string>
-    <string name="repo_dl_error_cannot_resume">Download konnte nicht fortgesetzt werden</string>
     <string name="i_understand_caps">ICH WERDE KEINE FEHLER MELDEN</string>
-    <string name="repo_dl_error_no_space">Unzureichender Speicherplatz</string>
     <string name="hw_access_disclaimer">Ab Droidspaces v6.1.0 hat udevd direkten Zugriff auf die USB-, Block-, Eingabe-, TTY- und Netzwerk-Subsysteme. Dein Container kann Hardware nutzen, die Android gerade verwendet.\n\nWenn Ihre Tastatur, SD-Karte oder Ihr USB-Gerät nach dem Starten eines Containers unter Android nicht mehr funktioniert, handelt es sich dabei NICHT um einen Fehler. Der Container hat die Kontrolle übernommen. Sie haben um vollen Hardwarezugriff gebeten.\n\nMelden Sie KEINE Probleme, die durch Hardwarekonflikte oder Kernel-Panic während der Nutzung dieses Modus verursacht werden.</string>
     <string name="privileged_full_desc">Alle Berechtigungsflags auf einmal aktivieren.</string>
-    <string name="repo_dl_error_file_exists">Datei bereits vorhanden</string>
     <string name="privileged_warning_title">GEFÄHRLICHE EINSTELLUNGEN</string>
     <string name="repo_retry">Wiederholen</string>
     <string name="repo_notification_description">Droidspaces rootfs herunterladen</string>
@@ -435,14 +416,11 @@
     <string name="reboot_recommended">Ein Neustart wird empfohlen, um die SELinux-Regeln zu übernehmen und den Daemon beim Systemstart zu starten.</string>
     <string name="repo_dl_error_http_data">HTTP data error</string>
     <string name="repo_failed_to_load">Das Repository konnte nicht geladen werden</string>
-    <string name="repo_dl_error_device_not_found">Speicher nicht gefunden</string>
     <string name="privileged_shared_desc">Weitergabe von MS_SHARED-Einbindungen an den Host aktivieren.</string>
     <string name="repo_install">Installieren</string>
     <string name="repo_dl_error_file_error">Dateisystemfehler</string>
     <string name="repo_fab_label">Repository</string>
-    <string name="repo_dl_error_unhandled_http">Unerwartete HTTP-Antwort</string>
     <string name="repo_title">Rootfs Repository</string>
-    <string name="repo_dl_error_too_many_redirects">Zu viele Weiterleitungen</string>
     <string name="repo_dl_error_code">Fehlercode %1$d</string>
     <string name="repo_download">Herunterladen</string>
     <string name="repo_status_downloading">WIRD GELADEN</string>

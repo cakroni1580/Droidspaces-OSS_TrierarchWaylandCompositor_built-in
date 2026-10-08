@@ -39,6 +39,69 @@ check formatting, so `make format` is on you.
 
 Adding a new `.c` file means adding it to `SRCS` in the Makefile. There is no wildcard.
 
+The Makefile does not track header dependencies. Run `make clean` before building after a
+header edit or a branch switch, or stale objects give you a binary that fails in ways the
+diff cannot explain.
+
+## Testing and debugging on a device
+
+Run `adb devices` first, every time. If no line ends in `device`, stop and say so.
+
+### Running a test build without touching the daemon
+
+On the phone the CLI forwards every command to the running `droidspaces daemon`, and the
+daemon serves it with its own installed binary (`/data/local/Droidspaces/bin/droidspaces`).
+A freshly pushed build called by absolute path therefore still runs the installed code.
+
+`DS_NO_PROXY=1` skips the forwarding, so the binary you invoked does the work itself. The
+daemon keeps running and nothing gets reinstalled.
+
+```
+make aarch64                                   # match `adb shell uname -m`
+adb push output/droidspaces-aarch64 /data/local/tmp/ds-test
+adb shell su <<'EOF'
+DS_NO_PROXY=1 /data/local/tmp/ds-test -n NAME start
+EOF
+```
+
+- Pipe a script into `adb shell su` as above. `adb shell su -c 'a; b'` runs only `a` as
+  root and `b` as the shell user.
+- To confirm your build is the one that started a container, look for its monitor process:
+  `ls -l /proc/[0-9]*/exe 2>/dev/null | grep ds-test`. The PID that `show` prints is the
+  container's init, whose `exe` is the guest's own, so it tells you nothing.
+- Container logs are at `/data/local/Droidspaces/Logs/<name>/log`, timestamps in UTC. The
+  daemon log is `Logs/droidspacesd.log`.
+- Do not pass config flags such as `--upstream` in a test run without asking. They can be
+  saved into the container's `container.config` and outlive the test.
+
+### Running a command inside a container
+
+Use this helper. It quotes once per layer (adb, `su -c`, the container), so arguments with
+spaces or shell syntax arrive intact.
+
+```bash
+ds() {
+    local name=$1; shift
+    local inner="${DS:-/data/local/Droidspaces/bin/droidspaces} -n ${name@Q} run -- ${*@Q}"
+    adb shell "su -c ${inner@Q}"
+}
+
+ds Docmost fastfetch
+ds Alpine-3.23 'ip -6 route; cat /etc/resolv.conf'
+DS='DS_NO_PROXY=1 /data/local/tmp/ds-test' ds Alpine-3.23 ip -6 route
+```
+
+A single argument containing a space is handed to the container's `/bin/sh -c` by `run`
+itself, so a pipeline or a `;` list goes in as one quoted string, no `sh -c` wrapper.
+
+The helper calls the installed binary by absolute path, because `droidspaces` is only on
+the PATH when the app's "Integrate Droidspaces to the system path" toggle is on. Set `DS`
+as in the last line to run the command through a pushed test build instead.
+
+Bare `ds` prints the table of running containers, which is how you find the names. The
+function is bash only, and an agent's shell does not keep functions between tool calls, so
+define it in the same command that uses it.
+
 ## Commits
 
 - Run `make format` before committing any change to a `.c` or `.h` file.

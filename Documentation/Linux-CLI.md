@@ -2,41 +2,42 @@
 title: Linux CLI
 section: Guides
 order: 5
-desc: Full Droidspaces Linux CLI reference. Every command, flag, and config option explained.
+desc: Reference for the droidspaces command line: every command, flag and config file key.
 keywords: droidspaces, cli, linux, container, command, line, reference, bind, mount, nat, networking
 -->
 
-# Linux CLI Guide
+# Linux CLI guide
 
-Complete guide to using Droidspaces from the command line on Linux.
+How to run Droidspaces from the command line on Linux.
 
 > [!TIP]
 >
-> **Using the CLI on Android:** All command-line arguments work exactly the same on Android.
+> **Using the CLI on Android:** every command-line argument works the same way on Android.
 >
-> Once the backend is installed via the app, the `droidspaces` binary is located at `/data/local/Droidspaces/bin/droidspaces`.
+> Once the app has installed the backend, the `droidspaces` binary is at `/data/local/Droidspaces/bin/droidspaces`.
 >
-> Also, you can view the full interactive, **more advanced** command-line documentation offline at any time by running:
+> The full interactive command-line documentation, which goes further than this page, is available offline at any time:
 > `droidspaces docs`
 
 ---
 
-## Quick Navigation
+## Quick navigation
 
-[1. Getting Started](#getting-started)  
-[2. Command Reference](#command-reference)  
-[3. Options & Flags](#options-flags)  
-[4. Configuration Files](#configs)  
-[5. Common Workflows](#common-workflows)  
-[6. Advanced Usage & Lifecycle](#advanced-usage)  
-[7. System Requirements](#system-requirements)
+[1. Getting started](#getting-started)  
+[2. Command reference](#command-reference)  
+[3. Options and flags](#options-flags)  
+[4. Configuration files](#configs)  
+[5. Common workflows](#common-workflows)  
+[6. Advanced usage and lifecycle](#advanced-usage)  
+[7. System requirements](#system-requirements)
 
 ---
 
 <a id="getting-started"></a>
-## 1. Getting Started
+## 1. Getting started
 
-### Start Your First Container
+### Start your first container
+
 ```bash
 # From a rootfs directory
 sudo droidspaces --rootfs=/path/to/rootfs start
@@ -45,7 +46,8 @@ sudo droidspaces --rootfs=/path/to/rootfs start
 sudo droidspaces --name=mycontainer --rootfs-img=/path/to/rootfs.img start
 ```
 
-### Enter the Container
+### Enter the container
+
 ```bash
 # Enter as root
 sudo droidspaces --name=mycontainer enter
@@ -54,7 +56,8 @@ sudo droidspaces --name=mycontainer enter
 sudo droidspaces --name=mycontainer enter username
 ```
 
-### Stop the Container
+### Stop the container
+
 ```bash
 # Stop a single container
 sudo droidspaces --name=mycontainer stop
@@ -66,59 +69,59 @@ sudo droidspaces --name=web,db,app stop
 ---
 
 <a id="command-reference"></a>
-## 2. Command Reference
+## 2. Command reference
 
 | Command | Action |
 |---------|--------|
 | `start` | Start a new container. Requires either `--rootfs` or `--rootfs-img`. |
-| `stop` | Gracefully shut down one or more containers. |
-| `restart` | Fast restart (under 200ms) by preserving loop mounts. |
+| `stop` | Shut down one or more containers cleanly. |
+| `restart` | Restart in under 200 ms by keeping the loop mounts in place. |
 | `enter [user]` | Open an interactive shell inside a running container. |
 | `run <cmd>` | Execute a single command without opening a full shell. Use `-u`/`--user` to run as a specific container user. |
-| `info` | Show deep technical details about a container. With `--format`, print them as JSON. |
+| `info` | Show detailed technical information about a container. With `--format`, print them as JSON. |
 | `show` | List all currently running containers in a table. With `--format`, print JSON including OS, IP, uptime, CPU and RAM per container. |
-| `scan` | Detect and register orphaned/untracked containers. |
-| `check` | Verify system and kernel requirements. |
-| `docs` | Open the interactive terminal-based documentation. |
+| `scan` | Find and register orphaned or untracked containers. |
+| `check` | Verify system and kernel requirements. With `--format`, print the result as JSON: one `0`/`1` per probe plus `requirements_met`. |
+| `docs` | Open the interactive documentation in the terminal. |
 | `help` | Display the help message. |
 | `version` | Print the version string. |
 
 ---
 
 <a id="options-flags"></a>
-## 3. Options & Flags
+## 3. Options & flags
 
-### Rootfs Selection
+### Rootfs selection
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--rootfs=PATH` | `-r` | Path to a rootfs directory. Must contain `/sbin/init`. |
-| `--rootfs-img=PATH` | `-i` | Path to an ext4 rootfs image file or block device. Automatically mounted. |
+| `--rootfs-img=PATH` | `-i` | Path to an ext4 rootfs image file or block device. Droidspaces mounts it for you. |
 
-*Note: These are mutually exclusive. `--name` is mandatory when using `--rootfs-img`.*
+*Note: these two are mutually exclusive. `--name` is required with `--rootfs-img`.*
 
-### Container Identity & Configuration
+### Container identity & configuration
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--name=NAME` | `-n` | Unique name for the container. Auto-generated if omitted in directory-based rootfs mode. |
 | `--hostname=NAME` | `-h` | Set the container's hostname. Defaults to the container name. |
-| `--conf=PATH` | `-C` | Load container configuration directly from a config file. |
-| `--reset` | | Reset container config to defaults (preserves name, rootfs path). |
+| `--conf=PATH` | `-C` | Load the container configuration from a config file. |
+| `--reset` | | Reset the container config to defaults, keeping the name and rootfs path. |
 
 ### Networking
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--net=MODE` | | Networking mode: `nat` (default), `host`, `none`, or `gateway`. |
-| `--upstream=IFACE` | | Pin the NAT WAN to specific interface(s); disables automatic uplink detection. Comma-separated, priority-ordered, supports wildcards. Example: `--upstream=wlan0,rmnet*`. NAT mode only. |
-| `--port HOST:CONT[/proto]` | | Forward host port to container (NAT mode). Supports TCP/UDP. |
+| `--upstream=IFACE` | | Pin the NAT WAN to specific interface(s). Turns off automatic uplink detection. Comma-separated, priority-ordered, supports wildcards. Example: `--upstream=wlan0,rmnet*`. NAT mode only. |
+| `--port HOST:CONT[/proto]` | | Forward a host port to the container (NAT mode). TCP and UDP. |
 | `--dns=SERVERS` | `-d` | Custom DNS servers, comma-separated. Example: `--dns=1.1.1.1,8.8.8.8` |
-| `--disable-ipv6` | | Disable IPv6 networking support (Host mode only). |
+| `--disable-ipv6` | | Disable IPv6 inside the container. Works in every network mode. In host mode this disables IPv6 on the host too. |
 
-#### Gateway Mode
+#### Gateway mode
 
-Delegate a container's LAN to another running container (e.g. OpenWRT), which then owns DHCP, DNS, firewall and routing. Droidspaces only does the L2 plumbing. See [Networking From Zero](Networking-From-Zero.md) for the full guide.
+Hand a container's LAN to another running container (for example OpenWRT), which then owns DHCP, DNS, firewall and routing. Droidspaces only does the L2 plumbing. See [Networking From Zero](Networking-From-Zero.md) for the full guide.
 
 | Option | Short | Description |
 |--------|-------|-------------|
@@ -127,41 +130,52 @@ Delegate a container's LAN to another running container (e.g. OpenWRT), which th
 | `--gateway-iface=IFACE` | | Interface name as seen *inside* the gateway container (default: `eth1`). Each segment needs a unique name. |
 | `--gateway-bridge=BR` | | Override the host bridge name (default: `ds-{gateway-net}`). |
 
-### Feature Flags
+### Feature flags
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--foreground` | `-f` | Attach to the container console on start to see init logs. |
-| `--volatile` | `-V` | Ephemeral mode. Changes are stored in RAM and lost on exit. |
-| `--hw-access` | `-H` | Expose host hardware (GPU, USB, etc.). Auto-detects GPU group IDs and creates matching groups inside the container. Mounts X11 socket for GUI apps (Termux X11 on Android, `/tmp/.X11-unix` on Linux). See [Safety Warning](Features.md#hardware-access-mode). |
-| `--gpu` | | Exclusively enable GPU acceleration. Scans the host `/dev` for known GPU nodes and securely maps only them into the container without exposing other host hardware. (Ignored if `-H` is passed). |
+| `--volatile` | `-V` | Ephemeral mode. Changes live in RAM and are lost on exit. |
+| `--hw-access` | `-H` | Expose host hardware (GPU, USB, etc.). Auto-detects GPU group IDs and creates matching groups inside the container. See [Safety Warning](Features.md#hardware-access-mode). |
+| `--gpu` | | Enable GPU acceleration only. Scans the host `/dev` for known GPU nodes and maps only those into the container, without exposing other host hardware. Ignored if `-H` is passed. |
 | `--allow-vts` | | With `--hw-access`, leave the host's virtual terminals (`/dev/tty1`-`tty6`) visible. By default they are masked with `/dev/null` so a systemd container's `getty` does not take over the host console. No effect without `-H`. |
 | `--allow-sandboxing` | | Let unprivileged Docker, Podman, Flatpak, bwrap and browser sandboxes run inside the container. Weakens isolation. See [Sandboxing](Features.md#sandboxing). |
-| `--termux-x11`| `-X` | Mount X11 socket for Termux-X11 display (Android only). |
+| `--x11`| `-X` | Bridge the host X11 socket into the container. Launches Termux:X11 on Android. |
 | `--enable-android-storage`| | Mount `/storage/emulated/0` (Android only). |
 | `--selinux-permissive` | | Set host SELinux to permissive for the container session. |
-| `--force-cgroupv1` | | Force legacy Cgroup V1 hierarchy. Required if the host kernel has a broken or partial Cgroups V2 implementation (common on older Android 4.x kernels). |
-| `--privileged=TAGS` | | Relax security protections. Accepts a comma-separated list of tags: `nomask`, `nocaps`, `noseccomp`, `shared`, `full`. Use with extreme caution. |
+| `--force-cgroupv1` | | Force the legacy cgroup v1 hierarchy. Required if the host kernel has a broken or partial cgroup v2 implementation (common on older Android 4.x kernels). |
+| `--privileged=TAGS` | | Relax security protections. Takes a comma-separated list of tags: `nomask`, `nocaps`, `noseccomp`, `shared`, `full`. Use with extreme caution. |
 
-### Bind Mounts
+### Resource limits
+
+| Option | Description |
+|--------|-------------|
+| `--memory=SIZE` | Most RAM the container may use. Takes `K`, `M`, `G` or `T` suffixes, for example `--memory=2G`. Minimum 4M. |
+| `--cpus=COUNT` | Most CPU time, in cores. Fractions are fine, for example `--cpus=1.5`. |
+| `--pids-limit=N` | Most processes and threads at once. Minimum 16. |
+
+Each limit needs kernel support and is skipped with a warning that names the missing option if the kernel lacks it. A limit is saved in the container's config, so it applies on every later start. See [Resource limits](Features.md#resource-limits).
+
+### Bind mounts
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--bind-mount=S:D` | `-B` | Mount a host directory `S` to container path `D`. |
 
 **Formats:**
+
 - Multiple mounts: `-B /src1:/dst1,/src2:/dst2` or `-B /src1:/dst1 -B /src2:/dst2`
-- Max limits: Up to 16 mounts per container.
+- Limit: up to 16 mounts per container.
 - Missing host paths are skipped with a warning.
 
 ---
 
 <a id="configs"></a>
-## 4. Configuration Files
+## 4. Configuration files
 
-Instead of relying solely on long command-line arguments, Droidspaces allows you to define container environments in a `.config` file and load it using the `--conf` flag.
+Instead of a long list of arguments, you can describe a container in a `.config` file and load it with `--conf`.
 
-Below is a reference of every supported key in the configuration file:
+Every supported key:
 
 ```ini
 # Droidspaces Container Configuration
@@ -202,8 +216,8 @@ enable_hw_access=0
 # Auto-detect and securely map GPU nodes without full hardware access
 enable_gpu_mode=0
 
-# Android: Setup Termux X11 socket
-enable_termux_x11=0
+# Bridge the host X11 socket (Termux:X11 on Android)
+enable_x11=0
 
 # Android: Setup Android internal shared storage mount
 enable_android_storage=0
@@ -217,6 +231,14 @@ volatile_mode=1
 # Run the container in the foreground instead of forking
 foreground=0
 
+# Resource limits. Leave a key out for no limit.
+# memory_limit is in bytes, pids_limit is a process count.
+# CPU time is cpu_quota microseconds per cpu_period: 200000 / 100000 = 2 cores.
+memory_limit=2147483648
+cpu_quota=200000
+cpu_period=100000
+pids_limit=1024
+
 # ----------------------------------------
 # Android App Configuration
 # Any lines that the CLI engine does not recognize will be safely
@@ -226,15 +248,18 @@ foreground=0
 ---
 
 <a id="common-workflows"></a>
-## 5. Common Workflows
+## 5. Common workflows
 
-### Running with a Config File
-Instead of passing many flags, you can load everything from a `.config` file:
+### Running with a config file
+
+Load everything from a `.config` file instead of passing flags:
+
 ```bash
 sudo droidspaces --conf=./my-container.config start
 ```
 
-### Persistent Development
+### Persistent development
+
 ```bash
 sudo droidspaces \
   --name=dev \
@@ -244,7 +269,8 @@ sudo droidspaces \
   start
 ```
 
-### NAT Isolation with Port Forwarding
+### NAT isolation with port forwarding
+
 ```bash
 sudo droidspaces \
   --name=server \
@@ -254,8 +280,10 @@ sudo droidspaces \
   start
 ```
 
-### NAT with a Pinned Uplink
-Force the container's internet out through a specific interface instead of following the host's active network. Pin a VPN tunnel (`tun0`) as a killswitch, or `rmnet*` to stay on mobile data while the phone uses Wi-Fi:
+### NAT with a pinned uplink
+
+Send the container's traffic out through a specific interface instead of following the host's active network. Pin a VPN tunnel (`tun0`) as a killswitch, or `rmnet*` to stay on mobile data while the phone uses Wi-Fi:
+
 ```bash
 sudo droidspaces \
   --name=vpnbox \
@@ -265,8 +293,10 @@ sudo droidspaces \
   start
 ```
 
-### Gateway Mode (LAN owned by OpenWRT)
-Start the router container first (in NAT mode), then attach clients to it:
+### Gateway mode (LAN owned by OpenWRT)
+
+Start the router container first, in NAT mode, then attach clients to it:
+
 ```bash
 # 1. the router
 sudo droidspaces --name=openwrt --rootfs=/data/openwrt --net=nat start
@@ -275,12 +305,14 @@ sudo droidspaces --name=openwrt --rootfs=/data/openwrt --net=nat start
 sudo droidspaces --name=kali --rootfs=/data/kali --net=gateway --gateway=openwrt start
 ```
 
-### Ephemeral Testing
+### Ephemeral testing
+
 ```bash
 sudo droidspaces --name=test --rootfs=/path/to/rootfs --volatile start
 ```
 
-### One-Off Commands
+### One-off commands
+
 ```bash
 sudo droidspaces --name=mycontainer run uname -a
 # Use sh -c for pipes:
@@ -291,14 +323,18 @@ sudo droidspaces --name=mycontainer -u myuser run env
 sudo droidspaces --name=mycontainer -u myuser run sh -c "id && env"
 ```
 
-### GPU Acceleration
-Ensure only the GPU nodes (and not all host hardware) are securely exposed:
+### GPU acceleration
+
+Expose only the GPU nodes, not all host hardware:
+
 ```bash
 sudo droidspaces --name=gpu-app --rootfs=/path/to/rootfs --gpu start
 ```
 
-### Deep Customization (Privileged Mode)
+### Deep customization (privileged mode)
+
 For cases where you need unmasked access:
+
 ```bash
 sudo droidspaces --name=privileged-box --rootfs=/path/to/rootfs --privileged=full start
 # Or mix and match tags:
@@ -308,10 +344,12 @@ sudo droidspaces --name=dev-box --rootfs=/path/to/rootfs --privileged=nocaps,nos
 ---
 
 <a id="advanced-usage"></a>
-## 6. Advanced Usage & Lifecycle
+## 6. Advanced usage & lifecycle
 
-### Container Recovery
-If a container was started outside the current session, or its host-side PID file / config file was lost or corrupted, use `scan` to resurrect it from the container's isolated `/run` memory:
+### Container recovery
+
+If a container was started outside the current session, or its host-side PID file or config file was lost or corrupted, `scan` recovers it from the container's isolated `/run` memory:
+
 ```bash
 sudo droidspaces scan
 ```
@@ -319,18 +357,20 @@ sudo droidspaces scan
 ---
 
 <a id="system-requirements"></a>
-## 7. System Requirements
+## 7. System requirements
 
-Always run the built-in checker to verify your kernel supports the required namespaces and features:
+Run the built-in checker to confirm your kernel supports the required namespaces and features:
+
 ```bash
 sudo droidspaces check
 ```
 
-See the [Kernel Configuration Guide](Kernel-Configuration.md) for a deep dive into technical requirements.
+The [Kernel Configuration Guide](Kernel-Configuration.md) covers the requirements in detail.
 
 ---
 
-## Next Steps
+## Next steps
+
 - [Feature Deep Dives](Features.md)
 - [Troubleshooting](Troubleshooting.md)
 - [Android App Usage Guide](Usage-Android-App.md)

@@ -82,6 +82,7 @@ object SystemInfoManager {
             val cachedRootVersion = prefs.cachedRootProviderVersion
             val cachedDroidspacesVersion = prefs.cachedDroidspacesVersion
             if (selinuxStatusCache == null) selinuxStatusCache = prefs.cachedSelinuxStatus
+            HostCapabilities.load(ctx)
 
             // Load root provider, SELinux status, and droidspaces version in parallel (non-blocking)
             val rootProviderDeferred = async { loadRootProviderVersion() }

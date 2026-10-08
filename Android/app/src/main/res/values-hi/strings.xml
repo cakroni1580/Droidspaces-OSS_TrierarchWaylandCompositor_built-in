@@ -88,7 +88,6 @@
     <string name="status_running">चल रहा है</string>
     <string name="status_stopped">रुका हुआ</string>
     <string name="pid_label">PID: %1$d</string>
-    <string name="hostname_label">होस्टनेम: %1$s</string>
     <string name="options_label">विकल्प: %1$s</string>
     <string name="start">शुरू करें</string>
     <string name="stop">रोकें</string>
@@ -113,7 +112,6 @@
     <string name="changes_take_effect_after_restart">परिवर्तन पुनः प्रारंभ के बाद प्रभावी होंगे</string>
     <string name="disable_ipv6">IPv6 अक्षम करें</string>
     <string name="disable_ipv6_description">इस कंटेनर में IPv6 अक्षम करें। IPv6 अक्षम करने से होस्ट पर VPN ऐप्स टूट सकते हैं।</string>
-    <string name="disable_ipv6_nat_forced">NAT और None नेटवर्क मोड में IPv6 हमेशा अक्षम रहता है।</string>
     <string name="android_storage">Android स्टोरेज</string>
     <string name="android_storage_description">Android स्टोरेज माउंट करें</string>
     <string name="hardware_access">हार्डवेयर एक्सेस</string>
@@ -142,23 +140,10 @@
     <!-- Installation Screen -->
     <string name="installation_complete">इंस्टॉलेशन पूर्ण</string>
     <string name="installation_failed">इंस्टॉलेशन विफल</string>
-    <string name="installing_module">मॉड्यूल इंस्टॉल किया जा रहा है</string>
     <string name="installing_droidspaces">Droidspaces इंस्टॉल किया जा रहा है</string>
-    <string name="module_installed_success">Magisk मॉड्यूल सफलतापूर्वक इंस्टॉल हुआ</string>
     <string name="backend_installed_success">Backend सफलतापूर्वक स्थापित हो गया</string>
     <string name="module_installation_failed">मॉड्यूल इंस्टॉलेशन विफल</string>
     <string name="binary_installation_failed">बाइनरी इंस्टॉलेशन विफल</string>
-    <string name="removing_old_module">पुराना मॉड्यूल हटाया जा रहा है...</string>
-    <string name="extracting_module_files">मॉड्यूल फ़ाइलें निकाली जा रही हैं...</string>
-    <string name="installing_module_step">मॉड्यूल इंस्टॉल किया जा रहा है...</string>
-    <string name="setting_permissions">अनुमतियाँ सेट की जा रही हैं...</string>
-    <string name="verifying_installation">इंस्टॉलेशन सत्यापित किया जा रहा है...</string>
-    <string name="preparing_module_installation">मॉड्यूल इंस्टॉलेशन की तैयारी...</string>
-    <string name="detected_architecture">पता चली आर्किटेक्चर: %1$s</string>
-    <string name="creating_directories">डायरेक्टरी बनाई जा रही हैं...</string>
-    <string name="installing_binary">बाइनरी इंस्टॉल की जा रही है: %1$s</string>
-    <string name="granting_permissions">अनुमतियाँ दी जा रही हैं...</string>
-    <string name="preparing_installation">इंस्टॉलेशन की तैयारी...</string>
     <!-- Control Panel Screen -->
     <string name="no_containers_running">कोई कंटेनर नहीं चल रहा</string>
     <string name="start_container_first">यहाँ देखने के लिए पहले कंटेनर शुरू करें</string>

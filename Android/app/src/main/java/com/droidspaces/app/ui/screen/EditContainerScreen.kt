@@ -60,6 +60,7 @@ import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
 import com.droidspaces.app.ui.util.LoadingIndicator
 import com.droidspaces.app.ui.util.rememberClearFocus
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
+import com.droidspaces.app.util.ResourceLimits
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ContainerManager
 import com.droidspaces.app.util.SystemInfoManager
@@ -69,6 +70,8 @@ import com.droidspaces.app.util.withConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.droidspaces.app.util.HostCapabilities
+import androidx.compose.runtime.collectAsState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,6 +125,23 @@ fun EditContainerScreen(
         if (hasChanges && isSaved) isSaved = false
     }
 
+    // A config saved by an older app build may hold a value this kernel cannot
+    // honour. Collect every correction, then write the file once, so the Save
+    // pill stays idle for a change the user did not make.
+    val caps by HostCapabilities.state.collectAsState()
+    LaunchedEffect(caps) {
+        val c = caps ?: return@LaunchedEffect
+        state = c.coerce(state)
+        val healed = c.coerce(savedState)
+        if (healed == savedState) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            ContainerManager.updateContainerConfig(context, container.name, container.withConfig(healed))
+        }.fold(
+            onSuccess = { savedState = healed; containerViewModel.refresh() },
+            onFailure = { errorMessage = it.message ?: context.getString(R.string.failed_to_update_config) }
+        )
+    }
+
     fun saveChanges() {
         scope.launch {
             isSaving = true
@@ -171,7 +191,8 @@ fun EditContainerScreen(
         },
         bottomBar = {
             val isReadyToSave = !isSaving && !isSaved && hasChanges && hostnameError == null &&
-                (state.netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null
+                (state.netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null &&
+                ResourceLimits.isValidPidsLimit(state.pidsLimit)
             SaveActionBottomBar(
                 isSaved = isSaved,
                 isSaving = isSaving,

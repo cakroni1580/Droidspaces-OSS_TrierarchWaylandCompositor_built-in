@@ -95,6 +95,15 @@ class PreferencesManager private constructor(context: Context) {
             }
         }
 
+    // Raw `check --format` JSON and the boot it was taken on, see HostCapabilities.
+    var cachedHostCapabilities: String?
+        get() = prefs.getString(KEY_HOST_CAPABILITIES, null)
+        set(value) { prefs.edit().putString(KEY_HOST_CAPABILITIES, value).apply() }
+
+    var cachedHostCapabilitiesBootId: String?
+        get() = prefs.getString(KEY_HOST_CAPABILITIES_BOOT_ID, null)
+        set(value) { prefs.edit().putString(KEY_HOST_CAPABILITIES_BOOT_ID, value).apply() }
+
     var cachedBackendMode: String?
         get() = prefs.getString(KEY_BACKEND_MODE, null)
         set(value) {
@@ -455,6 +464,8 @@ class PreferencesManager private constructor(context: Context) {
         private const val KEY_BACKEND_STATUS = Constants.KEY_BACKEND_STATUS
         private const val KEY_BACKEND_MODE = Constants.KEY_BACKEND_MODE
         private const val KEY_SELINUX_STATUS = Constants.KEY_SELINUX_STATUS
+        private const val KEY_HOST_CAPABILITIES = Constants.KEY_HOST_CAPABILITIES
+        private const val KEY_HOST_CAPABILITIES_BOOT_ID = Constants.KEY_HOST_CAPABILITIES_BOOT_ID
         private const val KEY_FOLLOW_SYSTEM_THEME = Constants.KEY_FOLLOW_SYSTEM_THEME
         private const val KEY_DARK_THEME = Constants.KEY_DARK_THEME
         private const val KEY_AMOLED_MODE = Constants.KEY_AMOLED_MODE

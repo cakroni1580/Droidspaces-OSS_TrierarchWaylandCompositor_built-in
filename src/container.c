@@ -6,105 +6,176 @@
  */
 
 #include "droidspace.h"
+#include <sys/file.h>
 
-/* External Command Lock - CLI-only ownership
+/* Container lifecycle lock
  *
- * The lock represents exactly ONE thing: an external CLI command is actively
- * managing this container. ONLY the CLI parent creates/removes locks.
- * The monitor is READ-ONLY for locks. */
+ * Everything a container owns on disk is keyed by its name: pidfile, mount
+ * point, cgroup, sidecars. So at most one actor may change a container's state
+ * at a time, and that includes the monitor, not only commands. Whoever holds
+ * <pids>/<name>.lock owns the transition, and decides what to do from the
+ * state it finds while holding it.
+ *
+ * It is a flock(), so taking it is atomic and the kernel drops it when the
+ * holder dies. There is no stale lock to detect and no PID to recycle.
+ *
+ * A second file, <name>.monitor, is held shared by a container's monitor for
+ * as long as it lives. It answers one question for the pruners in pid.c: is
+ * somebody still responsible for this container's leftovers? */
 
-/* Build lock path with defensive truncation.
- * Precision: 2048 (pids_dir) + 256 (name) + 5 (.lock) = 2309 < PATH_MAX (4096)
- * This prevents format-truncation warnings while ensuring paths never overflow.
- */
-static int get_lock_path(const char *name, char *buf, size_t size) {
+#define DS_EXT_MONITOR ".monitor"
+
+static int g_held_locks[4] = {-1, -1, -1, -1};
+
+/* A lock belongs to the process that took it. flock() locks live on the open
+ * file description, which fork() shares with the child, so without this any
+ * long-lived child (the monitor, a log relay) would keep its parent's lock
+ * held long after the parent let go. */
+static void drop_inherited_locks(void) {
+  for (size_t i = 0; i < sizeof(g_held_locks) / sizeof(g_held_locks[0]); i++) {
+    if (g_held_locks[i] >= 0)
+      close(g_held_locks[i]);
+    g_held_locks[i] = -1;
+  }
+}
+
+static void track_lock(int fd, int held) {
+  for (size_t i = 0; i < sizeof(g_held_locks) / sizeof(g_held_locks[0]); i++) {
+    if (g_held_locks[i] == (held ? -1 : fd)) {
+      g_held_locks[i] = held ? fd : -1;
+      return;
+    }
+  }
+}
+
+/* Build <pids>/<safe_name><ext> with defensive truncation.
+ * Precision: 2048 (pids_dir) + 256 (name) + ext < PATH_MAX (4096). */
+static int get_lock_path(const char *name, const char *ext, char *buf,
+                         size_t size) {
   if (!name || !buf || size == 0 || !validate_container_name(name))
     return -1;
 
   char safe_name[256];
   sanitize_container_name(name, safe_name, sizeof(safe_name));
-  int r = snprintf(buf, size, "%.2048s/%.256s" DS_EXT_LOCK, get_pids_dir(),
-                   safe_name);
+  int r =
+      snprintf(buf, size, "%.2048s/%.256s%s", get_pids_dir(), safe_name, ext);
   return (r > 0 && (size_t)r < size) ? 0 : -1;
 }
 
-/* A valid lock is exactly "pid boot-id" where the boot ID matches the
- * running kernel and the PID is alive. Anything else is stale, including
- * the pid-only format from older versions: a bare PID cannot be told apart
- * from post-reboot PID reuse, which is how a stranded lock bricked a
- * container in PR #286. Returns the live holder PID, or 0 if stale.
- * Same-boot PID reuse (a full pid_max wrap while a lock is held) is not
- * covered; add a starttime compare if that ever shows up in the wild. */
-static pid_t lock_holder_if_alive(char *buf) {
-  char *sp = strchr(buf, ' ');
-  if (!sp)
-    return 0;
-  *sp = '\0';
+/* open + flock. Returns the fd, or -1 with errno set (EWOULDBLOCK when op has
+ * LOCK_NB and somebody else holds it).
+ *
+ * We never unlink a lock file, but a monitor from a build before this lock
+ * does: it deletes a lock file it considers stale. A lock on an unlinked file
+ * guards nothing, so after locking check the path still names our file, and
+ * start over if it does not. */
+static int lock_file(const char *path, int op) {
+  static int atfork_registered;
+  if (!atfork_registered) {
+    pthread_atfork(NULL, NULL, drop_inherited_locks);
+    atfork_registered = 1;
+  }
 
-  char boot_id[64];
-  if (read_file("/proc/sys/kernel/random/boot_id", boot_id, sizeof(boot_id)) <=
-          0 ||
-      strcmp(sp + 1, boot_id) != 0)
-    return 0;
+  for (int attempt = 0; attempt < 8; attempt++) {
+    int fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+    if (fd < 0)
+      return -1;
 
-  pid_t pid = (pid_t)atoi(buf);
-  return (pid > 0 && kill(pid, 0) == 0) ? pid : 0;
+    int r;
+    do {
+      r = flock(fd, op);
+    } while (r < 0 && errno == EINTR);
+    if (r < 0) {
+      int err = errno;
+      close(fd);
+      errno = err;
+      return -1;
+    }
+
+    struct stat held, named;
+    if (fstat(fd, &held) == 0 && stat(path, &named) == 0 &&
+        held.st_ino == named.st_ino && held.st_dev == named.st_dev) {
+      track_lock(fd, 1);
+      return fd;
+    }
+    close(fd);
+  }
+  errno = EAGAIN;
+  return -1;
 }
 
-/* Create external command lock - ONLY called by CLI parent.
- * Returns: 0 on success, -1 if lock already held by a live process. */
-static int acquire_external_lock(const char *name) {
-  char lock_path[PATH_MAX];
-  if (get_lock_path(name, lock_path, sizeof(lock_path)) < 0)
+static void unlock_file(int fd) {
+  track_lock(fd, 0);
+  flock(fd, LOCK_UN);
+  close(fd);
+}
+
+/* Take the lifecycle lock for a container. wait=0 fails at once with
+ * errno == EWOULDBLOCK when another actor holds it, which is what a command
+ * wants. wait=1 blocks until it is free, which is what the monitor wants: it
+ * must not act on its container's exit until any command has finished.
+ * Returns an fd for ds_container_unlock(), or -1. */
+int ds_container_lock(const char *name, int wait) {
+  char path[PATH_MAX];
+  if (get_lock_path(name, DS_EXT_LOCK, path, sizeof(path)) < 0) {
+    errno = EINVAL;
+    return -1;
+  }
+  ensure_workspace();
+
+  int fd = lock_file(path, LOCK_EX | (wait ? 0 : LOCK_NB));
+  if (fd < 0)
     return -1;
 
-  /* Check if lock already exists */
-  if (access(lock_path, F_OK) == 0) {
-    /* Lock exists - verify if holder is still alive */
-    char buf[64];
-    if (read_file(lock_path, buf, sizeof(buf)) > 0) {
-      pid_t holder = lock_holder_if_alive(buf);
-      if (holder > 0 && holder != getpid()) {
-        /* Lock holder is alive and NOT us - cannot acquire */
-        ds_warn("Cannot acquire lock: held by process %d", holder);
-        return -1;
-      }
-      if (holder == 0)
-        ds_log("[DEBUG] Removing stale or malformed lock (recorded PID %d)",
-               atoi(buf));
-    }
-    /* Remove stale lock */
-    unlink(lock_path);
-  }
-
-  /* Stamp the lock with our PID and the boot ID. Older versions atoi() the
-   * file, which stops at the space, so they still read the leading PID. */
-  char lock_str[96];
-  char boot_id[64] = "";
+  /* Monitors started by a build older than this lock cannot see a flock().
+   * They read "pid boot-id" from this file and yield to a live holder, so
+   * keep writing it. Drop this once no such monitor can still be running. */
+  char boot_id[64] = "", stamp[96];
   read_file("/proc/sys/kernel/random/boot_id", boot_id, sizeof(boot_id));
-  snprintf(lock_str, sizeof(lock_str), "%d %s", getpid(), boot_id);
-  return write_file_atomic(lock_path, lock_str);
+  int len = snprintf(stamp, sizeof(stamp), "%d %s", getpid(), boot_id);
+  if (ftruncate(fd, 0) < 0 || pwrite(fd, stamp, (size_t)len, 0) < 0)
+    ds_log("[DEBUG] could not stamp %s: %s", path, strerror(errno));
+  return fd;
 }
 
-/* Release external command lock - ONLY called by CLI parent.
- * Verifies ownership before removing. */
-static void release_external_lock(const char *name) {
-  char lock_path[PATH_MAX];
-  if (get_lock_path(name, lock_path, sizeof(lock_path)) < 0)
+void ds_container_unlock(int fd) {
+  if (fd < 0)
     return;
-
-  /* Verify we own the lock before removing */
-  char buf[64];
-  if (read_file(lock_path, buf, sizeof(buf)) > 0) {
-    pid_t holder = (pid_t)atoi(buf);
-    if (holder == getpid()) {
-      unlink(lock_path);
-    } else if (holder > 0) {
-      /* This should never happen but log it for debugging */
-      ds_warn("Attempted to release lock owned by PID %d (we are %d)", holder,
-              getpid());
-    }
+  if (ftruncate(fd, 0) < 0) {
+    /* Only the compatibility stamp; the lock itself is released below. */
   }
+  unlock_file(fd);
+}
+
+/* Called once by a monitor, which then holds it until it exits. */
+void ds_container_claim_supervision(const char *name) {
+  char path[PATH_MAX];
+  if (get_lock_path(name, DS_EXT_MONITOR, path, sizeof(path)) == 0)
+    lock_file(path, LOCK_SH);
+}
+
+/* For the pruners: take the lifecycle lock only if nobody is in the middle of
+ * a transition AND no monitor is alive for this name. A live monitor cleans
+ * up after its own container, and deleting its pidfile first would make it
+ * conclude a command had already done so. Returns an fd for
+ * ds_container_unlock(), or -1, in which case leave the container alone.
+ * Anything we cannot determine counts as "not ours to touch". */
+int ds_container_lock_orphan(const char *name) {
+  char path[PATH_MAX];
+  if (get_lock_path(name, DS_EXT_MONITOR, path, sizeof(path)) < 0)
+    return -1;
+
+  int fd = ds_container_lock(name, 0);
+  if (fd < 0)
+    return -1;
+
+  int probe = lock_file(path, LOCK_EX | LOCK_NB);
+  if (probe < 0) {
+    ds_container_unlock(fd);
+    return -1;
+  }
+  unlock_file(probe);
+  return fd;
 }
 
 /* Configuration & Metadata Recovery */
@@ -134,32 +205,6 @@ void write_plain_env_file(const char *src, const char *dst) {
   }
   fclose(in);
   fclose(out);
-}
-
-/* Check if external command lock exists - called by monitor (READ ONLY).
- * Returns: 1 if lock exists and holder is alive, 0 otherwise. */
-int is_external_lock_active(const char *name) {
-  char lock_path[PATH_MAX];
-  if (get_lock_path(name, lock_path, sizeof(lock_path)) < 0)
-    return 0;
-
-  if (access(lock_path, F_OK) != 0)
-    return 0; /* No lock */
-
-  /* Lock exists - verify holder is alive */
-  char buf[64];
-  if (read_file(lock_path, buf, sizeof(buf)) > 0) {
-    if (lock_holder_if_alive(buf) > 0)
-      return 1; /* Valid lock */
-
-    /* Stale lock detected */
-    write_monitor_debug_log(
-        name, "Removing stale or malformed lock (recorded PID %d)", atoi(buf));
-  }
-
-  /* Remove stale lock */
-  unlink(lock_path);
-  return 0;
 }
 
 /* Cleanup */
@@ -276,10 +321,6 @@ void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
       unlink(cfg->pidfile);
     if (global_pidfile[0] && strcmp(cfg->pidfile, global_pidfile) != 0)
       unlink(global_pidfile);
-
-    /* Stale lock cleanup is handled by acquire_external_lock and
-     * is_external_lock_active. Monitor only does resource cleanup
-     * if no external lock is active. */
   }
 
   /* Network cleanup: remove host veth and owned network state */
@@ -322,42 +363,59 @@ int is_valid_container_pid(pid_t pid) {
 
 /* Start */
 
-int start_rootfs(struct ds_config *cfg) {
+/* True once the container's init has exec'd the real init, false if it died
+ * first or hung.
+ *
+ * fd is the read end of the sync pipe. Init holds the only write end left, and
+ * it is close-on-exec, so the kernel closes it at the exact moment init stops
+ * running our code. Nothing here guesses at how far the boot has got: every
+ * line internal_boot() logs is out before this returns, and no later change to
+ * the order of the boot steps can break that.
+ *
+ * End of file is also what a dead init looks like. Its executable settles it:
+ * still ours means it never exec'd, gone means it died. The timeout only guards
+ * against a boot that hangs, a healthy one never gets near it. */
+static int wait_for_boot(int fd, pid_t pid) {
+  struct pollfd pfd = {.fd = fd, .events = POLLIN};
+  int r;
+  while ((r = poll(&pfd, 1, 30000)) < 0 && errno == EINTR)
+    ;
+  if (r <= 0)
+    return 0;
+
+  char path[PATH_MAX];
+  struct stat self, init;
+  snprintf(path, sizeof(path), "/proc/%d/exe", pid);
+  if (stat("/proc/self/exe", &self) < 0 || stat(path, &init) < 0)
+    return 0;
+  return self.st_dev != init.st_dev || self.st_ino != init.st_ino;
+}
+
+/* The body of a start. The caller holds the lifecycle lock in *lock_fd.
+ * reuse_mount is set by restart, whose stop left the image mounted. */
+static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
+                               int reuse_mount) {
 
   int has_side_effects = 0;
-  int lock_acquired = 0;
 
-  /* 0. Early restart detection: check for external lock from previous stop
-   *    command to detect a preserved mount for reuse. */
-  if (cfg->container_name[0]) {
-    char lock_path[PATH_MAX];
-    if (get_lock_path(cfg->container_name, lock_path, sizeof(lock_path)) == 0 &&
-        access(lock_path, F_OK) == 0) {
-      /* This looks like a restart handoff - take ownership of the lock */
-      if (acquire_external_lock(cfg->container_name) == 0) {
-        lock_acquired = 1;
+  /* 0. Restart: pick the preserved mount back up. If it is gone after all,
+   *    this is an ordinary start that mounts the image again. */
+  if (reuse_mount) {
+    if (cfg->pidfile[0] == '\0')
+      resolve_pidfile_from_name(cfg->container_name, cfg->pidfile,
+                                sizeof(cfg->pidfile));
 
-        /* Try to reuse existing mount */
-        if (cfg->pidfile[0] == '\0')
-          resolve_pidfile_from_name(cfg->container_name, cfg->pidfile,
-                                    sizeof(cfg->pidfile));
-
-        char existing_mount[PATH_MAX];
-        if (cfg->pidfile[0] &&
-            read_mount_path(cfg->pidfile, existing_mount,
-                            sizeof(existing_mount)) > 0 &&
-            is_mountpoint(existing_mount)) {
-          safe_strncpy(cfg->rootfs_path, existing_mount,
-                       sizeof(cfg->rootfs_path));
-          cfg->is_img_mount = 1;
-          safe_strncpy(cfg->img_mount_point, cfg->rootfs_path,
-                       sizeof(cfg->img_mount_point));
-        } else {
-          /* Mount not active - remove invalid lock */
-          release_external_lock(cfg->container_name);
-          lock_acquired = 0;
-        }
-      }
+    char existing_mount[PATH_MAX];
+    if (cfg->pidfile[0] &&
+        read_mount_path(cfg->pidfile, existing_mount, sizeof(existing_mount)) >
+            0 &&
+        is_mountpoint(existing_mount)) {
+      safe_strncpy(cfg->rootfs_path, existing_mount, sizeof(cfg->rootfs_path));
+      cfg->is_img_mount = 1;
+      safe_strncpy(cfg->img_mount_point, cfg->rootfs_path,
+                   sizeof(cfg->img_mount_point));
+    } else {
+      reuse_mount = 0;
     }
   }
 
@@ -366,8 +424,9 @@ int start_rootfs(struct ds_config *cfg) {
 
   /* 1b. Name Uniqueness Check
    * We no longer auto-generate or increment names. The name must be provided
-   * by the user and it must be unique. */
-  if (!lock_acquired) {
+   * by the user and it must be unique. We hold the lifecycle lock, so nobody
+   * can start the same name between this check and our pidfile write. */
+  {
     pid_t existing_pid = 0;
     if (is_container_running(cfg, &existing_pid)) {
       ds_error("Container name '%s' is already in use by PID %d.",
@@ -425,8 +484,6 @@ int start_rootfs(struct ds_config *cfg) {
   if (cfg->android_storage && !is_android())
     ds_warn("--enable-android-storage is only supported on Android hosts. "
             "Skipping.");
-  if (cfg->termux_x11 && !is_android())
-    ds_warn("--termux-x11 is only applicable on Android. Skipping.");
   if (cfg->tx11_extra_flags && !is_android())
     ds_warn("--tx11-flags is only applicable on Android. Skipping.");
   if (cfg->virgl && !is_android())
@@ -446,7 +503,7 @@ int start_rootfs(struct ds_config *cfg) {
   has_side_effects = 1;
 
   /* 2. Mount rootfs image if provided (using the resolved name) */
-  if (cfg->rootfs_img_path[0] && !lock_acquired) {
+  if (cfg->rootfs_img_path[0] && !reuse_mount) {
     if (mount_rootfs_img(cfg->rootfs_img_path, cfg->rootfs_path,
                          sizeof(cfg->rootfs_path), cfg->container_name) < 0) {
       goto cleanup;
@@ -502,7 +559,7 @@ int start_rootfs(struct ds_config *cfg) {
 
   /* 2b. Android: start Termux-X11, VirGL, and PulseAudio servers before fork
    * so the sockets exist when bind-mounted later */
-  if (is_android() && cfg->termux_x11) {
+  if (is_android() && cfg->x11) {
     if (ds_x11_daemon_start(cfg) == 0)
       wait_for_socket_or_death(
           cfg->x11_pid, TX11_SOCK_DIR "/" TX11_DISPLAY_SOCK, 5000, 50000);
@@ -672,6 +729,8 @@ int start_rootfs(struct ds_config *cfg) {
   }
 
   if (monitor_pid == 0) {
+    /* The inherited copy of our lifecycle lock was closed by the fork handler
+     * in the lock code: the monitor takes the lock itself when it needs it. */
     close(sync_pipe[0]);
     ds_monitor_run(cfg, sync_pipe[1]);
     /* ds_monitor_run never returns */
@@ -684,12 +743,9 @@ int start_rootfs(struct ds_config *cfg) {
   /* Wait for Monitor to send child PID */
   if (read(sync_pipe[0], &cfg->container_pid, sizeof(pid_t)) != sizeof(pid_t)) {
     ds_error("Monitor failed to send container PID.");
-    if (lock_acquired)
-      release_external_lock(cfg->container_name);
     goto cleanup;
   }
-  close(sync_pipe[0]);
-  sync_pipe[0] = -1;
+  /* The read end stays open: wait_for_boot() watches it for init's exec. */
 
   ds_log("Container started with PID %d (Monitor: %d)", cfg->container_pid,
          monitor_pid);
@@ -728,33 +784,24 @@ int start_rootfs(struct ds_config *cfg) {
 
   /* 11. Foreground or background finish */
   if (cfg->foreground) {
-
-    if (lock_acquired) {
-      release_external_lock(cfg->container_name);
-      lock_acquired = 0;
-    }
+    /* We stay attached for the container's whole life, so let go of the lock
+     * here, but not before the container is visible as running: a start that
+     * raced in before that would not see it and would boot a second one. */
+    wait_for_boot(sync_pipe[0], cfg->container_pid);
+    close(sync_pipe[0]);
+    ds_container_unlock(*lock_fd);
+    *lock_fd = -1;
 
     int ret = console_monitor_loop(cfg->console.master, monitor_pid, cfg);
     free_config_env_vars(cfg);
     return ret;
   } else {
-    /* Wait for container to finish pivot_root before showing info.
-     * The boot sequence writes /run/droidspaces after pivot_root,
-     * so we poll for it via /proc/<pid>/root/run/droidspaces. */
-    char marker[PATH_MAX];
-    snprintf(marker, sizeof(marker), "/proc/%d/root/run/droidspaces",
-             cfg->container_pid);
-    int booted = 0;
-    for (int i = 0; i < 50; i++) { /* 5 seconds max */
-      if (access(marker, F_OK) == 0) {
-        booted = 1;
-        break;
-      }
-      /* If the container PID is already dead, stop polling */
-      if (kill(cfg->container_pid, 0) < 0 && errno == ESRCH)
-        break;
-      usleep(100000); /* 100ms */
-    }
+    /* Do not show the info or return until init has exec'd. A command that
+     * returned earlier left init still logging to a terminal nobody was reading
+     * any more, and its last lines, "Booting ..." among them, went missing. */
+    int booted = wait_for_boot(sync_pipe[0], cfg->container_pid);
+    close(sync_pipe[0]);
+    sync_pipe[0] = -1;
 
     if (!booted) {
       ds_error("Container failed to boot correctly.");
@@ -778,8 +825,6 @@ int start_rootfs(struct ds_config *cfg) {
     }
   }
 
-  if (lock_acquired)
-    release_external_lock(cfg->container_name);
   ds_config_free(cfg);
 
   return 0;
@@ -792,9 +837,6 @@ cleanup:
   if (has_side_effects) {
     cleanup_container_resources(cfg, cfg->container_pid, 0, 1 /* force */);
   }
-  if (lock_acquired)
-    release_external_lock(cfg->container_name);
-
   if (cfg->console.master >= 0) {
     close(cfg->console.master);
     cfg->console.master = -1;
@@ -808,26 +850,90 @@ cleanup:
   return -1;
 }
 
-int stop_rootfs_with_timeout(struct ds_config *cfg, int skip_unmount,
-                             int timeout_seconds) {
+static int lifecycle_lock_or_complain(struct ds_config *cfg, const char *verb) {
+  int fd = ds_container_lock(cfg->container_name, 0);
+  if (fd >= 0)
+    return fd;
+
+  if (errno == EWOULDBLOCK) {
+    ds_error("Cannot %s '%s': another operation is in progress on this "
+             "container",
+             verb, cfg->container_name);
+    ds_error("Wait for it to complete, or use 'droidspaces show' to check "
+             "status");
+  } else {
+    ds_error("Cannot %s '%s': failed to take the container lock: %s", verb,
+             cfg->container_name, strerror(errno));
+  }
+  return -1;
+}
+
+int start_rootfs(struct ds_config *cfg) {
+  /* Kept on the stack: start_rootfs_locked() frees cfg on success. */
+  int lock_fd = lifecycle_lock_or_complain(cfg, "start");
+  if (lock_fd < 0)
+    return -1;
+
+  int ret = start_rootfs_locked(cfg, &lock_fd, 0);
+  ds_container_unlock(lock_fd);
+  return ret;
+}
+
+/* Load the config a running container actually booted with, from the
+ * snapshot it keeps in its own /run. Returns 0 and fills *out, which the
+ * caller releases with ds_config_free(), or -1 if there is no readable
+ * snapshot. */
+static int load_booted_config(const struct ds_config *cfg, pid_t pid,
+                              struct ds_config *out) {
+  char run_path[PATH_MAX];
+  if (build_proc_root_path(pid, "/run/droidspaces/container.config", run_path,
+                           sizeof(run_path)) != 0)
+    return -1;
+
+  memset(out, 0, sizeof(*out));
+  out->net_ready_pipe[0] = out->net_ready_pipe[1] = -1;
+  out->net_done_pipe[0] = out->net_done_pipe[1] = -1;
+  out->net_mode = DS_NET_NAT; /* zero is host, see main() */
+  safe_strncpy(out->container_name, cfg->container_name,
+               sizeof(out->container_name));
+  safe_strncpy(out->prog_name, cfg->prog_name, sizeof(out->prog_name));
+
+  if (ds_config_load(run_path, out) < 0) {
+    ds_config_free(out);
+    return -1;
+  }
+
+  /* The pidfile is how the caller found this instance, and it may have come
+   * from --pidfile, which no config file records. */
+  safe_strncpy(out->pidfile, cfg->pidfile, sizeof(out->pidfile));
+  return 0;
+}
+
+/* The body of a stop. The caller holds the lifecycle lock. */
+static int stop_rootfs_locked(struct ds_config *caller_cfg, int skip_unmount,
+                              int timeout_seconds) {
   if (timeout_seconds < 0)
     timeout_seconds = DS_STOP_TIMEOUT;
 
-  /* Acquire external command lock FIRST */
-  if (acquire_external_lock(cfg->container_name) != 0) {
-    ds_error("Cannot stop '%s': another command is managing this container",
-             cfg->container_name);
-    ds_error("Wait for the other operation to complete, or use 'droidspaces "
-             "show' to check status");
+  pid_t pid = 0;
+  if (!is_container_running(caller_cfg, &pid) || pid <= 0) {
+    ds_error("Container '%s' is not running or invalid.",
+             caller_cfg->container_name);
     return -1;
   }
 
-  pid_t pid = 0;
-  if (!is_container_running(cfg, &pid) || pid <= 0) {
-    ds_error("Container '%s' is not running or invalid.", cfg->container_name);
-    release_external_lock(cfg->container_name);
-    return -1;
-  }
+  /* Tear down what is running, not what the caller is holding. The caller's
+   * config describes what the container should be next: on a restart it is
+   * the edited config file or the snapshot with new flags applied on top. If
+   * that changed the network mode, cleaning up with it runs the wrong
+   * teardown, e.g. the gateway cleanup for a container wired as NAT, and
+   * leaves its veth, port forwards and shared rules behind. The instance's
+   * own snapshot is the only description of what it was booted as. Without a
+   * readable one (a container from before snapshots existed) the caller's
+   * config is the best we have. */
+  struct ds_config booted;
+  int have_booted = (load_booted_config(caller_cfg, pid, &booted) == 0);
+  struct ds_config *cfg = have_booted ? &booted : caller_cfg;
 
   ds_log("Stopping container '%s' (PID %d)...", cfg->container_name, pid);
 
@@ -984,13 +1090,20 @@ int stop_rootfs_with_timeout(struct ds_config *cfg, int skip_unmount,
   if (!cfg->foreground)
     ds_log("Container '%s' stopped.", cfg->container_name);
 
-  /* Release lock ONLY if this is a final stop.
-   * For restarts (skip_unmount=1), keep lock alive as handoff. */
-  if (!skip_unmount) {
-    release_external_lock(cfg->container_name);
-  }
-
+  if (have_booted)
+    ds_config_free(&booted);
   return 0;
+}
+
+int stop_rootfs_with_timeout(struct ds_config *cfg, int skip_unmount,
+                             int timeout_seconds) {
+  int lock_fd = lifecycle_lock_or_complain(cfg, "stop");
+  if (lock_fd < 0)
+    return -1;
+
+  int ret = stop_rootfs_locked(cfg, skip_unmount, timeout_seconds);
+  ds_container_unlock(lock_fd);
+  return ret;
 }
 
 int stop_rootfs(struct ds_config *cfg, int skip_unmount) {
@@ -1062,6 +1175,20 @@ int enter_namespace(pid_t pid, struct ds_config *cfg) {
 
 /* Enter / Run */
 
+/* Shell convention, the same one lxc-attach follows: 128 plus the signal when
+ * the child was killed, so `run -- sh -c 'kill -9 $$'` reports 137, not 1. */
+static int exit_status(int st) {
+  if (WIFEXITED(st))
+    return WEXITSTATUS(st);
+  if (WIFSIGNALED(st))
+    return 128 + WTERMSIG(st);
+  return EXIT_FAILURE;
+}
+
+/* What a shell reports after a failed exec: 127 when the binary is missing,
+ * 126 when it is there but cannot be run. Read errno before logging. */
+static int exec_exit_code(void) { return errno == ENOENT ? 127 : 126; }
+
 int enter_rootfs(struct ds_config *cfg, const char *user) {
   pid_t pid = 0;
   if (!is_container_running(cfg, &pid) || pid <= 0) {
@@ -1087,23 +1214,14 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
 
   int sv[2];
   if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
-    close(tty.master);
-    close(tty.slave);
     free_config_env_vars(cfg);
     return -1;
   }
-
-  /* Parent will receive master FD from child after namespace entry */
-  close(tty.slave);
-  tty.slave = -1;
-  close(tty.master);
-  tty.master = -1;
 
   pid_t child = fork();
   if (child < 0) {
     close(sv[0]);
     close(sv[1]);
-    close(tty.master);
     free_config_env_vars(cfg);
     return -1;
   }
@@ -1111,14 +1229,11 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
   if (child == 0) {
     close(sv[0]);
 
-    /* In this refactored flow, the child allocates the PTY itself after setns.
-     */
-    tty.slave = -1;
-
     /* cgroup attach before entering namespaces */
     ds_log_silent = 1;
-    ds_cgroup_attach(pid);
+    ds_cgroup_attach(cfg->container_name);
     ds_log_silent = 0;
+    ds_virtualize_join(pid);
 
     if (enter_namespace(pid, cfg) < 0)
       _exit(EXIT_FAILURE);
@@ -1127,6 +1242,13 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
      * This ensures its path (e.g. /dev/pts/0) exists and is resolvable. */
     if (ds_terminal_create(&tty) < 0)
       _exit(EXIT_FAILURE);
+
+    /* Size the pty before the shell exists, as lxc-attach does on its ptx, so
+     * nothing ever reads a 0x0 window. The caller's stdin is still ours here;
+     * only the grandchild swaps it for the slave. */
+    struct winsize ws;
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0)
+      ioctl(tty.master, TIOCSWINSZ, &ws);
 
     /* Send master FD back to parent (host monitor) */
     if (ds_send_fd(sv[1], tty.master) < 0)
@@ -1149,33 +1271,13 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
                                   cfg->sandboxing_allowed);
     ds_log_silent = 0;
 
-    /* LXC-STYLE SESSION SETUP - intermediate becomes session leader
-     *
-     * Ubuntu 24.04+ login (util-linux) calls vhangup() as part of its
-     * "secure login" sequence: hang up the old session, reopen the
-     * terminal fresh, then setsid()+TIOCSCTTY to own it.
-     *
-     * vhangup() sends SIGHUP to the SESSION LEADER of the controlling
-     * terminal.  In our OLD design the grandchild (bash) was the session
-     * leader, so it received SIGHUP, killed login's process group, then
-     * killed itself - the terminal collapsed.
-     *
-     * THE FIX (matches lxc-attach behaviour):
-     *   • The INTERMEDIATE does setsid() + TIOCSCTTY here (not the shell).
-     *   • The intermediate ignores SIGHUP.
-     *   • The grandchild (bash) is a child of the intermediate's session
-     *     and is therefore NOT the session leader - it never receives
-     *     the SIGHUP that vhangup() generates.
-     *   • login's vhangup() → SIGHUP → intermediate → ignored → bash lives.
-     *   • login then does setsid() + open(/dev/pts/N without O_NOCTTY) to
-     *     auto-acquire the terminal as the new session leader.
-     *   • After login exits the terminal is released and bash resumes.
-     *
-     * The slave fd is intentionally kept open in the intermediate for the
-     * duration of the session (the LXC "peer fd").  This prevents the
-     * slave from entering a destroyed state during the vhangup/reopen
-     * window and keeps a stable reference count on the pts entry.
-     */
+    /* The intermediate, not the shell, owns the session and the terminal.
+     * util-linux login (Ubuntu 24.04+) calls vhangup(), which SIGHUPs the
+     * session leader: with the shell as leader that killed bash and took the
+     * whole session with it. Here the leader ignores SIGHUP and the shell is a
+     * plain member, so login's hangup passes through and the prompt returns
+     * after logout. lxc-attach does the opposite, its attached shell calls
+     * setsid() itself, which is why login ends an lxc-attach session. */
     if (setsid() < 0)
       _exit(EXIT_FAILURE);
     if (ioctl(tty.slave, TIOCSCTTY, 0) < 0)
@@ -1189,14 +1291,8 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
     if (shell_pid < 0)
       _exit(EXIT_FAILURE);
     if (shell_pid == 0) {
-      /* The controlling terminal and session leader were established in
-       * the intermediate (parent of this fork) - do NOT call setsid()
-       * or TIOCSCTTY here.  This process (bash) is a child member of
-       * the intermediate's session and inherits pts/1 as its ctty.
-       * Being a non-session-leader is deliberate: when the user runs
-       * 'login' inside bash, login's vhangup() sends SIGHUP only to
-       * the session leader (the intermediate, which ignores it), so
-       * bash is unaffected and its prompt returns after login exits. */
+      /* Not the session leader on purpose, see above: no setsid, no
+       * TIOCSCTTY, the slave is already our controlling terminal. */
       if (ds_terminal_set_stdfds(tty.slave) < 0)
         _exit(EXIT_FAILURE);
 
@@ -1244,15 +1340,13 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
       }
 
       ds_error("Failed to find any usable shell");
-      _exit(EXIT_FAILURE);
+      _exit(127);
     }
-    /* Intermediate: intentionally keep tty.slave open as the peer fd.
-     * This holds a stable reference on the pts slave entry for the entire
-     * session, preventing it from being destroyed during the brief
-     * vhangup()/reopen window when the user runs 'login'.
-     * The fd is released automatically when we _exit below. */
-    waitpid(shell_pid, NULL, 0);
-    _exit(EXIT_SUCCESS);
+    /* Keep tty.slave open until the shell exits: it holds the pts alive
+     * across login's vhangup()/reopen window. */
+    int st;
+    waitpid(shell_pid, &st, 0);
+    _exit(exit_status(st));
   }
 
   close(sv[1]);
@@ -1264,17 +1358,7 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
   if (master_fd < 0) {
     ds_error("Failed to receive PTY master from child");
     waitpid(child, NULL, 0);
-    ds_cgroup_detach(child, cfg->container_name);
     return -1;
-  }
-
-  /* Synchronize window size BEFORE starting setup to avoid race with child
-   * exec. This ensures htop/nano see the correct size immediately upon startup.
-   */
-  if (isatty(STDIN_FILENO)) {
-    struct winsize ws;
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0)
-      ioctl(master_fd, TIOCSWINSZ, &ws);
   }
 
   /* Parent: setup host terminal and proxy I/O */
@@ -1288,10 +1372,10 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
   }
 
   close(master_fd);
-  waitpid(child, NULL, 0);
-  ds_cgroup_detach(child, cfg->container_name);
+  int st;
+  waitpid(child, &st, 0);
   free_config_env_vars(cfg);
-  return 0;
+  return exit_status(st);
 }
 
 /* Append arg to buf as a single-quoted shell word, space-separated from any
@@ -1319,9 +1403,7 @@ static size_t shell_quote_append(char *buf, size_t off, size_t size,
   return off;
 }
 
-int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
-                  const char *as_user) {
-  (void)argc;
+int run_in_rootfs(struct ds_config *cfg, char **argv, const char *as_user) {
   pid_t pid = 0;
   if (!is_container_running(cfg, &pid) || pid <= 0) {
     ds_error("Container '%s' is not running or invalid.", cfg->container_name);
@@ -1339,6 +1421,14 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
     ds_log_silent = prev_silent;
   }
 
+  /* The terminal delivers ^C and ^\ to the whole foreground group, the
+   * command included. Only the command should die of them; the two processes
+   * that relay its exit status stay, the same as lxc-attach (its issue #313).
+   * A command that traps them itself cannot be interrupted from the terminal
+   * any more, also as in lxc-attach. The grandchild restores the defaults. */
+  signal(SIGINT, SIG_IGN);
+  signal(SIGQUIT, SIG_IGN);
+
   pid_t child = fork();
   if (child < 0) {
     free_config_env_vars(cfg);
@@ -1347,11 +1437,12 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
 
   if (child == 0) {
     /* Mirror enter_rootfs: attach to the container's cgroup subtree before
-     * crossing into its namespaces, so the command is properly accounted
-     * under systemd's hierarchy instead of leaking to the cgroup root. */
+     * crossing into its namespaces, so the command is accounted to the
+     * container instead of leaking to the host's cgroup root. */
     ds_log_silent = 1;
-    ds_cgroup_attach(pid);
+    ds_cgroup_attach(cfg->container_name);
     ds_log_silent = 0;
+    ds_virtualize_join(pid);
 
     if (enter_namespace(pid, cfg) < 0)
       _exit(EXIT_FAILURE);
@@ -1373,6 +1464,9 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
     if (cmd_pid < 0)
       _exit(EXIT_FAILURE);
     if (cmd_pid == 0) {
+      signal(SIGINT, SIG_DFL);
+      signal(SIGQUIT, SIG_DFL);
+
       if (chdir("/") < 0)
         _exit(EXIT_FAILURE);
 
@@ -1418,9 +1512,10 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
         execvp("/bin/su", su_argv);
         execvp("/usr/bin/su", su_argv);
         execvp("/run/wrappers/bin/su", su_argv);
+        int code = exec_exit_code();
         ds_error("Failed to exec su for user '%s': %s", as_user,
                  strerror(errno));
-        _exit(EXIT_FAILURE);
+        _exit(code);
       }
 
       if (argv[1] == NULL && strchr(argv[0], ' ') != NULL) {
@@ -1430,20 +1525,20 @@ int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
         execvp(argv[0], argv);
       }
 
+      int code = exec_exit_code();
       ds_error("Failed to execute command: %s", strerror(errno));
-      _exit(EXIT_FAILURE);
+      _exit(code);
     }
 
     int status;
     waitpid(cmd_pid, &status, 0);
-    _exit(WIFEXITED(status) ? WEXITSTATUS(status) : EXIT_FAILURE);
+    _exit(exit_status(status));
   }
 
   int status;
   waitpid(child, &status, 0);
-  ds_cgroup_detach(child, cfg->container_name);
   free_config_env_vars(cfg);
-  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+  return exit_status(status);
 }
 
 /* Other operations */
@@ -1527,6 +1622,10 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     return -1;
   }
 
+  long long lim_mem, lim_quota, lim_period, lim_pids;
+  ds_cgroup_get_limits(cfg->container_name, &lim_mem, &lim_quota, &lim_period,
+                       &lim_pids);
+
   /* Success - print Host and detailed Container info */
   if (cfg->format_output) {
     struct ds_status st = {0};
@@ -1593,8 +1692,8 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
                 cfg->hw_access ? "full" : (cfg->gpu_mode ? "GPU" : "none"),
                 &first);
 
+    ds_json_int("x11", cfg->x11, &first);
     if (is_android()) {
-      ds_json_int("termux_x11", cfg->termux_x11, &first);
       if (cfg->tx11_extra_flags)
         ds_json_str("tx11_flags", cfg->tx11_extra_flags, &first);
       ds_json_int("virgl", cfg->virgl, &first);
@@ -1615,6 +1714,11 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
 
     ds_json_int("volatile_mode", cfg->volatile_mode, &first);
     ds_json_int("force_cgroup_v1", cfg->force_cgroupv1, &first);
+    /* 0 is unlimited */
+    ds_json_int("memory_limit", lim_mem, &first);
+    ds_json_int("cpu_quota", lim_quota, &first);
+    ds_json_int("cpu_period", lim_period, &first);
+    ds_json_int("pids_limit", lim_pids, &first);
     ds_json_int("sandboxing_allowed", cfg->sandboxing_allowed, &first);
     ds_json_int("vts_allowed", cfg->allow_vts, &first);
     ds_json_int("foreground_mode", cfg->foreground, &first);
@@ -1779,9 +1883,9 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
-    /* 7. Termux-X11 */
-    if (is_android() && cfg->termux_x11) {
-      printf("  Termux-X11: enabled\n");
+    /* 7. X11 */
+    if (cfg->x11) {
+      printf("  X11: enabled\n");
       feat_count++;
     }
 
@@ -1889,43 +1993,39 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     }
   }
 
-  /* Resource limits & live usage. Only show if Cgroup V2 is active,
-   * since we skip resource management entirely on V1. We also skip this
-   * when called during the boot sequence (!trust_cfg_pid). */
-  if (!trust_cfg_pid &&
-      (cfg->memory_limit || cfg->cpu_quota || cfg->pids_limit) &&
-      !cfg->force_cgroupv1 && ds_cgroup_host_is_v2()) {
-    long long mu = -1, cu = -1, pu = -1;
-    ds_cgroup_get_usage(cfg, &mu, &cu, &pu);
+  /* Resource limits in force. Live usage only for the info command: right
+   * after a start or restart there is nothing meaningful to report yet. */
+  if (lim_mem || lim_quota || lim_pids) {
+    long long mu = -1, cache = 0, cu = -1, pu = -1;
+    if (!trust_cfg_pid)
+      ds_cgroup_get_usage(cfg->container_name, &mu, &cache, &cu, &pu);
+    /* Used as free(1) counts it: without the reclaimable file cache */
+    if (mu >= cache)
+      mu -= cache;
     printf("\n" C_GREEN "Resources:" C_RESET "\n");
 
-    if (cfg->memory_limit) {
-      char used[32] = "?", lim[32];
-      if (mu >= 0)
+    if (lim_mem) {
+      char used[32], lim[32];
+      ds_format_size(lim_mem, lim, sizeof(lim));
+      if (mu >= 0) {
         ds_format_size(mu, used, sizeof(used));
-      ds_format_size(cfg->memory_limit, lim, sizeof(lim));
-      printf("  Memory : %s / %s\n", used, lim);
-    }
-    if (cfg->cpu_quota) {
-      long long period = cfg->cpu_period > 0 ? cfg->cpu_period : 100000;
-      double cores = (double)cfg->cpu_quota / period;
-      printf("  CPU    : %.2f cores", cores);
-      if (cu >= 0) {
-        long uptime = ds_get_container_uptime(pid);
-        if (uptime > 0) {
-          /* Average usage as percentage of total capacity (all allocated
-           * cores). cu is in usec, uptime in sec. */
-          double usage_sec = (double)cu / 1e6;
-          double avg_util = (usage_sec / (double)uptime) / cores * 100.0;
-          printf(" (Avg usage: %.1f%%)", avg_util);
-        } else {
-          printf(" (used: %.3fs)", (double)cu / 1e6);
-        }
+        printf("  Memory : %s / %s\n", used, lim);
+      } else {
+        printf("  Memory : %s\n", lim);
       }
+    }
+    if (lim_quota) {
+      double cores = (double)lim_quota / (double)lim_period;
+      printf("  CPU    : %.2f cores", cores);
+      long uptime = cu >= 0 ? ds_get_container_uptime(pid) : 0;
+      /* Average use of the allowed cores since boot. cu is in usec. */
+      if (uptime > 0)
+        printf(" (Avg usage: %.1f%%)",
+               ((double)cu / 1e6 / (double)uptime) / cores * 100.0);
       printf("\n");
     }
-    if (cfg->pids_limit) {
-      printf("  PIDs   : limit %lld", cfg->pids_limit);
+    if (lim_pids) {
+      printf("  PIDs   : %lld", lim_pids);
       if (pu >= 0)
         printf(" (current: %lld)", pu);
       printf("\n");
@@ -1936,15 +2036,18 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
   return 0;
 }
 
-int restart_rootfs_with_timeout(struct ds_config *cfg, int timeout_seconds,
-                                int argc, char **argv) {
+/* The body of a restart. One lock covers the stop and the start, so nothing
+ * else can act on the container in the gap where the old instance is gone and
+ * the new one is not up yet. */
+static int restart_rootfs_locked(struct ds_config *cfg, int *lock_fd,
+                                 int timeout_seconds, int argc, char **argv) {
   pid_t pid = 0;
   if (!is_container_running(cfg, &pid) || pid <= 0) {
     ds_error("Container '%s' is not running or invalid.", cfg->container_name);
     return -1;
   }
   ds_log("Restarting container %s...", cfg->container_name);
-  if (stop_rootfs_with_timeout(cfg, 1, timeout_seconds) < 0) {
+  if (stop_rootfs_locked(cfg, 1, timeout_seconds) < 0) {
     return -1;
   }
   /* The stop above tore down using the booted snapshot (loaded while the
@@ -1968,7 +2071,18 @@ int restart_rootfs_with_timeout(struct ds_config *cfg, int timeout_seconds,
   }
   putchar('\n');
   print_ds_banner();
-  return start_rootfs(cfg);
+  return start_rootfs_locked(cfg, lock_fd, 1);
+}
+
+int restart_rootfs_with_timeout(struct ds_config *cfg, int timeout_seconds,
+                                int argc, char **argv) {
+  int lock_fd = lifecycle_lock_or_complain(cfg, "restart");
+  if (lock_fd < 0)
+    return -1;
+
+  int ret = restart_rootfs_locked(cfg, &lock_fd, timeout_seconds, argc, argv);
+  ds_container_unlock(lock_fd);
+  return ret;
 }
 
 int restart_rootfs(struct ds_config *cfg, int argc, char **argv) {

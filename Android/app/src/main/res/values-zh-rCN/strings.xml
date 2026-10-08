@@ -107,7 +107,6 @@
     <string name="uptime">运行时间</string>
     <string name="unable_to_read_container_info">无法读取容器信息</string>
     <string name="disable_ipv6_description">在此容器中禁用 IPv6。这可能会导致宿主机的 VPN 应用异常。</string>
-    <string name="disable_ipv6_nat_forced">在 NAT 和 None 网络模式下，IPv6 始终被禁用。</string>
     <string name="selinux_permissive">SELinux 宽容模式</string>
     <string name="selinux_permissive_description">将 SELinux 设置为宽容模式</string>
     <string name="run_at_boot">开机自启动</string>
@@ -118,7 +117,6 @@
     <string name="copy">复制</string>
     <string name="unknown">未知</string>
     <string name="developer_ravindu644_role">维护者</string>
-    <string name="hostname_label">主机名：%1$s</string>
     <string name="start">启动</string>
     <string name="stop">停止</string>
     <string name="restart">重新启动</string>
@@ -206,7 +204,6 @@
     <string name="help_card_message">点击此处，了解如何配置 Linux 容器吧！</string>
     <string name="environment_variables_configured">已配置 %1$d 个变量</string>
     <string name="dismiss">关闭</string>
-    <string name="extracting_module_files">正在解压模块文件...</string>
     <string name="tarball_label">打包压缩</string>
     <string name="review_configuration">复查配置</string>
     <string name="hostname_placeholder">留空以使用默认值</string>
@@ -227,32 +224,24 @@
     <string name="no_enabled_services">没有已启用的服务</string>
     <string name="copy_login">复制登录命令</string>
     <string name="installation_path_label">安装路径</string>
-    <string name="installing_module">正在安装模块</string>
     <string name="binary_installation_failed">二进制文件安装失败</string>
-    <string name="verifying_installation">正在验证安装...</string>
     <string name="hardware_access_description">完整的硬件访问权限</string>
     <string name="disabled_legend">已禁用</string>
-    <string name="module_installed_success">Magisk 模块安装成功</string>
     <string name="directory_label">目录</string>
     <string name="enabled_legend">已启用</string>
     <string name="available_users">可用用户</string>
-    <string name="installing_module_step">正在安装模块...</string>
     <string name="backend_installed_success">Droidspaces 后端安装成功</string>
     <string name="hardware_access">硬件访问</string>
     <string name="start_container_first">请先启动容器以便在此处查看</string>
     <string name="container_name_label">容器名称 *</string>
     <string name="volatile_mode_description">仅内存模式（停止后更改将丢失）</string>
-    <string name="setting_permissions">正在设置权限...</string>
     <string name="dns_servers_label">DNS 服务器</string>
     <string name="supported_abis">支持的 ABI</string>
     <string name="next_configuration">下一步：配置</string>
     <string name="volatile_mode">易失模式</string>
     <string name="not_available">不可用</string>
-    <string name="creating_directories">正在创建目录...</string>
     <string name="no_masked_services">没有已屏蔽的服务</string>
-    <string name="preparing_installation">正在准备安装...</string>
     <string name="configuration_title">配置</string>
-    <string name="preparing_module_installation">正在准备模块安装...</string>
     <string name="no_output_available">没有可用的输出</string>
     <string name="container_path">容器路径：%1$s</string>
     <string name="installation_failed">安装失败</string>
@@ -268,7 +257,6 @@
     <string name="dns_servers_placeholder">例如：1.1.1.1,8.8.8.8（可选）</string>
     <string name="backend_not_available_description">Droidspaces 后端未安装或已损坏。请先安装。</string>
     <string name="enable_service">启用</string>
-    <string name="removing_old_module">正在移除旧模块...</string>
     <string name="android_version">Android 版本</string>
     <string name="operation_failed_title">操作失败</string>
     <string name="unmask">取消屏蔽</string>
@@ -280,7 +268,6 @@
     <string name="host_path">宿主机路径：%1$s</string>
     <string name="termux_x11">配置 Termux:X11</string>
     <string name="architecture">架构</string>
-    <string name="granting_permissions">正在授予权限...</string>
     <string name="no_containers_running">没有运行中的容器</string>
     <string name="no_abnormal_services">没有异常服务</string>
     <string name="no_disabled_services">没有已禁用的服务</string>
@@ -308,10 +295,8 @@
     <string name="refresh_users">刷新用户</string>
     <string name="mask_service">屏蔽服务</string>
     <string name="bind_mounts">绑定挂载点</string>
-    <string name="installing_binary">正在安装二进制文件：%1$s</string>
     <string name="failed_to_action">无法 %1$s %2$s</string>
     <string name="login_command_copied">已复制用户 %1$s 的登录命令</string>
-    <string name="detected_architecture">检测到架构：%1$s</string>
     <string name="octet_label">第%1$d字节</string>
     <string name="action_successful">%1$s %2$s 成功</string>
     <string name="actioning_service" translatable="false">%1$sing %2$s...</string>
@@ -376,7 +361,6 @@
     <string name="cpu_usage_label">CPU 使用率</string>
     <string name="ram_usage_label">RAM 使用率</string>
     <string name="cpu_percent_label">%1$.1f%%</string>
-    <string name="ram_percent_label">%1$d MB (%2$.1f%%)</string>
     <string name="sessions_running_plural">%1$d 会话正在运行 · 点击恢复</string>
     <string name="session_running_singular">一个会话正在运行 · 点击恢复</string>
     <string name="please_wait_hint">正在处理您的请求，请稍候...</string>
@@ -412,14 +396,8 @@
     <string name="repo_notification_description">下载 Droidspaces 根文件系统</string>
     <string name="repo_error_no_assets">最新发布版中未找到根文件系统压缩包</string>
     <string name="repo_dl_error_unknown">未知错误</string>
-    <string name="repo_dl_error_cannot_resume">无法恢复下载</string>
-    <string name="repo_dl_error_device_not_found">未找到存储</string>
-    <string name="repo_dl_error_file_exists">文件已经存在</string>
     <string name="repo_dl_error_file_error">文件系统错误</string>
     <string name="repo_dl_error_http_data">HTTP 数据错误</string>
-    <string name="repo_dl_error_no_space">存储空间不足</string>
-    <string name="repo_dl_error_too_many_redirects">重定向次数过多</string>
-    <string name="repo_dl_error_unhandled_http">HTTP 响应异常</string>
     <string name="repo_dl_error_not_found">文件不存在（404）</string>
     <string name="repo_dl_error_code">错误码 ：%1$d</string>
     <string name="repo_status_ready">就绪</string>

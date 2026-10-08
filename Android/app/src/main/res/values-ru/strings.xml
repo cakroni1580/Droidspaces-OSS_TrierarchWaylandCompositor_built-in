@@ -88,7 +88,6 @@
     <string name="status_running">ЗАПУЩЕН</string>
     <string name="status_stopped">ОСТАНОВЛЕН</string>
     <string name="pid_label">PID: %1$d</string>
-    <string name="hostname_label">Имя хоста: %1$s</string>
     <string name="options_label">Опции: %1$s</string>
     <string name="start">Запустить</string>
     <string name="stop">Остановить</string>
@@ -113,7 +112,6 @@
     <string name="changes_take_effect_after_restart">Изменения вступят в силу после перезапуска</string>
     <string name="disable_ipv6">Отключить IPv6</string>
     <string name="disable_ipv6_description">Отключить IPv6 в этом контейнере. Отключение IPv6 может нарушить работу VPN-приложений на хосте.</string>
-    <string name="disable_ipv6_nat_forced">IPv6 всегда отключён в режимах NAT и None.</string>
     <string name="android_storage">Хранилище Android</string>
     <string name="android_storage_description">Подключить хранилище Android</string>
     <string name="hardware_access">Доступ к оборудованию</string>
@@ -142,23 +140,10 @@
     <!-- Installation Screen -->
     <string name="installation_complete">Установка завершена</string>
     <string name="installation_failed">Установка не удалась</string>
-    <string name="installing_module">Установка модуля</string>
     <string name="installing_droidspaces">Установка Droidspaces</string>
-    <string name="module_installed_success">Модуль Magisk успешно установлен</string>
     <string name="backend_installed_success">Бэкенд успешно установлен</string>
     <string name="module_installation_failed">Не удалось установить модуль</string>
     <string name="binary_installation_failed">Не удалось установить бинарные файлы</string>
-    <string name="removing_old_module">Удаление старого модуля...</string>
-    <string name="extracting_module_files">Извлечение файлов модуля...</string>
-    <string name="installing_module_step">Установка модуля...</string>
-    <string name="setting_permissions">Установка разрешений...</string>
-    <string name="verifying_installation">Проверка установки...</string>
-    <string name="preparing_module_installation">Подготовка установки модуля...</string>
-    <string name="detected_architecture">Обнаружена архитектура: %1$s</string>
-    <string name="creating_directories">Создание директорий...</string>
-    <string name="installing_binary">Установка бинарного файла: %1$s</string>
-    <string name="granting_permissions">Предоставление разрешений...</string>
-    <string name="preparing_installation">Подготовка установки...</string>
     <!-- Control Panel Screen -->
     <string name="no_containers_running">Нет запущенных контейнеров</string>
     <string name="start_container_first">Сначала запустите контейнер, чтобы увидеть его здесь</string>

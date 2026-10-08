@@ -34,10 +34,20 @@ static const char *app_veth_host_prefix(const struct ds_config *cfg) {
   return (cfg && cfg->net_mode == DS_NET_GATEWAY) ? "ds-c" : "ds-v";
 }
 
-/* Derive the host-side veth name from a container init PID (mode-aware). */
+static uint32_t ds_net_hash_string(const char *s);
+
+/* Derive the host-side veth name (mode-aware). A NAT veth is named after the
+ * container's init PID. A gateway client's is named after the container: if
+ * an instance dies without cleanup, its cable can outlive it on the bridge
+ * with the same MAC as its successor's, and a name that does not change is
+ * what lets the next start find that leftover and replace it. */
 static void veth_host_name(const struct ds_config *cfg, pid_t pid, char *buf,
                            size_t sz) {
-  snprintf(buf, sz, "%s%d", app_veth_host_prefix(cfg), (int)pid);
+  if (cfg && cfg->net_mode == DS_NET_GATEWAY)
+    snprintf(buf, sz, "%s%08x", app_veth_host_prefix(cfg),
+             ds_net_hash_string(cfg->container_name));
+  else
+    snprintf(buf, sz, "%s%d", app_veth_host_prefix(cfg), (int)pid);
 }
 
 /* Derive the peer (container-side) veth name from a container init PID.
@@ -245,6 +255,7 @@ static int netns_has_link(const char *netns_path, const char *ifname) {
 /* Uplink routing globals - shared by android routing setup and monitor */
 
 static int g_current_gw_table = 0;
+static int g_current_gw6_table = 0; /* same, for the uplink's IPv6 routes */
 static pthread_mutex_t g_gw_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int g_route_monitor_sock = -1;
 static volatile sig_atomic_t g_stop_monitor = 0;
@@ -275,6 +286,9 @@ static char g_host_veth[IFNAMSIZ];
 static struct ds_port_forward g_host_port_forwards[DS_MAX_PORT_FORWARDS];
 static int g_host_port_forward_count = 0;
 static char g_host_container_ip[INET_ADDRSTRLEN];
+static int g_host_nat6 = 0; /* NAT66 is set up, replay its rules too */
+static pid_t g_host_init_pid = 0;
+static int g_host_dns_managed = 0; /* resolv.conf holds our default list */
 
 /* Returns 1 if ifname exists and is both UP and RUNNING.
  * On Android, the active data interface has IFF_RUNNING set; an interface
@@ -346,6 +360,15 @@ void ds_net_derive_handshake(pid_t init_pid, struct ds_config *cfg,
 
 /* Host-side networking setup (before container boot) */
 
+/* The default resolvers in the two orders an uplink can call for. Same lines,
+ * so same length: sync_resolv_order() swaps one for the other in place. */
+#define DS_RESOLV_CONF "/run/droidspaces/resolv.conf"
+#define DNS_LINE(ip) "nameserver " ip "\n"
+static const char k_dns_v4_first[] = DNS_LINE(DS_DNS_DEFAULT_1)
+    DNS_LINE(DS_DNS_DEFAULT_2) DNS_LINE(DS_DNS_DEFAULT_6);
+static const char k_dns_v6_first[] = DNS_LINE(DS_DNS_DEFAULT_6)
+    DNS_LINE(DS_DNS_DEFAULT_1) DNS_LINE(DS_DNS_DEFAULT_2);
+
 int ds_get_dns_servers(const char *custom_dns, char *out, size_t size) {
   out[0] = '\0';
   int count = 0;
@@ -367,11 +390,9 @@ int ds_get_dns_servers(const char *custom_dns, char *out, size_t size) {
   }
 
   /* 1. Global stable fallbacks (defined in droidspace.h) */
-  if (count == 0) {
-    int n = snprintf(out, size, "nameserver %s\nnameserver %s\n",
-                     DS_DNS_DEFAULT_1, DS_DNS_DEFAULT_2);
-    if (n > 0 && (size_t)n < size)
-      count = 2;
+  if (count == 0 && size >= sizeof(k_dns_v4_first)) {
+    memcpy(out, k_dns_v4_first, sizeof(k_dns_v4_first));
+    count = 3;
   }
 
   return count;
@@ -631,7 +652,95 @@ static int install_policy_rules(ds_nl_ctx_t *ctx) {
                                       gw_table, DS_RULE_PRIO_FROM_SUBNET) < 0)
     ret = -1;
 
+  /* The same TO and FROM pair for the NAT66 prefix. No tether rule: hotspot
+   * clients reach forwarded ports over IPv4, and --port is IPv4 only. */
+  if (g_host_nat6) {
+    struct in6_addr net6;
+    inet_pton(AF_INET6, DS_NAT6_PREFIX, &net6);
+
+    pthread_mutex_lock(&g_gw_mutex);
+    int gw6_table = g_current_gw6_table;
+    pthread_mutex_unlock(&g_gw_mutex);
+
+    if (ds_nl_rule6(ctx, 1, &net6, DS_NAT6_PREFIX_LEN, 0, RT_TABLE_MAIN,
+                    DS_RULE_PRIO_TO_SUBNET) < 0)
+      ret = -1;
+    if (gw6_table > 0 && ds_nl_rule6(ctx, 1, &net6, DS_NAT6_PREFIX_LEN, 1,
+                                     gw6_table, DS_RULE_PRIO_FROM_SUBNET) < 0)
+      ret = -1;
+  }
+
   return ret;
+}
+
+/* Point the IPv6 FROM rule at the table of the uplink IPv4 just settled on.
+ * On an IPv6-only carrier the IPv4 uplink is the CLAT device v4-rmnetX, whose
+ * IPv6 routes live in the table of the real rmnetX underneath, so the prefix
+ * is stripped. An uplink with no IPv6 route (or iface == NULL) clears the
+ * rule, and the container simply keeps using IPv4. */
+static void sync_uplink6(ds_nl_ctx_t *ctx, const char *iface) {
+  if (!g_host_nat6)
+    return;
+
+  int table = 0;
+  if (iface) {
+    if (strncmp(iface, "v4-", 3) == 0)
+      iface += 3;
+    ds_nl_get_iface_table(ctx, AF_INET6, iface, &table);
+  }
+
+  pthread_mutex_lock(&g_gw_mutex);
+  int old = g_current_gw6_table;
+  g_current_gw6_table = table;
+  pthread_mutex_unlock(&g_gw_mutex);
+  if (old == table)
+    return;
+
+  struct in6_addr net6;
+  inet_pton(AF_INET6, DS_NAT6_PREFIX, &net6);
+  if (old > 0)
+    ds_nl_rule6(ctx, 0, &net6, DS_NAT6_PREFIX_LEN, 1, old,
+                DS_RULE_PRIO_FROM_SUBNET);
+  if (table > 0)
+    ds_nl_rule6(ctx, 1, &net6, DS_NAT6_PREFIX_LEN, 1, table,
+                DS_RULE_PRIO_FROM_SUBNET);
+  ds_log("[NET] IPv6 uplink table %d → %d (from %s, prio %d)", old, table,
+         DS_NAT6_SUBNET, DS_RULE_PRIO_FROM_SUBNET);
+}
+
+/* glibc asks the nameservers in file order and waits out a timeout on every
+ * one it cannot reach. On an IPv6-only uplink the two IPv4 defaults in front
+ * cost each lookup several seconds, and the IPv6 one in front would do the
+ * same on an IPv4-only network. So the default list follows the uplink.
+ *
+ * The file lives inside the container, whose root can put anything at that
+ * path. We only ever swap one of our two lists for the other: a file holding
+ * anything else, a hand edit included, is left alone, and so is whatever is
+ * not a regular file on tmpfs. */
+static void sync_resolv_order(int v6_first) {
+  if (!g_host_dns_managed)
+    return;
+
+  const char *want = v6_first ? k_dns_v6_first : k_dns_v4_first;
+  const char *stale = v6_first ? k_dns_v4_first : k_dns_v6_first;
+  size_t len = sizeof(k_dns_v4_first) - 1;
+
+  char path[64];
+  snprintf(path, sizeof(path), "/proc/%d/root" DS_RESOLV_CONF,
+           (int)g_host_init_pid);
+  int fd = open(path, O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+  if (fd < 0)
+    return;
+
+  /* One byte more than a list, so a longer file can never compare equal. */
+  char cur[sizeof(k_dns_v4_first) + 1] = {0};
+  struct stat st;
+  struct statfs sfs;
+  if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && fstatfs(fd, &sfs) == 0 &&
+      sfs.f_type == TMPFS_MAGIC && read(fd, cur, sizeof(cur) - 1) >= 0 &&
+      strcmp(cur, stale) == 0 && pwrite(fd, want, len, 0) == (ssize_t)len)
+    ds_log("[NET] Resolver order: IPv%d first", v6_first ? 6 : 4);
+  close(fd);
 }
 
 static void ds_net_setup_android_routing(ds_nl_ctx_t *ctx) {
@@ -642,14 +751,17 @@ static void ds_net_setup_android_routing(ds_nl_ctx_t *ctx) {
    * line.  The uplink-independent rules still go in below; the route monitor
    * adds the FROM rule once an interface appears. */
   if (find_active_uplink(ctx, active_iface, &gw_table) == 0) {
-    ds_log("[NET] Android routing: active uplink %s → table %d, rule from %s "
-           "lookup table %d (prio %d)",
-           active_iface, gw_table, DS_DEFAULT_SUBNET, gw_table,
-           DS_RULE_PRIO_FROM_SUBNET);
+    /* Table 0 is an IPv6-only uplink: no IPv4 rule, sync_uplink6() logs. */
+    if (gw_table > 0)
+      ds_log("[NET] Android routing: active uplink %s → table %d, rule from %s "
+             "lookup table %d (prio %d)",
+             active_iface, gw_table, DS_DEFAULT_SUBNET, gw_table,
+             DS_RULE_PRIO_FROM_SUBNET);
     /* Seed the monitor's current table so it knows the baseline */
     pthread_mutex_lock(&g_gw_mutex);
     g_current_gw_table = gw_table;
     pthread_mutex_unlock(&g_gw_mutex);
+    sync_uplink6(ctx, active_iface);
   }
 
   if (install_policy_rules(ctx) < 0)
@@ -696,23 +808,158 @@ static const char *host_filter_iface(void) {
   return g_host_bridgeless ? g_host_veth : DS_NAT_BRIDGE;
 }
 
-static void install_netfilter_rules(void) {
+/* One family's rule set. Returns the MASQUERADE result, the one rule without
+ * which that family has no connectivity at all. */
+static int install_family_rules(int family, const char *subnet) {
   const char *iface = host_filter_iface();
+  const char *label = (family == AF_INET6) ? "IPv6" : "IPv4";
 
   if (iface[0]) {
-    ds_ipt_ensure_input_accept(iface);
-    if (ds_ipt_ensure_forward_accept(iface) < 0)
-      ds_warn("[NET] FORWARD ACCEPT failed");
+    ds_ipt_ensure_input_accept(family, iface);
+    if (ds_ipt_ensure_forward_accept(family, iface) < 0)
+      ds_warn("[NET] %s FORWARD ACCEPT failed", label);
   }
 
-  if (ds_ipt_ensure_masquerade(DS_DEFAULT_SUBNET) < 0)
-    ds_warn("[NET] MASQUERADE rule failed");
+  int masq = ds_ipt_ensure_masquerade(family, subnet);
+  if (masq < 0)
+    ds_warn("[NET] %s MASQUERADE rule failed", label);
 
-  ds_ipt_ensure_mss_clamp();
+  ds_ipt_ensure_mss_clamp(family);
+  return masq;
+}
+
+static void install_netfilter_rules(void) {
+  install_family_rules(AF_INET, DS_DEFAULT_SUBNET);
+  if (g_host_nat6)
+    install_family_rules(AF_INET6, DS_NAT6_SUBNET);
 
   if (g_host_port_forward_count > 0 && g_host_container_ip[0])
     ds_ipt_add_portforwards(g_host_port_forwards, g_host_port_forward_count,
                             g_host_container_ip);
+}
+
+/* Turning on IPv6 forwarding makes the kernel ignore Router Advertisements on
+ * every interface left at accept_ra=1. A host that got its own address by
+ * SLAAC would then lose its default route when the current one expires. 2
+ * means "accept even while forwarding". Android already runs its uplinks at 2,
+ * and if forwarding is already on, whoever enabled it has dealt with this. */
+static void keep_host_slaac(void) {
+  char val[4] = {0};
+  if (read_file("/proc/sys/net/ipv6/conf/all/forwarding", val, sizeof(val)) >
+          0 &&
+      val[0] == '1')
+    return;
+
+  DIR *d = opendir("/proc/sys/net/ipv6/conf");
+  if (!d)
+    return;
+  struct dirent *e;
+  while ((e = readdir(d))) {
+    if (e->d_name[0] == '.' || !strcmp(e->d_name, "all") ||
+        !strcmp(e->d_name, "lo") || !strncmp(e->d_name, "ds-", 3))
+      continue;
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "/proc/sys/net/ipv6/conf/%s/accept_ra",
+             e->d_name);
+    if (read_file(path, val, sizeof(val)) > 0 && val[0] == '1')
+      write_file(path, "2");
+  }
+  closedir(d);
+}
+
+/* NAT66 host side: the IPv6 mirror of steps 1, 2 and 5 below, modelled on
+ * LXC's lxc-net (ULA on the bridge, forwarding, one MASQUERADE rule, RAs).
+ *
+ * Runs once the bridge or the bridgeless veth is up. Fills *prefix with the
+ * /64 this container should be advertised and returns 1, or returns 0 when
+ * IPv6 stays off: the user disabled it, the kernel has no IPv6, or it has no
+ * ip6tables nat table. In that last case the container keeps a link-local
+ * address only and everything goes over IPv4 as before. */
+static int setup_nat6_host(ds_nl_ctx_t *ctx, struct ds_config *cfg,
+                           struct in6_addr *prefix) {
+  g_host_nat6 = 0;
+  if (cfg->disable_ipv6 ||
+      access("/proc/sys/net/ipv6/conf/all/forwarding", F_OK) != 0)
+    return 0;
+
+  /* Not a warning: stock GKI kernels have no IPv6 nat table, and telling
+   * every one of those users on every start would be noise. `droidspaces
+   * check` reports it. */
+  if (!ds_ipt6_available()) {
+    ds_log("[NET] IPv6 NAT unavailable (the kernel lacks CONFIG_IP6_NF_NAT or "
+           "CONFIG_IP6_NF_TARGET_MASQUERADE) - container stays IPv4 only");
+    return 0;
+  }
+
+  /* Our end is a router: it must have IPv6 on even if the host default is
+   * off, and it must never autoconfigure itself from a container's RA.
+   *
+   * accept_ra_rt_table only exists on Android kernels, where its default of
+   * -1000 makes the kernel file an interface's IPv6 connected routes in a
+   * private table (1000 + ifindex) instead of main. 0 means main, which is
+   * where our policy rule sends traffic for the container prefix. */
+  const char *iface = host_filter_iface();
+  static const char *const knobs[][2] = {{"disable_ipv6", "0"},
+                                         {"accept_ra", "0"},
+                                         {"autoconf", "0"},
+                                         {"accept_ra_rt_table", "0"}};
+  for (size_t i = 0; i < sizeof(knobs) / sizeof(knobs[0]); i++) {
+    char path[128];
+    snprintf(path, sizeof(path), "/proc/sys/net/ipv6/conf/%s/%s", iface,
+             knobs[i][0]);
+    write_file(path, knobs[i][1]);
+  }
+
+  struct in6_addr gw_ll;
+  inet_pton(AF_INET6, DS_NAT6_GW_LL, &gw_ll);
+  inet_pton(AF_INET6, DS_NAT6_PREFIX, prefix);
+
+  int err = ds_nl_add_addr6(ctx, iface, &gw_ll, 64);
+  if (cfg->net_bridgeless) {
+    /* No shared segment, so each container gets its own /64 routed at its
+     * veth. Reusing the last two octets of the IPv4 address means the IPv4
+     * allocator's uniqueness check covers this prefix too. */
+    struct in_addr v4;
+    if (inet_pton(AF_INET, cfg->static_nat_ip, &v4) != 1)
+      return 0;
+    memcpy(&prefix->s6_addr[6], (uint8_t *)&v4 + 2, 2);
+  } else if (err == 0) {
+    struct in6_addr gw = *prefix;
+    gw.s6_addr[15] = 1;
+    err = ds_nl_add_addr6(ctx, iface, &gw, 64);
+  }
+
+  /* Route the prefix in the main table ourselves, in both modes. Bridgeless
+   * has no address in the prefix, so nothing else would create the route.
+   * Bridge mode gets one from the kernel, but on Android it may sit in that
+   * private per-interface table: a bridge that existed before the sysctl
+   * above was written keeps its route there. Replies to the container are
+   * looked up in main, and without this they die as "network unreachable"
+   * while outbound packets and IPv4 carry on working. */
+  if (err == 0)
+    err = ds_nl_add_route6(ctx, prefix, 64, ds_nl_get_ifindex(ctx, iface));
+  if (err < 0) {
+    ds_warn("[NET] IPv6 setup on %s failed (%d) - container stays IPv4 only",
+            iface, err);
+    return 0;
+  }
+
+  /* Fail closed: without MASQUERADE the container would be handed an address
+   * and a default route that lead nowhere, and every IPv6 connection would
+   * hang until it timed out instead of falling back to IPv4 at once. A kernel
+   * with the nat table but no CONFIG_IP6_NF_TARGET_MASQUERADE lands here. */
+  if (install_family_rules(AF_INET6, DS_NAT6_SUBNET) < 0)
+    return 0;
+
+  keep_host_slaac();
+  write_file("/proc/sys/net/ipv6/conf/all/forwarding", "1");
+  g_host_nat6 = 1;
+
+  char pfx[INET6_ADDRSTRLEN];
+  inet_ntop(AF_INET6, prefix, pfx, sizeof(pfx));
+  ds_log("[NET] IPv6 NAT enabled: advertising %s/64 via %s", pfx,
+         DS_NAT6_GW_LL);
+  return 1;
 }
 
 /* setup_veth_host_side
@@ -737,12 +984,20 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
   ds_log("Setting up host-side NAT networking for %s (PID %d)...",
          cfg->container_name, (int)child_pid);
 
+  /* On a reboot cycle the snapshot below still describes the previous one.
+   * Keep its veth name: nobody else is going to delete it. */
+  char prev_veth[IFNAMSIZ];
+  int prev_bridgeless = g_host_bridgeless;
+  safe_strncpy(prev_veth, g_host_veth, sizeof(prev_veth));
+
   /* Snapshot everything install_netfilter_rules() needs, before anything else
    * touches the tables.  The monitor thread replays these to rebuild the rules
    * after a netd flush and must not read cfg directly - the reboot path
    * rewrites *cfg in place.  static_nat_ip is already resolved and persisted
    * before the fork, and is exactly what nat_container_ip is set to below. */
   g_host_bridgeless = cfg->net_bridgeless;
+  g_host_init_pid = child_pid;
+  g_host_dns_managed = cfg->net_mode == DS_NET_NAT && !cfg->dns_servers[0];
   safe_strncpy(g_host_veth, veth_host, sizeof(g_host_veth));
   g_host_port_forward_count = cfg->port_forward_count;
   memcpy(g_host_port_forwards, cfg->port_forwards,
@@ -760,6 +1015,20 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
   ds_log("[DEBUG] Cleaning up any stale interfaces: %s, %s", veth_host,
          veth_peer);
   ds_nl_del_link(ctx, veth_host);
+
+  /* The previous boot cycle's veth. The kernel only removes it once the old
+   * network namespace is freed, and a guest that was killed with TCP
+   * connections open keeps that namespace alive for minutes while its
+   * orphaned sockets retransmit into a bridge that now sends the replies to
+   * the new instance. Until then the leftover counts as another running
+   * container, so the last stop would keep the shared rules in place. */
+  if (prev_veth[0] && strcmp(prev_veth, veth_host) != 0) {
+    ds_nl_del_link(ctx, prev_veth);
+    if (prev_bridgeless) {
+      ds_ipt_remove_iface_rules(AF_INET, prev_veth);
+      ds_ipt_remove_iface_rules(AF_INET6, prev_veth);
+    }
+  }
 
   /* 1. Ensure bridge exists (SKIP for bridgeless fallback) */
   if (!cfg->net_bridgeless) {
@@ -859,6 +1128,11 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
     write_file(sysctl_path, "0");
   }
 
+  /* 5b. IPv6. Before the Android routing step, which adds the IPv6 policy
+   * rules only when this succeeded. */
+  struct in6_addr ra_prefix;
+  int nat6 = setup_nat6_host(ctx, cfg, &ra_prefix);
+
   /* 6. Move peer veth into container's network namespace */
   char netns_path[PATH_MAX];
   snprintf(netns_path, sizeof(netns_path), "/proc/%d/ns/net", child_pid);
@@ -928,7 +1202,8 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
      * to sibling veth ports; isolation is enforced by peer_mac filter in
      * the DHCP server loop, not by the socket bind alone. */
     const char *dhcp_iface = veth_host;
-    ds_dhcp_server_start(cfg, dhcp_iface, offer_ip, inet_addr(DS_NAT_GW_IP));
+    ds_dhcp_server_start(cfg, dhcp_iface, offer_ip, inet_addr(DS_NAT_GW_IP),
+                         nat6 ? &ra_prefix : NULL);
 
     /* Store the container IP string (plain dotted-decimal) for port-forward
      * cleanup later.  static_nat_ip is already in that exact format. */
@@ -1050,6 +1325,13 @@ static int gateway_ensure_lan_uplink_locked(struct ds_config *cfg,
       return -1;
     }
   }
+  /* IP-less has to hold for IPv6 too. Android leaves accept_ra at 2, so the
+   * host would otherwise take an address and a default route from the
+   * gateway's own router advertisements and sit on the LAN it only switches. */
+  char v6_off[128];
+  snprintf(v6_off, sizeof(v6_off), "/proc/sys/net/ipv6/conf/%s/disable_ipv6",
+           bridge);
+  write_file(v6_off, "1");
   if (ds_nl_link_up(ctx, bridge) < 0)
     ds_warn("[NET] Gateway: failed to bring up bridge %s", bridge);
   write_file("/proc/sys/net/bridge/bridge-nf-call-iptables", "0");
@@ -1146,27 +1428,27 @@ static int gateway_ensure_lan_uplink_locked(struct ds_config *cfg,
 /* gateway_wire_client
  *
  * Fully wire ONE gateway-mode client into its delegated LAN, entirely from the
- * host side.  Because the host owns every step - including renaming the peer to
- * eth0 and bringing it up *inside* the client netns - this works identically
- * whether the client is just starting (its netns fresh, child blocked on the
- * handshake) or already running (the gateway came up later and is re-wiring
- * it). The gateway-mode child only brings up lo; it never touches eth0.
+ * host side.  Because the host owns every step - including bringing eth0 up
+ * *inside* the client netns - this works identically whether the client is
+ * just starting (its netns fresh, child blocked on the handshake) or already
+ * running (the gateway came up later and is wiring it). The gateway-mode child
+ * only brings up lo; it never touches eth0.
  *
- * Under the segment lock: ensure bridge + gateway uplink, create the app veth,
- * pin the client's stable MAC, attach the host end to the bridge, then
- * move+rename the peer into the client netns as eth0 (up).  Returns 0 on
- * success.  Caller passes the client's init pid and the confirmed-running
- * gateway's init pid. */
+ * Under the segment lock: ensure bridge + gateway uplink, then, unless the
+ * client's cable is already in place, create the app veth with its peer born
+ * inside the client netns as eth0 with the client's stable MAC, attach the
+ * host end to the bridge and bring both ends up.  Returns 0 on success.
+ * Caller passes the client's init pid and the confirmed-running gateway's
+ * init pid. */
 
 static int gateway_wire_client(struct ds_config *cfg, pid_t client_pid,
                                pid_t gateway_pid) {
   if (!cfg || client_pid <= 0 || gateway_pid <= 0)
     return -1;
 
-  char bridge[IFNAMSIZ], app_host[IFNAMSIZ], app_peer[IFNAMSIZ];
+  char bridge[IFNAMSIZ], app_host[IFNAMSIZ];
   gateway_bridge_name(cfg, bridge, sizeof(bridge));
   veth_host_name(cfg, client_pid, app_host, sizeof(app_host));
-  veth_peer_name(cfg, client_pid, app_peer, sizeof(app_peer));
 
   /* One lock spans the shared uplink AND this client's app-veth attach, so a
    * concurrent client's cleanup cannot reap the bridge between them. */
@@ -1185,21 +1467,52 @@ static int gateway_wire_client(struct ds_config *cfg, pid_t client_pid,
     goto out;
   }
 
+  char netns[PATH_MAX];
+  snprintf(netns, sizeof(netns), "/proc/%d/ns/net", (int)client_pid);
+
+  /* A client's cable runs to the host bridge, not through the gateway, so a
+   * gateway restart leaves it intact and only the uplink above needs
+   * rebuilding. Replacing a working cable takes eth0 away from under the
+   * client's DHCP client: it loses its address, and on kernels before 5.x the
+   * new link shows up under its raw name and is renamed to eth0 afterwards,
+   * which older systemd-networkd (Ubuntu 22.04) never picks up again. So only
+   * a cable that is really broken is rebuilt. */
+  if (ds_nl_link_exists(ctx, app_host) && netns_has_link(netns, "eth0")) {
+    /* Cheap and idempotent, in case the bridge itself was recreated */
+    if (ds_nl_set_master(ctx, app_host, bridge) < 0)
+      ds_warn("[NET] Gateway: failed to attach %s to %s", app_host, bridge);
+    ds_nl_link_up(ctx, app_host);
+    ds_nl_close(ctx);
+    ret = 0;
+    ds_log("Gateway: '%s' is still wired to %s, left as is",
+           cfg->container_name, bridge);
+    goto out;
+  }
+
   ds_nl_del_link(ctx, app_host); /* drop any stale half from a prior wiring */
-  ds_log("[NET] Gateway: creating app veth %s <-> %s", app_host, app_peer);
-  if (ds_nl_create_veth(ctx, app_host, app_peer) < 0) {
-    ds_warn("[NET] Gateway: failed to create app veth pair");
+
+  int netns_fd = open(netns, O_RDONLY | O_CLOEXEC);
+  if (netns_fd < 0) {
+    ds_warn("[NET] Gateway: failed to open client netns %s: %s", netns,
+            strerror(errno));
     ds_nl_close(ctx);
     goto out;
   }
 
-  /* Pin the client's stable, name-derived MAC on the peer (becomes eth0) before
-   * the move, so the gateway's DHCP leases see one host across reboots. */
-  {
-    uint8_t mac[6];
-    ds_derive_mac(cfg->container_name, "ds-mac:", mac);
-    if (ds_nl_set_mac(ctx, app_peer, mac) < 0)
-      ds_warn("[NET] Gateway: failed to pin MAC on %s", app_peer);
+  /* The peer is created inside the client, as eth0 from its first moment, so
+   * a client that is already running never sees a half-named link. Its MAC is
+   * derived from the container name, so the gateway's DHCP leases see one
+   * host across reboots. */
+  uint8_t mac[6];
+  ds_derive_mac(cfg->container_name, "ds-mac:", mac);
+  ds_log("[NET] Gateway: creating app veth %s <-> eth0 in '%s'", app_host,
+         cfg->container_name);
+  int created = ds_nl_create_veth_in(ctx, app_host, "eth0", netns_fd, mac);
+  close(netns_fd);
+  if (created < 0) {
+    ds_warn("[NET] Gateway: failed to create app veth pair");
+    ds_nl_close(ctx);
+    goto out;
   }
 
   ds_net_disable_tx_checksum(app_host);
@@ -1207,36 +1520,9 @@ static int gateway_wire_client(struct ds_config *cfg, pid_t client_pid,
     ds_warn("[NET] Gateway: failed to attach %s to %s", app_host, bridge);
   if (ds_nl_link_up(ctx, app_host) < 0)
     ds_warn("[NET] Gateway: failed to bring up %s", app_host);
-
-  char netns[PATH_MAX];
-  snprintf(netns, sizeof(netns), "/proc/%d/ns/net", (int)client_pid);
-  int netns_fd = open(netns, O_RDONLY | O_CLOEXEC);
-  if (netns_fd < 0) {
-    ds_warn("[NET] Gateway: failed to open client netns %s: %s", netns,
-            strerror(errno));
-    ds_nl_del_link(ctx, app_host);
-    ds_nl_close(ctx);
-    goto out;
-  }
-
-  /* Atomic move+rename into the client as eth0 (no transient raw-name device
-   * for the container's own DHCP/networkd to race), with a plain-move fallback.
-   */
-  if (ds_nl_move_to_netns_named(ctx, app_peer, netns_fd, "eth0") != 0) {
-    ds_warn("[NET] Gateway: atomic move+rename of %s failed - falling back",
-            app_peer);
-    if (ds_nl_move_to_netns(ctx, app_peer, netns_fd) < 0) {
-      ds_warn("[NET] Gateway: move of %s into client netns failed", app_peer);
-      close(netns_fd);
-      ds_nl_del_link(ctx, app_host);
-      ds_nl_close(ctx);
-      goto out;
-    }
-  }
-  close(netns_fd);
   ds_nl_close(ctx);
 
-  if (ds_netns_rename_up(netns, app_peer, "eth0") < 0)
+  if (ds_netns_rename_up(netns, "eth0", "eth0") < 0)
     ds_warn("[NET] Gateway: wired '%s' but could not bring up its eth0",
             cfg->container_name);
 
@@ -1284,6 +1570,34 @@ int setup_gateway_veth_side(struct ds_config *cfg, pid_t child_pid) {
   ds_log("[NET] Gateway: wiring '%s' to gateway '%s'", cfg->container_name,
          cfg->gateway_container);
   return gateway_wire_client(cfg, child_pid, gw_pid);
+}
+
+/* ds_net_gateway_reconcile
+ *
+ * Called from a gateway client's own monitor until it returns 1, meaning the
+ * client's cable is in place.
+ *
+ * A client that starts before its gateway is left for the gateway's boot scan
+ * below, and a client that starts after it wires itself. Both sides decide by
+ * looking for the other's pidfile, which only appears once that container's
+ * init has exec'd. Two containers booting at the same moment therefore each
+ * see the other as "not running", and neither ever wires the client. So the
+ * client keeps looking until it is connected. */
+int ds_net_gateway_reconcile(struct ds_config *cfg, pid_t client_pid) {
+  if (!cfg || client_pid <= 0)
+    return 0;
+
+  char app_host[IFNAMSIZ];
+  veth_host_name(cfg, client_pid, app_host, sizeof(app_host));
+  ds_nl_ctx_t *ctx = ds_nl_open();
+  int wired = ctx && ds_nl_link_exists(ctx, app_host);
+  if (ctx)
+    ds_nl_close(ctx);
+  if (wired)
+    return 1;
+
+  pid_t gw_pid = gateway_pid_of(cfg->gateway_container);
+  return gw_pid > 0 && gateway_wire_client(cfg, client_pid, gw_pid) == 0;
 }
 
 /* ds_net_rewire_gateway_clients
@@ -1533,8 +1847,8 @@ static void setup_resolv_conf(struct ds_config *cfg) {
     }
   } else {
     mkdir("/run/droidspaces", 0755);
-    write_file("/run/droidspaces/resolv.conf", cfg->dns_server_content);
-    target = "/run/droidspaces/resolv.conf";
+    write_file(DS_RESOLV_CONF, cfg->dns_server_content);
+    target = DS_RESOLV_CONF;
   }
 
   unlink("/etc/resolv.conf");
@@ -1562,12 +1876,9 @@ int fix_networking_rootfs(struct ds_config *cfg) {
   char hosts_content[1024];
   const char *hostname = (cfg->hostname[0]) ? cfg->hostname : "localhost";
 
-  /* IPv6 is enabled in host mode and gateway mode unless explicitly disabled.
-   * Gateway mode is policy-owned by OpenWrt, so IPv6 RA/DHCPv6 should be able
-   * to operate inside the application container netns. */
-  int ipv6_enabled =
-      ((cfg->net_mode == DS_NET_HOST || cfg->net_mode == DS_NET_GATEWAY) &&
-       !cfg->disable_ipv6);
+  /* IPv6 is on in every mode unless explicitly disabled. NAT gets it from
+   * our Router Advertisements, gateway mode from whatever OpenWrt hands out. */
+  int ipv6_enabled = !cfg->disable_ipv6;
   if (ipv6_enabled) {
     snprintf(hosts_content, sizeof(hosts_content),
              "127.0.0.1\tlocalhost\n"
@@ -1597,6 +1908,12 @@ int fix_networking_rootfs(struct ds_config *cfg) {
     }
     write_file("/proc/sys/net/ipv6/conf/all/disable_ipv6", "1");
     write_file("/proc/sys/net/ipv6/conf/default/disable_ipv6", "1");
+  } else if (cfg->net_mode == DS_NET_NAT) {
+    /* Docker and friends turn on forwarding inside the container, and the
+     * kernel then ignores our RAs unless accept_ra is 2. Without this the
+     * IPv6 default route quietly expires half an hour after dockerd starts. */
+    write_file("/proc/sys/net/ipv6/conf/default/accept_ra", "2");
+    write_file("/proc/sys/net/ipv6/conf/eth0/accept_ra", "2");
   }
 
   /* 5. unprivileged ICMP sockets: new network namespaces reset
@@ -1605,21 +1922,6 @@ int fix_networking_rootfs(struct ds_config *cfg) {
   write_file("/proc/sys/net/ipv4/ping_group_range", "0 2147483647");
 
   return 0;
-}
-
-/* Runtime introspection */
-
-int detect_ipv6_in_container(pid_t pid) {
-  char path[PATH_MAX];
-  build_proc_root_path(pid, "/proc/sys/net/ipv6/conf/all/disable_ipv6", path,
-                       sizeof(path));
-
-  char buf[16];
-  if (read_file(path, buf, sizeof(buf)) < 0)
-    return -1;
-
-  /* 0 means enabled, 1 means disabled */
-  return (buf[0] == '0') ? 1 : 0;
 }
 
 /* Uplink Route Monitor
@@ -1658,10 +1960,11 @@ static int uplink_candidate_ok(const char *ifname) {
   return iface_is_running(ifname);
 }
 
-static void log_uplink_change(const char *ifname, int table,
-                              const char *method) {
+static void log_uplink_change(const char *ifname, int table, const char *method,
+                              int family) {
   if (strcmp(g_last_uplink_iface, ifname) != 0) {
-    ds_log("[NET] Active uplink: %s (table %d) [%s]", ifname, table, method);
+    ds_log("[NET] Active uplink: %s (table %d) [%s%s]", ifname, table, method,
+           family == AF_INET6 ? ", IPv6 only" : "");
     safe_strncpy(g_last_uplink_iface, ifname, sizeof(g_last_uplink_iface));
   }
   g_uplink_fail_warned = 0; /* reset so next failure logs once */
@@ -1701,7 +2004,7 @@ static int scan_uplink_whitelist(ds_nl_ctx_t *ctx, char *iface_out,
       if (!uplink_candidate_ok(all_ifaces[j]))
         continue;
       int tbl = 0;
-      if (ds_nl_get_iface_table(ctx, all_ifaces[j], &tbl) != 0)
+      if (ds_nl_get_iface_table(ctx, AF_INET, all_ifaces[j], &tbl) != 0)
         continue;
       if (iface_out)
         safe_strncpy(iface_out, all_ifaces[j], IFNAMSIZ);
@@ -1714,14 +2017,14 @@ static int scan_uplink_whitelist(ds_nl_ctx_t *ctx, char *iface_out,
 }
 
 /* Manual override: resolve the user-pinned --upstream list in priority order.
- * The first entry that is RUNNING and has an IPv4 route wins.  Literal
+ * The first entry that is RUNNING and has a route of `family` wins.  Literal
  * entries are checked directly; wildcard entries (containing * or ?) are
  * matched with fnmatch() against the live interface list (handles dynamic names
  * like rmnet_dataX or v4-rmnet_dataX whose number changes across reconnects).
  * No exclude heuristics apply here - the user picked the interface
  * deliberately. Returns 0 + fills iface/table, or -ENOENT when none are
  * currently available. */
-static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, char *iface_out,
+static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, int family, char *iface_out,
                                  int *table_out) {
   char all_ifaces[64][IFNAMSIZ];
   int all_count = -1; /* enumerated lazily, only if a wildcard needs it */
@@ -1732,7 +2035,8 @@ static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, char *iface_out,
 
     if (!is_wild) {
       int tbl = 0;
-      if (iface_is_running(pat) && ds_nl_get_iface_table(ctx, pat, &tbl) == 0) {
+      if (iface_is_running(pat) &&
+          ds_nl_get_iface_table(ctx, family, pat, &tbl) == 0) {
         if (iface_out)
           safe_strncpy(iface_out, pat, IFNAMSIZ);
         if (table_out)
@@ -1749,7 +2053,7 @@ static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, char *iface_out,
         continue;
       int tbl = 0;
       if (!iface_is_running(all_ifaces[j]) ||
-          ds_nl_get_iface_table(ctx, all_ifaces[j], &tbl) != 0)
+          ds_nl_get_iface_table(ctx, family, all_ifaces[j], &tbl) != 0)
         continue;
       if (iface_out)
         safe_strncpy(iface_out, all_ifaces[j], IFNAMSIZ);
@@ -1761,7 +2065,8 @@ static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, char *iface_out,
   return -ENOENT;
 }
 
-/* Find the interface/table currently providing internet access.
+/* One pass over the detection tiers for a single address family. Fills
+ * name (IFNAMSIZ) and *tbl and returns how the uplink was found, or NULL.
  *
  * If --upstream is set this is a pure manual override: resolve ONLY from that
  * list (resolve_pinned_uplink) and disable all auto-detection - the WAN never
@@ -1773,70 +2078,76 @@ static int resolve_pinned_uplink(ds_nl_ctx_t *ctx, char *iface_out,
  *      and never points at IMS/MMS-only interfaces.  Also the only
  *      interface Qualcomm IPA / MTK CCCI has hardware reply sessions
  *      for, which NAT'd forwarded traffic requires.
- *   2. The main routing table's IPv4 default route - the standard Linux
+ *   2. The main routing table's default route - the standard Linux
  *      case (what LXC/Docker implicitly rely on), and ROMs/chroots that
  *      populate the main table.
- *   3. Built-in whitelist scan of known uplink interface families.
+ *   3. Built-in whitelist scan of known uplink interface families, IPv4 only.
+ */
+static const char *probe_uplink(ds_nl_ctx_t *ctx, int family, char *name,
+                                int *tbl) {
+  /* Manual override: pinned --upstream list only, no fallback to auto-detect.
+   */
+  if (g_upstream_count > 0)
+    return resolve_pinned_uplink(ctx, family, name, tbl) == 0 ? "pinned" : NULL;
+
+  /* Tier 1: netd default-network rule (Android only - the rule simply
+   * does not exist elsewhere, but skip the dump cost off-Android). */
+  if (is_android() && ds_nl_get_android_default(ctx, family, name, tbl) == 0 &&
+      uplink_candidate_ok(name))
+    return "netd rule";
+
+  /* Tier 2: main-table default route (standard Linux semantics). */
+  name[0] = '\0';
+  *tbl = RT_TABLE_MAIN;
+  if (ds_nl_get_table_default_oif(ctx, family, RT_TABLE_MAIN, name) == 0 &&
+      uplink_candidate_ok(name))
+    return "main table";
+
+  /* Tier 3: built-in whitelist scan. IPv4 only, because a name match is a
+   * guess and the IMS bearer fits it: an rmnetX that is always up, IPv6, with
+   * its own default route. Whenever no real default network existed, the
+   * container's traffic went out through the carrier's voice network. */
+  name[0] = '\0';
+  *tbl = 0;
+  if (family == AF_INET && scan_uplink_whitelist(ctx, name, tbl) == 0)
+    return "whitelist scan";
+
+  return NULL;
+}
+
+/* Find the interface/table currently providing internet access.
  *
- * Returns 0 and fills iface_out (IFNAMSIZ) / table_out on success. */
+ * IPv4 goes through every tier first, so dual-stack and CLAT networks resolve
+ * exactly as they always did. Only when nothing carries IPv4 is an IPv6-only
+ * interface accepted: a carrier without NAT64 gives Android no v4-* device and
+ * no IPv4 route in any table, yet the container still reaches the internet
+ * through NAT66. Trying IPv6 per tier instead would let tier 1 return rmnetX
+ * on a CLAT network before tier 3 finds v4-rmnetX, and cost it its IPv4.
+ *
+ * Returns 0 and fills iface_out (IFNAMSIZ) / table_out on success. table_out
+ * is the IPv4 table, 0 for an IPv6-only uplink: sync_uplink6() works out the
+ * IPv6 table from the interface either way. */
 static int find_active_uplink(ds_nl_ctx_t *ctx, char *iface_out,
                               int *table_out) {
   char name[IFNAMSIZ] = {0};
-  int tbl = 0;
+  int tbl = 0, family = AF_INET;
 
-  /* Manual override: pinned --upstream list only, no fallback to auto-detect.
-   */
-  if (g_upstream_count > 0) {
-    if (resolve_pinned_uplink(ctx, name, &tbl) == 0) {
-      log_uplink_change(name, tbl, "pinned");
-      if (iface_out)
-        safe_strncpy(iface_out, name, IFNAMSIZ);
-      if (table_out)
-        *table_out = tbl;
-      return 0;
-    }
+  const char *method = probe_uplink(ctx, family, name, &tbl);
+  if (!method && g_host_nat6) {
+    family = AF_INET6;
+    method = probe_uplink(ctx, family, name, &tbl);
+  }
+  if (!method) {
     log_no_uplink();
     return -ENOENT;
   }
 
-  /* Tier 1: netd default-network rule (Android only - the rule simply
-   * does not exist elsewhere, but skip the dump cost off-Android). */
-  if (is_android() && ds_nl_get_android_default(ctx, name, &tbl) == 0 &&
-      uplink_candidate_ok(name)) {
-    log_uplink_change(name, tbl, "netd rule");
-    if (iface_out)
-      safe_strncpy(iface_out, name, IFNAMSIZ);
-    if (table_out)
-      *table_out = tbl;
-    return 0;
-  }
-
-  /* Tier 2: main-table default route (standard Linux semantics). */
-  name[0] = '\0';
-  if (ds_nl_get_table_default_oif(ctx, RT_TABLE_MAIN, name) == 0 &&
-      uplink_candidate_ok(name)) {
-    log_uplink_change(name, RT_TABLE_MAIN, "main table");
-    if (iface_out)
-      safe_strncpy(iface_out, name, IFNAMSIZ);
-    if (table_out)
-      *table_out = RT_TABLE_MAIN;
-    return 0;
-  }
-
-  /* Tier 3: built-in whitelist scan. */
-  name[0] = '\0';
-  tbl = 0;
-  if (scan_uplink_whitelist(ctx, name, &tbl) == 0) {
-    log_uplink_change(name, tbl, "whitelist scan");
-    if (iface_out)
-      safe_strncpy(iface_out, name, IFNAMSIZ);
-    if (table_out)
-      *table_out = tbl;
-    return 0;
-  }
-
-  log_no_uplink();
-  return -ENOENT;
+  log_uplink_change(name, tbl, method, family);
+  if (iface_out)
+    safe_strncpy(iface_out, name, IFNAMSIZ);
+  if (table_out)
+    *table_out = (family == AF_INET) ? tbl : 0;
+  return 0;
 }
 
 /* Re-probe which uplink is active and update the ip rule if needed. */
@@ -1869,8 +2180,10 @@ static void do_uplink_reprobe(void) {
    * blind reinstall through those binary fallbacks would stack duplicates. */
   const char *iface = host_filter_iface();
   if (iface[0] &&
-      ds_ipt_host_rules_present(iface, DS_DEFAULT_SUBNET,
-                                g_host_port_forward_count > 0) == 0) {
+      (ds_ipt_host_rules_present(AF_INET, iface, DS_DEFAULT_SUBNET,
+                                 g_host_port_forward_count > 0) == 0 ||
+       (g_host_nat6 &&
+        ds_ipt_host_rules_present(AF_INET6, iface, DS_NAT6_SUBNET, 0) == 0))) {
     ds_warn("[NET] Route monitor: host netfilter rules are missing "
             "(netd restart or firewall app?) - reinstalling");
     install_netfilter_rules();
@@ -1882,6 +2195,7 @@ static void do_uplink_reprobe(void) {
   if (find_active_uplink(ctx, new_iface, &new_table) != 0) {
     /* No uplink available. */
     if (g_upstream_count > 0) {
+      sync_uplink6(ctx, NULL);
       /* Pinned mode: the forced interface is gone.  Tear the FROM rule down so
        * container traffic is NOT silently re-routed onto a table the kernel may
        * recycle for a different network (no hopping / no leak).  When the
@@ -1908,6 +2222,9 @@ static void do_uplink_reprobe(void) {
     return;
   }
 
+  sync_uplink6(ctx, new_iface);
+  sync_resolv_order(new_table == 0);
+
   pthread_mutex_lock(&g_gw_mutex);
   int old_table = g_current_gw_table;
   pthread_mutex_unlock(&g_gw_mutex);
@@ -1928,8 +2245,17 @@ static void do_uplink_reprobe(void) {
     ds_nl_del_rule4(ctx, subnet_be, DS_NAT_PREFIX, 0, 0, old_table,
                     DS_RULE_PRIO_FROM_SUBNET);
 
-  if (ds_nl_add_rule4(ctx, subnet_be, DS_NAT_PREFIX, 0, 0, new_table,
-                      DS_RULE_PRIO_FROM_SUBNET) == 0) {
+  /* An IPv6-only uplink has no IPv4 table to point at. With the rule gone the
+   * host answers the container's IPv4 with "network unreachable" at once, so
+   * clients fall back to IPv6 instead of waiting on a dead route. */
+  if (new_table == 0) {
+    pthread_mutex_lock(&g_gw_mutex);
+    g_current_gw_table = 0;
+    pthread_mutex_unlock(&g_gw_mutex);
+    ds_log("[NET] Route monitor: uplink has no IPv4 - removed rule from %s",
+           DS_DEFAULT_SUBNET);
+  } else if (ds_nl_add_rule4(ctx, subnet_be, DS_NAT_PREFIX, 0, 0, new_table,
+                             DS_RULE_PRIO_FROM_SUBNET) == 0) {
     pthread_mutex_lock(&g_gw_mutex);
     g_current_gw_table = new_table;
     pthread_mutex_unlock(&g_gw_mutex);
@@ -2000,6 +2326,14 @@ static void *route_monitor_loop(void *arg) {
         ds_log("[NET] Route monitor: ip_forward was disabled - re-enabling...");
         write_file("/proc/sys/net/ipv4/ip_forward", "1\n");
       }
+    }
+
+    if (g_host_nat6) {
+      char val[4] = {0};
+      if (read_file("/proc/sys/net/ipv6/conf/all/forwarding", val,
+                    sizeof(val)) > 0 &&
+          val[0] == '0')
+        write_file("/proc/sys/net/ipv6/conf/all/forwarding", "1\n");
     }
 
     /* Same treatment for route_localnet - required for localhost port-forward
@@ -2203,8 +2537,7 @@ void ds_net_start_route_monitor(void) {
 
   pthread_mutex_lock(&g_gw_mutex);
   g_stop_monitor = 0;
-  if (pthread_create(&g_route_monitor_tid, NULL, route_monitor_loop, NULL) !=
-      0) {
+  if (ds_thread_create(&g_route_monitor_tid, route_monitor_loop, NULL) != 0) {
     ds_warn("[NET] Failed to start route monitor thread: %s", strerror(errno));
   } else {
     g_route_monitor_started = 1;
@@ -2287,6 +2620,12 @@ void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid) {
   if (!ctx)
     return;
 
+  /* Bridge or bridgeless is a property of the kernel, and ds-br0 is never
+   * deleted once it exists, so ask the kernel instead of trusting a flag that
+   * only start and restart ever probe for. A plain stop never set it, and
+   * left the per-veth rules of a bridgeless container behind. */
+  int bridgeless = !ds_nl_link_exists(ctx, DS_NAT_BRIDGE);
+
   /* 1. Delete host-side veth - peer in dead netns is already gone */
   char veth_host[IFNAMSIZ] = {0};
   pid_t effective_pid = container_pid > 0 ? container_pid : cfg->container_pid;
@@ -2308,8 +2647,10 @@ void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid) {
            "keeping shared iptables and routing rules",
            surviving);
     ds_ipt_remove_portforwards(cfg);
-    if (cfg->net_bridgeless && veth_host[0] != '\0')
-      ds_ipt_remove_iface_rules(veth_host);
+    if (bridgeless && veth_host[0] != '\0') {
+      ds_ipt_remove_iface_rules(AF_INET, veth_host);
+      ds_ipt_remove_iface_rules(AF_INET6, veth_host);
+    }
     ds_nl_close(ctx);
     return;
   }
@@ -2338,14 +2679,25 @@ void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid) {
       ds_nl_del_rule4(ctx, 0, 0, subnet, DS_NAT_PREFIX, 0, prios[i]);
       ds_nl_del_rule4(ctx, subnet, DS_NAT_PREFIX, 0, 0, 0, prios[i]);
     }
+
+    struct in6_addr net6;
+    inet_pton(AF_INET6, DS_NAT6_PREFIX, &net6);
+    ds_nl_rule6(ctx, 0, &net6, DS_NAT6_PREFIX_LEN, 0, 0,
+                DS_RULE_PRIO_TO_SUBNET);
+    ds_nl_rule6(ctx, 0, &net6, DS_NAT6_PREFIX_LEN, 1, 0,
+                DS_RULE_PRIO_FROM_SUBNET);
   }
 
   ds_nl_close(ctx);
 
-  /* 3. Remove iptables rules */
-  if (cfg->net_bridgeless && veth_host[0] != '\0') {
-    ds_ipt_remove_iface_rules(veth_host);
+  /* 3. Remove iptables rules. IPv6 unconditionally: the stop may run in a
+   * process that never set g_host_nat6, and removing rules that are not there
+   * is a no-op. */
+  if (bridgeless && veth_host[0] != '\0') {
+    ds_ipt_remove_iface_rules(AF_INET, veth_host);
+    ds_ipt_remove_iface_rules(AF_INET6, veth_host);
   }
   ds_ipt_remove_portforwards(cfg);
-  ds_ipt_remove_ds_rules();
+  ds_ipt_remove_ds_rules(AF_INET);
+  ds_ipt_remove_ds_rules(AF_INET6);
 }

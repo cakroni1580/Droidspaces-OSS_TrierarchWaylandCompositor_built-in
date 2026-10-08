@@ -43,6 +43,9 @@ data class ContainerConfigState(
     val gatewayNet: String = "",
     val gatewayIface: String = "",
     val gatewayBridge: String = "",
+    val memoryLimit: Long = 0,
+    val cpuQuota: Long = 0,
+    val pidsLimit: Long = 0,
 )
 
 /** Extract the editable config fields from an existing container. */
@@ -75,6 +78,9 @@ fun ContainerInfo.toConfigState(): ContainerConfigState = ContainerConfigState(
     gatewayNet = gatewayNet,
     gatewayIface = gatewayIface,
     gatewayBridge = gatewayBridge,
+    memoryLimit = memoryLimit,
+    cpuQuota = cpuQuota,
+    pidsLimit = pidsLimit,
 )
 
 /**
@@ -111,4 +117,7 @@ fun ContainerInfo.withConfig(state: ContainerConfigState): ContainerInfo = copy(
     gatewayNet = state.gatewayNet,
     gatewayIface = state.gatewayIface,
     gatewayBridge = state.gatewayBridge,
+    memoryLimit = state.memoryLimit,
+    cpuQuota = state.cpuQuota,
+    pidsLimit = state.pidsLimit,
 )

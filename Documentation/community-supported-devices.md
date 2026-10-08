@@ -1,8 +1,8 @@
 <!--
-title: Community-Supported Devices
+title: Community-supported devices
 section: Reference
 order: 3
-desc: Community-maintained compatibility list of Android devices verified to run Droidspaces.
+desc: Android devices that community members have run Droidspaces on, with kernel sources and downloads.
 keywords: droidspaces, supported, devices, android, device, compatibility, kernel, support, list, hardware
 -->
 
@@ -10,19 +10,19 @@ keywords: droidspaces, supported, devices, android, device, compatibility, kerne
 
 > [!NOTE]
 >
-> If you want to add your own Droidspaces kernel to this table, check out the [Contribution guidelines](#contribution-guidelines) section.
+> To add your own Droidspaces kernel to these tables, follow the [contribution guidelines](#contribution-guidelines).
 
 > [!WARNING]
 >
-> Flashing a custom kernel requires an unlocked bootloader. The Droidspaces developers are not responsible for any bricked devices, data loss, or hardware failure resulting from kernel installation.
+> Flashing a custom kernel requires an unlocked bootloader. The Droidspaces developers are not responsible for bricked devices, data loss or hardware failure caused by installing a kernel.
 >
-> This list is provided solely to help you locate device-specific source code.
+> This list exists only to help you find device-specific source code.
 >
-> These repositories have not been deeply audited or reviewed by the Droidspaces team. Proceed at your own risk.
+> The Droidspaces team has not audited or reviewed these repositories in depth. Use them at your own risk.
 
-This document is a community-maintained compatibility list for Android devices known to run Droidspaces successfully. It is intended to help people choose phones for self-hosting, especially when buying second-hand hardware.
+This is a community-maintained list of Android devices known to run Droidspaces. It is meant to help you choose a phone for self-hosting, especially when buying second-hand hardware.
 
-## Non-GKI Devices (Kernel 4.19 and lower)
+## Non-GKI devices (kernel 4.19 and lower)
 
 | Device Name | Model Number | Android / ROM | Baseband / Build | Kernel version | Root Method | Kernel Source | Download Link | Droidspaces Mode | GPU Acceleration | Status | Maintainer | Additional notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -32,11 +32,13 @@ This document is a community-maintained compatibility list for Android devices k
 | **Realme 6, 6i, 6s** | RMX2001L1 | RUI 2.0 - Android 11 | - | `4.14.336` | KSU-Next v3.2.0 / ReSukiSU v4.1.0 | [Source](https://github.com/Prime-TITAN-CameraMan/android_kernel_realme_nemo) | [Download](https://github.com/Prime-TITAN-CameraMan/android_kernel_realme_nemo/releases/tag/v1.1) | Both | Virgl | Working | [@Prime-TITAN-CameraMan](https://github.com/Prime-TITAN-CameraMan) | RUI 2.0 only & No Firewall Support (UFW/Fail2ban) |
 | **Redmi K20 Pro (China)** | M1903F11A | YAAP 16 - Banshee (Android 16) | `1.0.c3-0061-1017_2229_f7c3bc9ce` | `4.14.353` | KernelSU v3.2.4-gee75714a | [Source](https://github.com/Alhkxsj/CRom-KSU-Builder) | [Download](https://github.com/Alhkxsj/CRom-KSU-Builder/releases/latest/download/raphael_YAAP-sixteen_KernelSU-by-xx.zip) | Both | Turnip & Virgl | Working | [@Alhkxsj](https://github.com/Alhkxsj) | Kernel source is stock YAAP kernel; Droidspaces configs applied via automated build workflow |
 | **Redmi note 7 pro (violet)** | M1901F7S | LineagOS 23.2 - Android 16 | `.c2-00029-SM6150_GEN_PACK-1.352094.1.355031.2` | `4.14.357` | Magisk | [source](https://github.com/subhu2008/android_kernel_xiaomi_sm6150) | [Download](https://github.com/subhu2008/android_kernel_xiaomi_sm6150/releases/tag/stable) | Both | Turnip & Virgl | Working | [@subhu2008](https://github.com/subhu2008) | LineageOS 23.2 only. If it works on other AOSP ROM's too, then good. |
+| **Redmi K40** | M2012K11AC | MIUI / HyperOS - Android 12 - 16 | - | `4.19.325` | ReSukiSU v4.2.0 | [Source](https://github.com/KirinNova/android_kernel_xiaomi_sm8250) | [Download](https://github.com/KirinNova/android_kernel_xiaomi_sm8250/releases/download/kernel-alioth-34749673426/MIUI_alioth_ReSukiSU-SuSFS-Droidspaces_20260913_anykernel3.zip) | Both | Turnip & Virgl | Working | [@KirinNova](https://github.com/KirinNova) | Supports MIUI / HyperOS (Android 12-16) |
 | **Oneplus 8, 8T, 8Pro, 9R** | IN2010 | Lineage OS 23.2 - Android 16 | `Q_V1_P14` | `4.19.325` | none | [Source](https://github.com/JackA1ltman/dreamworld_oneplus_sm8250) | [Download](https://github.com/JackA1ltman/dreamworld_oneplus_sm8250/releases/tag/v1.2) | Both | Turnip & Virgl | Working | [@JackA1ltman](https://github.com/JackA1ltman) | Custom ROM only. Supported NTSYNC. |
-| **Redmi Note 10s** | M2101K7BG | LineageOS 23.2 - Android 16 | - | `4.19.325` | KernelSU-Next v3.3.0 | [Source](https://git.x01.dpdns.org/android_kernel_xiaomi_mt6785) [another Source](https://github.com/omrxm18/android_kernel_xiaomi_mt6785) | [Download](https://github.com/omrxm18/android_kernel_xiaomi_mt6785/releases/tag/v2.0) | omrxm18 | Working | Kernel Source is LineagOS-23.2-based. features listed in release
+| **Redmi Note 10s** | M2101K7BG | LineageOS 23.2 - Android 16 | - | `4.19.325` | KernelSU-Next v3.3.0 | [Source](https://git.x01.dpdns.org/android_kernel_xiaomi_mt6785) [another Source](https://github.com/omrxm18/android_kernel_xiaomi_mt6785) | [Download](https://github.com/omrxm18/android_kernel_xiaomi_mt6785/releases/tag/v2.0) | Both | Untested | Working | [@omrxm18](https://github.com/omrxm18) | Kernel source is LineageOS-23.2-based. Features listed in the release notes |
 | **Galaxy S8+ (Exynos)** | SM-G955F | LineageOS 18.1 - Android 11 | `RQ3A.211001.001` | `4.4.111` | Magisk | [Source](https://github.com/tingao/dream2lte-droidspaces-kernel) | [Download](https://github.com/tingao/dream2lte-droidspaces-kernel/releases/download/v1.0.0/dream2lte-lineage18.1-droidspaces-boot.img) | Daemon | Untested | Working | [@tingao](https://github.com/tingao) | Replaces BOOT partition only, flash via dd from a rooted shell. Magisk needs Daemon Mode enabled in Droidspaces settings plus a reboot. Tested against lineage-18.1-20250628-UNOFFICIAL-dream2lte specifically. GPU acceleration not tested. |
+| **moto g(50) 5G** | XT2149-1 | Android 12 (stock Motorola) | `S1RSS32.38-20-7-16` | `4.14.186` | KernelSU-Next v3.4.0 | [Source](https://github.com/tingao/saipan-droidspaces-kernel) | [Download](https://github.com/tingao/saipan-droidspaces-kernel/releases/download/v1.1.0/boot-saipan-ksu-cgroupv2-mem.img) | Daemon | Untested | Working | [@tingao](https://github.com/tingao) | MediaTek MT6833 (Dimensity 700). Replaces the BOOT partition only, flash with `fastboot flash boot`. The container runs on **cgroup v2**, so every process in it lands in its own host-side subtree and a memory cap can actually bind; needs `--privileged=noseccomp` and a systemd drop-in replacing `dockerd -H fd://` with a plain unix socket, and on v2 `cgroup-parent` has to come out of `daemon.json` or dockerd refuses to start. The handset's 17 prebuilt vendor modules were built from a source branch one patch level newer than the only one Motorola published, so the kernel warns on a symbol-CRC mismatch instead of rejecting every module. GPU acceleration untested. |
 
-## GKI Devices (Kernel 5.4 and up)
+## GKI devices (kernel 5.4 and up)
 
 | Device Name | Model Number | Android / ROM | Kernel version | Root Method | Kernel Source | Download Link | Droidspaces Mode | GPU Acceleration | Status | Maintainer | Additional notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -252,17 +254,17 @@ This document is a community-maintained compatibility list for Android devices k
 
 ## Contribution guidelines
 
-To keep this list useful and reliable, please follow these rules when adding or updating entries:
+When you add or update an entry, follow these rules so the list stays usable:
 
 - Add one device per row.
 - Fill every column completely.
 - Contributions should be honest, complete, and verifiable.
-- Provide a direct downloadable kernel archive (`zip`, `tar`, `img`) or a downloadable kernel package; inexperienced users should not need to compile the kernel themselves.
+- Provide a direct downloadable kernel archive (`zip`, `tar`, `img`) or a downloadable kernel package. Inexperienced users should not have to compile the kernel themselves.
 - Provide the exact source code link for your Droidspaces kernel in the Kernel Source column.
-- Document the exact `Baseband / Build` string (Mandatory for Non-GKI devices only).
-- Specify the `Root Method` used, such as `Magisk`, `KernelSU`, `APatch` or `none`.(Compile only the kernel without adding any implementation methods; you need to patch `init_boot` yourself to achieve root.)
+- Document the exact `Baseband / Build` string (mandatory for non-GKI devices only).
+- Specify the `Root Method` used, such as `Magisk`, `KernelSU`, `APatch` or `none` (`none` means the kernel was built without a root implementation, and you patch `init_boot` yourself to get root).
 - Set `Status` to one of: `Working`, `Partial`, or `Unusable`.
-- In Notes, include known quirks and issues, additional setup steps, and recommended workloads.
+- In the notes column, list known quirks and issues, extra setup steps and recommended workloads.
 - Submit contributions through GitHub pull requests.
-- Update entries when status changes, and keep the information current.
-- Match the entry to the kernel list in the table. 5.4 devices go in the 5.4 section, 5.10 devices go into the 5.10 section, and so forth. This helps maintain readability and reduce the cost of maintaining the list.
+- Update your entry when its status changes, and keep it current.
+- Put the entry in the table that matches its kernel version: 5.4 devices in the 5.4 section, 5.10 devices in the 5.10 section, and so on. This keeps the list readable and cheaper to maintain.

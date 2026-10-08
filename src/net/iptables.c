@@ -1,21 +1,22 @@
 /*
  * Droidspaces v6 - High-performance Container Runtime
  *
- * Surgical iptables rule management via raw IP_TABLES socket API.
- * Replaces all `iptables` shell invocations.
+ * Surgical iptables and ip6tables rule management via the raw IP_TABLES and
+ * IP6_TABLES socket APIs. One engine serves both families.
  *
  * Android Safety Contract (NEVER violate these)
  *   • Never flush any chain (would kill Android tethering/hotspot)
  *   • Never change any chain policy
  *   • Never touch rules we did not create
- *   • Only INSERT rules scoped to DS_NAT_BRIDGE / DS_DEFAULT_SUBNET
+ *   • Only INSERT rules scoped to our bridge/veth and our own subnets
  *   • Always check existence before inserting (fully idempotent)
  *
  * Kernel / API compatibility
  *   • Kernel 3.10+ (Android/Linux)
- *   • Uses getsockopt/setsockopt on AF_INET SOCK_RAW with IPPROTO_RAW
- *   • Falls back to iptables(8) binary on ENOPROTOOPT / EOPNOTSUPP / any
- *     kernel rejection
+ *   • Uses getsockopt/setsockopt on an AF_INET or AF_INET6 SOCK_RAW socket
+ *   • The raw socket is always tried first. The iptables(8) / ip6tables(8)
+ *     binary is the fallback for whatever the kernel rejects, and the only
+ *     path for the MSS clamp and port forwards.
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -27,8 +28,126 @@
 #include <linux/netfilter/nf_nat.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#include <linux/netfilter_ipv6/ip6_tables.h>
 
-/* CIDR helper - shared with network.c via the public header */
+/* Address family descriptor
+ *
+ * ip_tables and ip6_tables are the same machine with a different rule header.
+ * The table-level structs (getinfo, get_entries, replace) and the sockopt
+ * numbers are identical, so the engine below uses the ipt_ names for both.
+ * A rule entry is [family IP header][common tail], which moves target_offset
+ * and next_offset and changes the address width. Everything family specific
+ * is in this struct and in entry_view(). */
+
+struct xt_family {
+  int af;            /* AF_INET or AF_INET6: the raw socket's family */
+  int level;         /* IPPROTO_IP or IPPROTO_IPV6: the sockopt level */
+  size_t entry_sz;   /* sizeof the family's rule entry */
+  size_t off_target; /* offset of target_offset inside an entry */
+  size_t off_next;   /* offset of next_offset inside an entry */
+  size_t addr_len;   /* 4 or 16 */
+  const char *bin;   /* fallback binary */
+};
+
+static const struct xt_family xt_v4 = {
+    AF_INET,
+    IPPROTO_IP,
+    sizeof(struct ipt_entry),
+    offsetof(struct ipt_entry, target_offset),
+    offsetof(struct ipt_entry, next_offset),
+    4,
+    "iptables",
+};
+
+static const struct xt_family xt_v6 = {
+    AF_INET6,
+    IPPROTO_IPV6,
+    sizeof(struct ip6t_entry),
+    offsetof(struct ip6t_entry, target_offset),
+    offsetof(struct ip6t_entry, next_offset),
+    16,
+    "ip6tables",
+};
+
+static const struct xt_family *xt_family_of(int family) {
+  return family == AF_INET6 ? &xt_v6 : &xt_v4;
+}
+
+/* The engine relies on the two APIs sharing these layouts and numbers. If a
+ * kernel header ever breaks one of them the build stops here, rather than a
+ * table replace corrupting someone's firewall. */
+#define DS_XT_SAME(name, cond) typedef char ds_xt_same_##name[(cond) ? 1 : -1]
+DS_XT_SAME(getinfo, sizeof(struct ipt_getinfo) == sizeof(struct ip6t_getinfo));
+DS_XT_SAME(getinfo_size, offsetof(struct ipt_getinfo, size) ==
+                             offsetof(struct ip6t_getinfo, size));
+DS_XT_SAME(replace, sizeof(struct ipt_replace) == sizeof(struct ip6t_replace));
+DS_XT_SAME(replace_counters, offsetof(struct ipt_replace, counters) ==
+                                 offsetof(struct ip6t_replace, counters));
+DS_XT_SAME(entrytable, offsetof(struct ipt_get_entries, entrytable) ==
+                           offsetof(struct ip6t_get_entries, entrytable));
+DS_XT_SAME(sockopts, IPT_SO_GET_INFO == IP6T_SO_GET_INFO &&
+                         IPT_SO_GET_ENTRIES == IP6T_SO_GET_ENTRIES &&
+                         IPT_SO_SET_REPLACE == IP6T_SO_SET_REPLACE);
+DS_XT_SAME(inv_dstip, IPT_INV_DSTIP == IP6T_INV_DSTIP);
+
+static unsigned int ent_u16(const void *e, size_t off) {
+  uint16_t v;
+  memcpy(&v, (const uint8_t *)e + off, sizeof(v));
+  return v;
+}
+
+static unsigned int ent_next(const struct xt_family *f, const void *e) {
+  return ent_u16(e, f->off_next);
+}
+
+static unsigned int ent_target_off(const struct xt_family *f, const void *e) {
+  return ent_u16(e, f->off_target);
+}
+
+/* The match fields of one entry, whichever family it belongs to. This is the
+ * only place that knows the two IP header layouts. */
+struct xt_ent_view {
+  char *iniface, *outiface;
+  unsigned char *in_mask, *out_mask;
+  void *src, *smsk, *dst, *dmsk;
+  uint8_t *invflags;
+};
+
+static void entry_view(const struct xt_family *f, void *e,
+                       struct xt_ent_view *v) {
+  if (f->af == AF_INET6) {
+    struct ip6t_ip6 *ip = &((struct ip6t_entry *)e)->ipv6;
+    v->iniface = ip->iniface;
+    v->outiface = ip->outiface;
+    v->in_mask = ip->iniface_mask;
+    v->out_mask = ip->outiface_mask;
+    v->src = &ip->src;
+    v->smsk = &ip->smsk;
+    v->dst = &ip->dst;
+    v->dmsk = &ip->dmsk;
+    v->invflags = &ip->invflags;
+  } else {
+    struct ipt_ip *ip = &((struct ipt_entry *)e)->ip;
+    v->iniface = ip->iniface;
+    v->outiface = ip->outiface;
+    v->in_mask = ip->iniface_mask;
+    v->out_mask = ip->outiface_mask;
+    v->src = &ip->src;
+    v->smsk = &ip->smsk;
+    v->dst = &ip->dst;
+    v->dmsk = &ip->dmsk;
+    v->invflags = &ip->invflags;
+  }
+}
+
+/* Read-only walkers hold const blobs; the view is shared with the rule
+ * builders, which write through it. */
+static void entry_view_ro(const struct xt_family *f, const void *e,
+                          struct xt_ent_view *v) {
+  entry_view(f, (void *)(uintptr_t)e, v);
+}
+
+/* CIDR helpers - parse_cidr is shared with network.c via the public header */
 
 void parse_cidr(const char *cidr, uint32_t *ip_out, uint32_t *mask_out) {
   char buf[64];
@@ -49,7 +168,37 @@ void parse_cidr(const char *cidr, uint32_t *ip_out, uint32_t *mask_out) {
   *mask_out = (prefix == 0) ? 0u : htonl(0xffffffffu << (32 - prefix));
 }
 
-/* Module loader - best-effort, harmless on built-in or absent modprobe */
+/* Either family, into 16-byte buffers of which the first addr_len bytes are
+ * used. Returns 0, or -1 for a string that is not an address of this family.
+ */
+static int fam_parse_cidr(const struct xt_family *f, const char *cidr,
+                          uint8_t net[16], uint8_t mask[16]) {
+  char buf[64];
+  safe_strncpy(buf, cidr, sizeof(buf));
+
+  int prefix = (int)f->addr_len * 8;
+  char *slash = strchr(buf, '/');
+  if (slash) {
+    *slash = '\0';
+    prefix = atoi(slash + 1);
+  }
+  if (prefix < 0 || prefix > (int)f->addr_len * 8)
+    return -1;
+
+  memset(net, 0, 16);
+  memset(mask, 0, 16);
+  if (inet_pton(f->af, buf, net) != 1)
+    return -1;
+  for (size_t i = 0; i < f->addr_len && prefix > 0; i++, prefix -= 8)
+    mask[i] = (prefix >= 8) ? 0xff : (uint8_t)(0xff << (8 - prefix));
+  return 0;
+}
+
+/* Module loader - best-effort, harmless on built-in or absent modprobe.
+ *
+ * The kernel loads a table's module by itself the first time the table is
+ * asked for, but only once ip_tables / ip6_tables has registered the sockopt,
+ * and nothing autoloads those. Loading the table modules pulls them in. */
 
 static int modules_probed = 0;
 
@@ -61,6 +210,9 @@ static void probe_iptables_modules(void) {
   char *mods[] = {"iptable_nat",
                   "iptable_filter",
                   "iptable_mangle",
+                  "ip6table_nat",
+                  "ip6table_filter",
+                  "ip6table_mangle",
                   "ip_conntrack",
                   "xt_conntrack",
                   "nf_nat",
@@ -72,6 +224,41 @@ static void probe_iptables_modules(void) {
   }
 }
 
+/* Binary fallback
+ *
+ * One rule through iptables(8) or ip6tables(8). `spec` is everything after
+ * the chain name. The binary knows nothing about what we inserted earlier, so
+ * bin_ensure() checks before it inserts: without that, every container start
+ * on a host that has no raw API would stack another copy. */
+
+static int bin_rule(const struct xt_family *f, const char *op,
+                    const char *table, const char *chain,
+                    const char *const spec[]) {
+  const char *head[] = {f->bin, "-t", table, op, chain};
+  char *argv[24];
+  size_t n = 0;
+
+  for (size_t i = 0; i < sizeof(head) / sizeof(head[0]); i++)
+    argv[n++] = (char *)(uintptr_t)head[i];
+  for (size_t i = 0; spec[i] && n < sizeof(argv) / sizeof(argv[0]) - 1; i++)
+    argv[n++] = (char *)(uintptr_t)spec[i];
+  argv[n] = NULL;
+  return run_command_quiet(argv);
+}
+
+static int bin_ensure(const struct xt_family *f, const char *table,
+                      const char *chain, const char *const spec[]) {
+  if (bin_rule(f, "-C", table, chain, spec) == 0)
+    return 0;
+  /* An exit status is positive and every caller tests for < 0, so a refused
+   * rule used to read as success and NAT66 was announced with no MASQUERADE. */
+  return bin_rule(f, "-I", table, chain, spec) == 0 ? 0 : -1;
+}
+
+static const char *const k_mss_spec[] = {
+    "-p", "tcp",    "--tcp-flags",         "SYN,RST", "SYN",
+    "-j", "TCPMSS", "--clamp-mss-to-pmtu", NULL};
+
 /* Internal: get table info + entries blob via getsockopt
  *
  * Returns 0 on success.  *entries_out points to the allocated
@@ -80,16 +267,17 @@ static void probe_iptables_modules(void) {
  * Convenience macro: ENTRIES_BLOB(base) → pointer to the raw rule bytes
  * inside the ipt_get_entries allocation. */
 
-static int get_table(int fd, const char *table_name, struct ipt_getinfo *info,
-                     unsigned char **entries_out) {
+static int get_table(const struct xt_family *f, int fd, const char *table_name,
+                     struct ipt_getinfo *info, unsigned char **entries_out) {
   memset(info, 0, sizeof(*info));
   safe_strncpy(info->name, table_name, sizeof(info->name));
   socklen_t info_len = sizeof(*info);
 
-  if (getsockopt(fd, IPPROTO_IP, IPT_SO_GET_INFO, info, &info_len) < 0) {
-    ds_log("[IPT] get_table('%s') GET_INFO failed: %s", table_name,
-           strerror(errno));
-    return -errno;
+  if (getsockopt(fd, f->level, IPT_SO_GET_INFO, info, &info_len) < 0) {
+    int err = errno;
+    ds_log("[IPT] %s get_table('%s') GET_INFO failed: %s", f->bin, table_name,
+           strerror(err));
+    return -err;
   }
 
   size_t esz = sizeof(struct ipt_get_entries) + info->size;
@@ -101,10 +289,10 @@ static int get_table(int fd, const char *table_name, struct ipt_getinfo *info,
   entries->size = info->size;
   socklen_t elen = (socklen_t)esz;
 
-  if (getsockopt(fd, IPPROTO_IP, IPT_SO_GET_ENTRIES, entries, &elen) < 0) {
+  if (getsockopt(fd, f->level, IPT_SO_GET_ENTRIES, entries, &elen) < 0) {
     int err = errno;
-    ds_log("[IPT] get_table('%s') GET_ENTRIES failed: %s", table_name,
-           strerror(err));
+    ds_log("[IPT] %s get_table('%s') GET_ENTRIES failed: %s", f->bin,
+           table_name, strerror(err));
     free(entries);
     return -err;
   }
@@ -185,12 +373,14 @@ static const char *target_label(const struct xt_entry_target *t) {
 
 /* Internal: walk the blob to find an existing rule matching our fingerprint.
  *
- * All non-NULL/non-zero criteria must match simultaneously. */
+ * All non-NULL criteria must match simultaneously.  src and src_mask point at
+ * addr_len bytes, or are NULL for "any source". */
 
-static int rule_exists_in_hook(const struct ipt_getinfo *info,
+static int rule_exists_in_hook(const struct xt_family *f,
+                               const struct ipt_getinfo *info,
                                const unsigned char *blob, unsigned int hook_id,
                                const char *iface_in, const char *iface_out,
-                               uint32_t src, uint32_t src_mask,
+                               const void *src, const void *src_mask,
                                const char *target_name) {
   if (!info || !blob || hook_id >= NF_INET_NUMHOOKS ||
       !(info->valid_hooks & (1u << hook_id)))
@@ -201,15 +391,18 @@ static int rule_exists_in_hook(const struct ipt_getinfo *info,
   if (off > end || end > info->size)
     return 0;
 
-  while (off + sizeof(struct ipt_entry) <= end) {
-    const struct ipt_entry *e = (const struct ipt_entry *)(blob + off);
-    if (e->next_offset < sizeof(struct ipt_entry) ||
-        e->next_offset > end - off ||
-        e->target_offset + sizeof(struct xt_entry_target) > e->next_offset)
+  while (off + f->entry_sz <= end) {
+    const unsigned char *e = blob + off;
+    unsigned int next = ent_next(f, e);
+    unsigned int toff = ent_target_off(f, e);
+    if (next < f->entry_sz || next > end - off ||
+        toff + sizeof(struct xt_entry_target) > next)
       break;
 
     const struct xt_entry_target *t =
-        (const struct xt_entry_target *)((const uint8_t *)e + e->target_offset);
+        (const struct xt_entry_target *)(e + toff);
+    struct xt_ent_view v;
+    entry_view_ro(f, e, &v);
 
     int match = 1;
 
@@ -222,20 +415,37 @@ static int rule_exists_in_hook(const struct ipt_getinfo *info,
       }
     }
     if (match && iface_in && iface_in[0] &&
-        strncmp(e->ip.iniface, iface_in, IFNAMSIZ) != 0)
+        strncmp(v.iniface, iface_in, IFNAMSIZ) != 0)
       match = 0;
     if (match && iface_out && iface_out[0] &&
-        strncmp(e->ip.outiface, iface_out, IFNAMSIZ) != 0)
+        strncmp(v.outiface, iface_out, IFNAMSIZ) != 0)
       match = 0;
-    if (match && src != 0 &&
-        (e->ip.src.s_addr != src || e->ip.smsk.s_addr != src_mask))
+    if (match && src &&
+        (memcmp(v.src, src, f->addr_len) != 0 ||
+         memcmp(v.smsk, src_mask, f->addr_len) != 0))
       match = 0;
 
     if (match)
       return 1;
-    off += e->next_offset;
+    off += next;
   }
   return 0;
+}
+
+/* The standard target of an entry, or NULL when the entry is malformed or its
+ * target is an extension. Jump fixups only ever touch standard targets. */
+static struct xt_standard_target *
+entry_standard_target(const struct xt_family *f, unsigned char *e,
+                      unsigned int next) {
+  unsigned int toff = ent_target_off(f, e);
+  if (toff + sizeof(struct xt_standard_target) > next)
+    return NULL;
+
+  struct xt_entry_target *t = (struct xt_entry_target *)(e + toff);
+  if (t->u.user.name[0] != '\0' ||
+      t->u.target_size != (uint16_t)XT_ALIGN(sizeof(struct xt_standard_target)))
+    return NULL;
+  return (struct xt_standard_target *)t;
 }
 
 /* Internal: fixup_jump_targets
@@ -244,31 +454,23 @@ static int rule_exists_in_hook(const struct ipt_getinfo *info,
  * with a positive verdict (= absolute byte offset = chain jump) that pointed
  * to an entry AT OR AFTER insert_off must be incremented by new_rule_sz. */
 
-static void fixup_jump_targets(unsigned char *blob, unsigned int blob_sz,
-                               unsigned int insert_off, unsigned int delta) {
+static void fixup_jump_targets(const struct xt_family *f, unsigned char *blob,
+                               unsigned int blob_sz, unsigned int insert_off,
+                               unsigned int delta) {
   unsigned int off = 0;
 
   while (off < blob_sz) {
-    struct ipt_entry *e = (struct ipt_entry *)(blob + off);
+    unsigned char *e = blob + off;
+    unsigned int next = ent_next(f, e);
 
-    if (e->next_offset < sizeof(*e) || off + e->next_offset > blob_sz)
+    if (next < f->entry_sz || off + next > blob_sz)
       break;
 
-    if (e->target_offset + sizeof(struct xt_standard_target) <=
-        e->next_offset) {
-      struct xt_entry_target *t =
-          (struct xt_entry_target *)((uint8_t *)e + e->target_offset);
+    struct xt_standard_target *st = entry_standard_target(f, e, next);
+    if (st && st->verdict >= (int)insert_off)
+      st->verdict += (int)delta;
 
-      if (t->u.user.name[0] == '\0' &&
-          t->u.target_size ==
-              (uint16_t)XT_ALIGN(sizeof(struct xt_standard_target))) {
-        struct xt_standard_target *st = (struct xt_standard_target *)t;
-        if (st->verdict >= (int)insert_off)
-          st->verdict += (int)delta;
-      }
-    }
-
-    off += e->next_offset;
+    off += next;
   }
 }
 
@@ -283,7 +485,8 @@ static void fixup_jump_targets(unsigned char *blob, unsigned int blob_sz,
  * can no longer resolve the shifted jump (xt_find_jump_offset fails) and
  * rejects the whole table replace with ELOOP. */
 
-static void fixup_jump_targets_removed(unsigned char *blob,
+static void fixup_jump_targets_removed(const struct xt_family *f,
+                                       unsigned char *blob,
                                        unsigned int blob_sz,
                                        const unsigned int *old_offsets,
                                        const unsigned int *removed_before,
@@ -291,34 +494,25 @@ static void fixup_jump_targets_removed(unsigned char *blob,
   unsigned int off = 0;
 
   while (off < blob_sz) {
-    struct ipt_entry *e = (struct ipt_entry *)(blob + off);
+    unsigned char *e = blob + off;
+    unsigned int next = ent_next(f, e);
 
-    if (e->next_offset < sizeof(*e) || off + e->next_offset > blob_sz)
+    if (next < f->entry_sz || off + next > blob_sz)
       break;
 
-    if (e->target_offset + sizeof(struct xt_standard_target) <=
-        e->next_offset) {
-      struct xt_entry_target *t =
-          (struct xt_entry_target *)((uint8_t *)e + e->target_offset);
-
-      if (t->u.user.name[0] == '\0' &&
-          t->u.target_size ==
-              (uint16_t)XT_ALIGN(sizeof(struct xt_standard_target))) {
-        struct xt_standard_target *st = (struct xt_standard_target *)t;
-        if (st->verdict >= 0) {
-          /* Jump target: find the tracked entry that started at this old
-           * offset and subtract the bytes removed before it. */
-          for (unsigned int k = 0; k < nents; k++) {
-            if (old_offsets[k] == (unsigned int)st->verdict) {
-              st->verdict -= (int)removed_before[k];
-              break;
-            }
-          }
+    struct xt_standard_target *st = entry_standard_target(f, e, next);
+    if (st && st->verdict >= 0) {
+      /* Jump target: find the tracked entry that started at this old
+       * offset and subtract the bytes removed before it. */
+      for (unsigned int k = 0; k < nents; k++) {
+        if (old_offsets[k] == (unsigned int)st->verdict) {
+          st->verdict -= (int)removed_before[k];
+          break;
         }
       }
     }
 
-    off += e->next_offset;
+    off += next;
   }
 }
 
@@ -326,7 +520,8 @@ static void fixup_jump_targets_removed(unsigned char *blob,
  *
  * Inserts new_rule at the very beginning of the given hook's chain. */
 
-static int insert_rule_at_hook(int fd, const char *table_name,
+static int insert_rule_at_hook(const struct xt_family *f, int fd,
+                               const char *table_name,
                                struct ipt_getinfo *info_in,
                                unsigned char *blob_in, unsigned int hook_id,
                                const void *new_rule, unsigned int new_rule_sz) {
@@ -346,8 +541,8 @@ static int insert_rule_at_hook(int fd, const char *table_name,
   int max_retries = 5; /* generous: handles bursts of netd activity */
   int ret = -1, err = EAGAIN;
 
-  ds_log("[IPT] insert_rule_at_hook: table='%s' hook=%u rule_sz=%u", table_name,
-         hook_id, new_rule_sz);
+  ds_log("[IPT] insert_rule_at_hook: %s table='%s' hook=%u rule_sz=%u", f->bin,
+         table_name, hook_id, new_rule_sz);
 
   while (max_retries-- > 0) {
     unsigned int insert_off = cur_info.hook_entry[hook_id];
@@ -416,9 +611,9 @@ static int insert_rule_at_hook(int fd, const char *table_name,
              old_sz - insert_off);
 
     /* Patch stale jump verdicts in the shifted suffix */
-    fixup_jump_targets(nb, new_sz, insert_off, new_rule_sz);
+    fixup_jump_targets(f, nb, new_sz, insert_off, new_rule_sz);
 
-    ret = setsockopt(fd, IPPROTO_IP, IPT_SO_SET_REPLACE, repl,
+    ret = setsockopt(fd, f->level, IPT_SO_SET_REPLACE, repl,
                      (socklen_t)replace_sz);
     err = errno;
 
@@ -441,7 +636,7 @@ static int insert_rule_at_hook(int fd, const char *table_name,
 
       struct ipt_getinfo new_info;
       unsigned char *new_base = NULL;
-      if (get_table(fd, table_name, &new_info, &new_base) < 0) {
+      if (get_table(f, fd, table_name, &new_info, &new_base) < 0) {
         ds_log("[IPT]   refetch of '%s' failed, giving up", table_name);
         ret = -1;
         err = EAGAIN;
@@ -474,12 +669,19 @@ static int insert_rule_at_hook(int fd, const char *table_name,
  * Builds a new blob that omits every entry matching any of our fingerprints,
  * then submits it atomically via IPT_SO_SET_REPLACE.
  *
- * Two-pass algorithm avoids in-place mutation of the blob being walked. */
+ * Two-pass algorithm avoids in-place mutation of the blob being walked.
+ *
+ * match_src / match_mask point at addr_len bytes, or are NULL when only the
+ * interface rules are wanted.
+ *
+ * Returns the number of rules removed (0 when nothing matched), or a negative
+ * errno when the table replace failed. */
 
-static int remove_matching_rules(int fd, const char *table_name,
+static int remove_matching_rules(const struct xt_family *f, int fd,
+                                 const char *table_name,
                                  struct ipt_getinfo *info_in,
                                  unsigned char *blob_in, unsigned int hook_id,
-                                 uint32_t match_src, uint32_t match_mask,
+                                 const void *match_src, const void *match_mask,
                                  const char *match_iface,
                                  unsigned int iface_flags) {
   if (!info_in || !blob_in || hook_id >= NF_INET_NUMHOOKS ||
@@ -501,6 +703,7 @@ static int remove_matching_rules(int fd, const char *table_name,
 
   int max_retries = 5;
   int ret = 0, err = 0;
+  int removed = 0;
 
   while (max_retries-- > 0) {
     unsigned char *new_blob = malloc(cur_info.size);
@@ -522,6 +725,7 @@ static int remove_matching_rules(int fd, const char *table_name,
       free(new_blob);
       free(old_offsets);
       free(removed_before);
+      ret = -1;
       err = ENOMEM;
       break;
     }
@@ -533,21 +737,22 @@ static int remove_matching_rules(int fd, const char *table_name,
     unsigned int ei = 0;
 
     /* Pass 1: walk, classify, build new_blob */
-    while (offset + sizeof(struct ipt_entry) <= cur_info.size &&
-           ei < cur_info.num_entries) {
-      const struct ipt_entry *e = (const struct ipt_entry *)(cur_blob + offset);
-      if (e->next_offset < sizeof(struct ipt_entry) ||
-          e->next_offset > cur_info.size - offset ||
-          e->target_offset + sizeof(struct xt_entry_target) > e->next_offset)
+    while (offset + f->entry_sz <= cur_info.size && ei < cur_info.num_entries) {
+      const unsigned char *e = cur_blob + offset;
+      unsigned int next = ent_next(f, e);
+      unsigned int toff = ent_target_off(f, e);
+      if (next < f->entry_sz || next > cur_info.size - offset ||
+          toff + sizeof(struct xt_entry_target) > next)
         break;
 
       old_offsets[ei] = offset;
       removed_before[ei] = cumulative_gone;
 
       const struct xt_entry_target *t =
-          (const struct xt_entry_target *)((const uint8_t *)e +
-                                           e->target_offset);
+          (const struct xt_entry_target *)(e + toff);
       const char *tname = t->u.user.name;
+      struct xt_ent_view v;
+      entry_view_ro(f, e, &v);
 
       int is_ours = 0;
 
@@ -556,21 +761,22 @@ static int remove_matching_rules(int fd, const char *table_name,
 
       /* MASQUERADE for our subnet */
       if (match_src && strcmp(tname, "MASQUERADE") == 0 &&
-          e->ip.src.s_addr == match_src && e->ip.smsk.s_addr == match_mask &&
-          e->ip.dst.s_addr == match_src && e->ip.dmsk.s_addr == match_mask &&
-          (e->ip.invflags & IPT_INV_DSTIP))
+          memcmp(v.src, match_src, f->addr_len) == 0 &&
+          memcmp(v.smsk, match_mask, f->addr_len) == 0 &&
+          memcmp(v.dst, match_src, f->addr_len) == 0 &&
+          memcmp(v.dmsk, match_mask, f->addr_len) == 0 &&
+          (*v.invflags & IPT_INV_DSTIP))
         is_ours = 1;
 
       /* ACCEPT on the exact interface/direction we inserted. */
       if (!is_ours && match_iface && match_iface[0] && target_is_accept(t)) {
         if ((iface_flags & DS_IPT_MATCH_IN) &&
-            iface_exact_match(e->ip.iniface, e->ip.iniface_mask, match_iface) &&
-            iface_empty(e->ip.outiface, e->ip.outiface_mask))
+            iface_exact_match(v.iniface, v.in_mask, match_iface) &&
+            iface_empty(v.outiface, v.out_mask))
           is_ours = 1;
         if ((iface_flags & DS_IPT_MATCH_OUT) &&
-            iface_exact_match(e->ip.outiface, e->ip.outiface_mask,
-                              match_iface) &&
-            iface_empty(e->ip.iniface, e->ip.iniface_mask))
+            iface_exact_match(v.outiface, v.out_mask, match_iface) &&
+            iface_empty(v.iniface, v.in_mask))
           is_ours = 1;
       }
 
@@ -589,22 +795,22 @@ static int remove_matching_rules(int fd, const char *table_name,
           ds_warn("[IPT] remove: would remove underflow entry at offset %u - "
                   "skipping",
                   offset);
-          memcpy(new_blob + new_sz, e, e->next_offset);
-          new_sz += e->next_offset;
-          offset += e->next_offset;
+          memcpy(new_blob + new_sz, e, next);
+          new_sz += next;
+          offset += next;
           ei++;
           continue;
         }
-        ds_log("[IPT] remove: matched '%s' rule at offset %u", target_label(t),
-               offset);
-        cumulative_gone += e->next_offset;
+        ds_log("[IPT] remove: matched %s '%s' rule at offset %u", f->bin,
+               target_label(t), offset);
+        cumulative_gone += next;
         removed_count++;
       } else {
-        memcpy(new_blob + new_sz, e, e->next_offset);
-        new_sz += e->next_offset;
+        memcpy(new_blob + new_sz, e, next);
+        new_sz += next;
       }
 
-      offset += e->next_offset;
+      offset += next;
       ei++;
     }
     old_offsets[ei] = offset;
@@ -621,7 +827,7 @@ static int remove_matching_rules(int fd, const char *table_name,
     /* Re-base surviving jump verdicts for the bytes just removed; without this
      * the kernel rejects the table replace with ELOOP (see
      * fixup_jump_targets_removed). */
-    fixup_jump_targets_removed(new_blob, new_sz, old_offsets, removed_before,
+    fixup_jump_targets_removed(f, new_blob, new_sz, old_offsets, removed_before,
                                ei + 1);
 
     /* Build ipt_replace */
@@ -631,6 +837,7 @@ static int remove_matching_rules(int fd, const char *table_name,
       free(new_blob);
       free(old_offsets);
       free(removed_before);
+      ret = -1;
       err = ENOMEM;
       break;
     }
@@ -650,6 +857,7 @@ static int remove_matching_rules(int fd, const char *table_name,
       free(new_blob);
       free(old_offsets);
       free(removed_before);
+      ret = -1;
       err = ENOMEM;
       break;
     }
@@ -680,7 +888,7 @@ static int remove_matching_rules(int fd, const char *table_name,
 
     memcpy(repl + 1, new_blob, new_sz);
 
-    ret = setsockopt(fd, IPPROTO_IP, IPT_SO_SET_REPLACE, repl,
+    ret = setsockopt(fd, f->level, IPT_SO_SET_REPLACE, repl,
                      (socklen_t)replace_sz);
     err = errno;
 
@@ -690,8 +898,10 @@ static int remove_matching_rules(int fd, const char *table_name,
     free(old_offsets);
     free(removed_before);
 
-    if (ret == 0)
+    if (ret == 0) {
+      removed = (int)removed_count;
       break;
+    }
 
     if (err == EAGAIN && max_retries > 0) {
       ds_log("[IPT] remove: EAGAIN (attempt remaining=%d), refetching '%s'",
@@ -705,7 +915,7 @@ static int remove_matching_rules(int fd, const char *table_name,
 
       struct ipt_getinfo new_info;
       unsigned char *new_base = NULL;
-      if (get_table(fd, table_name, &new_info, &new_base) < 0) {
+      if (get_table(f, fd, table_name, &new_info, &new_base) < 0) {
         ds_log("[IPT] remove: refetch of '%s' failed, giving up", table_name);
         ret = -1;
         err = EAGAIN;
@@ -718,53 +928,49 @@ static int remove_matching_rules(int fd, const char *table_name,
       continue;
     }
 
-    ds_warn(
-        "[IPT] remove: table replace on '%s' failed (%s) - caller will fall "
-        "back to the iptables binary",
-        table_name, strerror(err));
+    ds_warn("[IPT] remove: table replace on '%s' failed (%s) - falling back "
+            "to the %s binary",
+            table_name, strerror(err), f->bin);
     break;
   }
 
   if (cur_base)
     free(cur_base);
 
-  return (ret < 0) ? -err : 0;
+  return (ret < 0) ? -err : removed;
 }
 
 /* Internal: open a raw socket (shared across public APIs) */
 
-static int should_use_raw_api(void) {
-  if (is_android())
-    return 1;
-
-  FILE *f = fopen("/proc/net/ip_tables_names", "r");
-  if (!f)
-    return 0;
-
-  char line[64];
-  int found_filter = 0, found_nat = 0;
-  while (fgets(line, sizeof(line), f)) {
-    if (strncmp(line, "filter", 6) == 0)
-      found_filter = 1;
-    if (strncmp(line, "nat", 3) == 0)
-      found_nat = 1;
-  }
-  fclose(f);
-
-  return (found_filter && found_nat) ? 1 : 0;
-}
-
-static int open_raw_socket(void) {
+static int open_raw_socket(const struct xt_family *f) {
   probe_iptables_modules();
-  int fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
+  int fd = socket(f->af, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
   if (fd < 0)
-    ds_log("[IPT] Failed to open raw socket: %s", strerror(errno));
+    ds_log("[IPT] Failed to open %s raw socket: %s", f->bin, strerror(errno));
   return fd;
 }
 
+/* Start a rule in buf: zeroed, offsets set for a target of target_sz bytes.
+ * Returns the target slot. buf must hold XT_ALIGN(entry_sz) + target_sz. */
+static struct xt_entry_target *
+rule_begin(const struct xt_family *f, unsigned char *buf, size_t target_sz) {
+  size_t hdr = XT_ALIGN(f->entry_sz);
+  uint16_t toff = (uint16_t)hdr, next = (uint16_t)(hdr + target_sz);
+
+  memset(buf, 0, hdr + target_sz);
+  memcpy(buf + f->off_target, &toff, sizeof(toff));
+  memcpy(buf + f->off_next, &next, sizeof(next));
+  return (struct xt_entry_target *)(buf + hdr);
+}
+
+/* Big enough for any rule we build, in either family. */
+#define DS_XT_RULE_MAX                                                         \
+  (XT_ALIGN(sizeof(struct ip6t_entry)) +                                       \
+   XT_ALIGN(sizeof(struct xt_entry_target) + sizeof(struct nf_nat_range)))
+
 /* Public API: ds_ipt_host_rules_present
  *
- * Fork-free probe for the whole host-side rule set:
+ * Fork-free probe for the whole host-side rule set of one family:
  *   filter INPUT       -i <iface> ACCEPT
  *   filter FORWARD     -i <iface> ACCEPT
  *   filter FORWARD     -o <iface> ACCEPT
@@ -791,16 +997,17 @@ static int open_raw_socket(void) {
  *
  * Returns 1 when all of them are present, 0 when any is missing, and -1 when
  * the filter or nat table could not be read.  Callers must treat -1 as
- * "unknown" and do nothing: the binary fallback paths have no idempotency
- * check, so blindly reinstalling on an unreadable table would stack duplicate
- * rules. */
+ * "unknown" and do nothing: on a kernel with no raw API the rules live
+ * wherever the binary put them, and this probe cannot see them. */
 
-int ds_ipt_host_rules_present(const char *iface, const char *src_cidr,
-                              int expect_dnat) {
-  if (!should_use_raw_api())
+int ds_ipt_host_rules_present(int family, const char *iface,
+                              const char *src_cidr, int expect_dnat) {
+  const struct xt_family *f = xt_family_of(family);
+  uint8_t net[16], mask[16];
+  if (fam_parse_cidr(f, src_cidr, net, mask) < 0)
     return -1;
 
-  int fd = open_raw_socket();
+  int fd = open_raw_socket(f);
   if (fd < 0)
     return -1;
 
@@ -808,37 +1015,35 @@ int ds_ipt_host_rules_present(const char *iface, const char *src_cidr,
   unsigned char *base = NULL;
 
   /* filter: the three iface ACCEPT rules, in one table read. */
-  if (get_table(fd, "filter", &info, &base) < 0) {
+  if (get_table(f, fd, "filter", &info, &base) < 0) {
     close(fd);
     return -1;
   }
-  int present = rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_LOCAL_IN,
-                                    iface, NULL, 0, 0, "ACCEPT") &&
-                rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_FORWARD,
-                                    iface, NULL, 0, 0, "ACCEPT") &&
-                rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_FORWARD,
-                                    NULL, iface, 0, 0, "ACCEPT");
+  int present =
+      rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), NF_INET_LOCAL_IN, iface,
+                          NULL, NULL, NULL, "ACCEPT") &&
+      rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), NF_INET_FORWARD, iface,
+                          NULL, NULL, NULL, "ACCEPT") &&
+      rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), NF_INET_FORWARD, NULL,
+                          iface, NULL, NULL, "ACCEPT");
   free(base);
 
   /* nat: MASQUERADE, plus a port-forward DNAT when --port is configured.
    * Skipped once something is already known missing - the caller reinstalls
    * the full set either way. */
   if (present) {
-    uint32_t src_ip, src_mask;
-    parse_cidr(src_cidr, &src_ip, &src_mask);
-
     base = NULL;
-    if (get_table(fd, "nat", &info, &base) < 0) {
+    if (get_table(f, fd, "nat", &info, &base) < 0) {
       close(fd);
       return -1;
     }
     present =
-        rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_POST_ROUTING,
-                            NULL, NULL, src_ip, src_mask, "MASQUERADE");
+        rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), NF_INET_POST_ROUTING,
+                            NULL, NULL, net, mask, "MASQUERADE");
     if (present && expect_dnat)
       present =
-          rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_PRE_ROUTING,
-                              NULL, NULL, 0, 0, "DNAT");
+          rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), NF_INET_PRE_ROUTING,
+                              NULL, NULL, NULL, NULL, "DNAT");
     free(base);
   }
 
@@ -846,10 +1051,10 @@ int ds_ipt_host_rules_present(const char *iface, const char *src_cidr,
    * untouched rather than failing the probe - see the header comment. */
   if (present) {
     base = NULL;
-    if (get_table(fd, "mangle", &info, &base) == 0) {
-      present =
-          rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_POST_ROUTING,
-                              NULL, NULL, 0, 0, "TCPMSS");
+    if (get_table(f, fd, "mangle", &info, &base) == 0) {
+      present = rule_exists_in_hook(f, &info, ENTRIES_BLOB(base),
+                                    NF_INET_POST_ROUTING, NULL, NULL, NULL,
+                                    NULL, "TCPMSS");
       free(base);
     }
   }
@@ -858,465 +1063,332 @@ int ds_ipt_host_rules_present(const char *iface, const char *src_cidr,
   return present ? 1 : 0;
 }
 
-/* Public API: ds_ipt_ensure_masquerade
+/* Public API: ds_ipt6_available
  *
- * Inserts: -t nat -I POSTROUTING 1 -s <cidr> ! -d <cidr> -j MASQUERADE */
+ * Can this host do NAT66 at all? That takes two things: the ip6 nat table
+ * (CONFIG_IP6_NF_NAT, which stock GKI kernels leave out) and an IPv6
+ * MASQUERADE target, which is a separate option on older kernels. The kernel
+ * is asked for both, the same way ip6tables resolves a target, so the answer
+ * holds whatever the config option is called on this version. Both the runtime
+ * and `droidspaces check` come through here. */
 
-int ds_ipt_ensure_masquerade(const char *src_cidr) {
-  ds_log("[IPT] ensure_masquerade: cidr=%s", src_cidr);
-
-  uint32_t src_ip, src_mask;
-  parse_cidr(src_cidr, &src_ip, &src_mask);
-
-  if (!should_use_raw_api())
-    goto binary_fallback_masq;
-
-  int fd = open_raw_socket();
-  if (fd < 0) {
-    /* No socket at all - binary only */
-    goto binary_fallback_masq;
-  }
-
-  {
+int ds_ipt6_available(void) {
+  int fd = open_raw_socket(&xt_v6);
+  if (fd >= 0) {
     struct ipt_getinfo info;
     unsigned char *base = NULL;
-    int ret = get_table(fd, "nat", &info, &base);
-    if (ret < 0) {
-      close(fd);
-      if (ret == -ENOENT || ret == -ENOPROTOOPT || ret == -EACCES)
-        goto binary_fallback_masq;
-      return ret;
-    }
-
-    /* Idempotency check */
-    if (rule_exists_in_hook(&info, ENTRIES_BLOB(base), NF_INET_POST_ROUTING,
-                            NULL, NULL, src_ip, src_mask, "MASQUERADE")) {
-      ds_log("[IPT] MASQUERADE already present - skipping");
+    if (get_table(&xt_v6, fd, "nat", &info, &base) == 0) {
       free(base);
+      /* Revision 0 is the one raw_ensure_masquerade() inserts. */
+      struct xt_get_revision rev = {.name = "MASQUERADE"};
+      socklen_t len = sizeof(rev);
+      int ret =
+          getsockopt(fd, xt_v6.level, IP6T_SO_GET_REVISION_TARGET, &rev, &len);
       close(fd);
-      return 0;
+      return ret >= 0;
     }
-
-    /* Build MASQUERADE rule.
-     * MASQUERADE target requires the nf_nat_ipv4_multi_range_compat payload
-     * with rangesize=1 - the kernel validates this. */
-    unsigned char
-        rule_buf[XT_ALIGN(sizeof(struct ipt_entry)) +
-                 XT_ALIGN(sizeof(struct xt_entry_target) +
-                          sizeof(struct nf_nat_ipv4_multi_range_compat))];
-    memset(rule_buf, 0, sizeof(rule_buf));
-
-    struct ipt_entry *re = (struct ipt_entry *)rule_buf;
-    struct xt_entry_target *rt =
-        (struct xt_entry_target *)(rule_buf +
-                                   XT_ALIGN(sizeof(struct ipt_entry)));
-    struct nf_nat_ipv4_multi_range_compat *mr =
-        (struct nf_nat_ipv4_multi_range_compat *)(rt->data);
-
-    re->ip.src.s_addr = src_ip;
-    re->ip.smsk.s_addr = src_mask;
-    re->ip.dst.s_addr = src_ip;
-    re->ip.dmsk.s_addr = src_mask;
-    re->ip.invflags = IPT_INV_DSTIP; /* ! -d */
-    re->target_offset = (__u16)XT_ALIGN(sizeof(struct ipt_entry));
-    re->next_offset = (__u16)sizeof(rule_buf);
-
-    rt->u.target_size =
-        (__u16)XT_ALIGN(sizeof(struct xt_entry_target) +
-                        sizeof(struct nf_nat_ipv4_multi_range_compat));
-    safe_strncpy(rt->u.user.name, "MASQUERADE", sizeof(rt->u.user.name));
-    mr->rangesize = 1;
-
-    ret = insert_rule_at_hook(fd, "nat", &info, ENTRIES_BLOB(base),
-                              NF_INET_POST_ROUTING, rule_buf, sizeof(rule_buf));
-    free(base);
     close(fd);
-
-    if (ret == 0) {
-      ds_log("[IPT] MASQUERADE inserted via raw socket API");
-      return 0;
-    }
-    ds_log("[IPT] Raw insert failed (ret=%d), falling back to binary", ret);
   }
 
-binary_fallback_masq:
-  ds_log("[IPT] MASQUERADE binary fallback");
-  char *argv[] = {"iptables",
-                  "-t",
-                  "nat",
-                  "-I",
-                  "POSTROUTING",
-                  "1",
-                  "-s",
-                  (char *)(uintptr_t)src_cidr,
-                  "!",
-                  "-d",
-                  (char *)(uintptr_t)src_cidr,
-                  "-j",
-                  "MASQUERADE",
-                  NULL};
-  return run_command_quiet(argv);
+  /* No raw API (nftables only kernel), so only the binary can ask. Listing
+   * the table would not load the target, so append the real thing to a chain
+   * nothing jumps to and take it away again. No packet ever sees it. */
+  const char *const none[] = {NULL};
+  const char *const masq[] = {"-j", "MASQUERADE", NULL};
+  bin_rule(&xt_v6, "-N", "nat", "ds-cap-masq", none);
+  int ok = bin_rule(&xt_v6, "-A", "nat", "ds-cap-masq", masq) == 0;
+  bin_rule(&xt_v6, "-F", "nat", "ds-cap-masq", none);
+  bin_rule(&xt_v6, "-X", "nat", "ds-cap-masq", none);
+  return ok;
 }
 
-/* Internal: insert_iface_accept
+/* Internal: raw_ensure_masquerade
  *
- * Insert "-I <chain> 1 [-i|-o] <iface> -j ACCEPT" into the filter table,
- * idempotently, via the raw socket API with a per-rule binary fallback.
- * is_out selects the egress (outiface) match; otherwise it matches ingress
- * (iniface).  Returns 0 when the rule is present (inserted, already there, or
- * added via the binary fallback), or a negative errno when the table itself
- * could not be read (the caller decides whether that warrants a full binary
- * fallback). */
+ * Returns 0 when the rule is in the nat table (already or newly), or a
+ * negative errno when the raw path could not put it there. */
 
-static int insert_iface_accept(int fd, unsigned int hook, const char *chain,
-                               const char *iface, int is_out) {
+static int raw_ensure_masquerade(const struct xt_family *f, const uint8_t *net,
+                                 const uint8_t *mask) {
+  int fd = open_raw_socket(f);
+  if (fd < 0)
+    return -ENOPROTOOPT;
+
   struct ipt_getinfo info;
   unsigned char *base = NULL;
-  int ret = get_table(fd, "filter", &info, &base);
+  int ret = get_table(f, fd, "nat", &info, &base);
+  if (ret < 0) {
+    close(fd);
+    return ret;
+  }
+
+  /* Idempotency check */
+  if (rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), NF_INET_POST_ROUTING,
+                          NULL, NULL, net, mask, "MASQUERADE")) {
+    ds_log("[IPT] %s MASQUERADE already present - skipping", f->bin);
+    free(base);
+    close(fd);
+    return 0;
+  }
+
+  /* The kernel validates the target payload size per family: IPv4 wants the
+   * old multi-range struct with rangesize=1, IPv6 a plain nf_nat_range. An
+   * all-zero range means "pick the outgoing address", which is all we want. */
+  size_t payload = (f->af == AF_INET6)
+                       ? sizeof(struct nf_nat_range)
+                       : sizeof(struct nf_nat_ipv4_multi_range_compat);
+  size_t target_sz = XT_ALIGN(sizeof(struct xt_entry_target) + payload);
+
+  unsigned char rule_buf[DS_XT_RULE_MAX];
+  struct xt_entry_target *rt = rule_begin(f, rule_buf, target_sz);
+  struct xt_ent_view v;
+  entry_view(f, rule_buf, &v);
+
+  memcpy(v.src, net, f->addr_len);
+  memcpy(v.smsk, mask, f->addr_len);
+  memcpy(v.dst, net, f->addr_len);
+  memcpy(v.dmsk, mask, f->addr_len);
+  *v.invflags = IPT_INV_DSTIP; /* ! -d */
+
+  rt->u.target_size = (__u16)target_sz;
+  safe_strncpy(rt->u.user.name, "MASQUERADE", sizeof(rt->u.user.name));
+  if (f->af == AF_INET)
+    ((struct nf_nat_ipv4_multi_range_compat *)rt->data)->rangesize = 1;
+
+  ret = insert_rule_at_hook(f, fd, "nat", &info, ENTRIES_BLOB(base),
+                            NF_INET_POST_ROUTING, rule_buf,
+                            (unsigned int)(XT_ALIGN(f->entry_sz) + target_sz));
+  free(base);
+  close(fd);
+  return ret;
+}
+
+/* Public API: ds_ipt_ensure_masquerade
+ *
+ * Inserts: -t nat -I POSTROUTING -s <cidr> ! -d <cidr> -j MASQUERADE */
+
+int ds_ipt_ensure_masquerade(int family, const char *src_cidr) {
+  const struct xt_family *f = xt_family_of(family);
+  ds_log("[IPT] ensure_masquerade: %s cidr=%s", f->bin, src_cidr);
+
+  uint8_t net[16], mask[16];
+  if (fam_parse_cidr(f, src_cidr, net, mask) < 0)
+    return -EINVAL;
+
+  int ret = raw_ensure_masquerade(f, net, mask);
+  if (ret == 0) {
+    ds_log("[IPT] %s MASQUERADE in place via raw socket API", f->bin);
+    return 0;
+  }
+
+  ds_log("[IPT] %s MASQUERADE raw path failed (ret=%d), using the binary",
+         f->bin, ret);
+  const char *const spec[] = {"-s",     src_cidr, "!",          "-d",
+                              src_cidr, "-j",     "MASQUERADE", NULL};
+  return bin_ensure(f, "nat", "POSTROUTING", spec);
+}
+
+/* Internal: raw_ensure_iface_accept
+ *
+ * "-I <chain> [-i|-o] <iface> -j ACCEPT" in the filter table through the raw
+ * socket. Returns 0 when the rule is there, a negative errno otherwise. */
+
+static int raw_ensure_iface_accept(const struct xt_family *f, int fd,
+                                   unsigned int hook, const char *chain,
+                                   const char *iface, int is_out) {
+  if (fd < 0)
+    return -ENOPROTOOPT;
+
+  struct ipt_getinfo info;
+  unsigned char *base = NULL;
+  int ret = get_table(f, fd, "filter", &info, &base);
   if (ret < 0)
     return ret;
 
   const char *want_in = is_out ? NULL : iface;
   const char *want_out = is_out ? iface : NULL;
 
-  if (rule_exists_in_hook(&info, ENTRIES_BLOB(base), hook, want_in, want_out, 0,
-                          0, "ACCEPT")) {
-    ds_log("[IPT] %s -%c %s ACCEPT already present", chain, is_out ? 'o' : 'i',
-           iface);
+  if (rule_exists_in_hook(f, &info, ENTRIES_BLOB(base), hook, want_in, want_out,
+                          NULL, NULL, "ACCEPT")) {
+    ds_log("[IPT] %s %s -%c %s ACCEPT already present", f->bin, chain,
+           is_out ? 'o' : 'i', iface);
     free(base);
     return 0;
   }
 
-  unsigned char rule_buf[XT_ALIGN(sizeof(struct ipt_entry)) +
-                         XT_ALIGN(sizeof(struct xt_standard_target))];
-  memset(rule_buf, 0, sizeof(rule_buf));
-
-  struct ipt_entry *re = (struct ipt_entry *)rule_buf;
+  size_t target_sz = XT_ALIGN(sizeof(struct xt_standard_target));
+  unsigned char rule_buf[DS_XT_RULE_MAX];
   struct xt_standard_target *st =
-      (struct xt_standard_target *)(rule_buf +
-                                    XT_ALIGN(sizeof(struct ipt_entry)));
+      (struct xt_standard_target *)rule_begin(f, rule_buf, target_sz);
+  struct xt_ent_view v;
+  entry_view(f, rule_buf, &v);
 
-  if (is_out) {
-    safe_strncpy(re->ip.outiface, iface, IFNAMSIZ);
-    memset(re->ip.outiface_mask, 0xff, strlen(iface) + 1);
-  } else {
-    safe_strncpy(re->ip.iniface, iface, IFNAMSIZ);
-    memset(re->ip.iniface_mask, 0xff, strlen(iface) + 1);
-  }
-  re->target_offset = (__u16)XT_ALIGN(sizeof(struct ipt_entry));
-  re->next_offset = (__u16)sizeof(rule_buf);
+  safe_strncpy(is_out ? v.outiface : v.iniface, iface, IFNAMSIZ);
+  memset(is_out ? v.out_mask : v.in_mask, 0xff,
+         strnlen(iface, IFNAMSIZ - 1) + 1);
 
-  st->target.u.target_size = (__u16)XT_ALIGN(sizeof(struct xt_standard_target));
-  st->target.u.user.name[0] = '\0';
-  st->target.u.user.revision = 0;
+  st->target.u.target_size = (__u16)target_sz;
   st->verdict = -NF_ACCEPT - 1;
 
-  ret = insert_rule_at_hook(fd, "filter", &info, ENTRIES_BLOB(base), hook,
-                            rule_buf, sizeof(rule_buf));
+  ret = insert_rule_at_hook(f, fd, "filter", &info, ENTRIES_BLOB(base), hook,
+                            rule_buf,
+                            (unsigned int)(XT_ALIGN(f->entry_sz) + target_sz));
   free(base);
+  if (ret == 0)
+    ds_log("[IPT] %s %s -%c %s ACCEPT inserted via raw socket API", f->bin,
+           chain, is_out ? 'o' : 'i', iface);
+  return ret;
+}
 
-  if (ret == 0) {
-    ds_log("[IPT] %s -%c %s ACCEPT inserted", chain, is_out ? 'o' : 'i', iface);
+/* Raw first, then the binary for whatever the kernel would not take. */
+static int ensure_iface_accept(const struct xt_family *f, int fd,
+                               unsigned int hook, const char *chain,
+                               const char *iface, int is_out) {
+  int ret = raw_ensure_iface_accept(f, fd, hook, chain, iface, is_out);
+  if (ret == 0)
     return 0;
-  }
 
-  ds_log("[IPT] Raw insert %s -%c %s failed (ret=%d), using binary", chain,
-         is_out ? 'o' : 'i', iface, ret);
-  char *a[] = {"iptables",
-               "-I",
-               (char *)(uintptr_t)chain,
-               "1",
-               is_out ? "-o" : "-i",
-               (char *)(uintptr_t)iface,
-               "-j",
-               "ACCEPT",
-               NULL};
-  run_command_quiet(a);
-  return 0;
+  ds_log("[IPT] %s %s -%c %s raw path failed (ret=%d), using the binary",
+         f->bin, chain, is_out ? 'o' : 'i', iface, ret);
+  const char *const spec[] = {is_out ? "-o" : "-i", iface, "-j", "ACCEPT",
+                              NULL};
+  return bin_ensure(f, "filter", chain, spec);
 }
 
 /* Public API: ds_ipt_ensure_forward_accept
  *
  * Inserts:
- *   -t filter -I FORWARD 1 -i <iface> -j ACCEPT
- *   -t filter -I FORWARD 1 -o <iface> -j ACCEPT
+ *   -t filter -I FORWARD -i <iface> -j ACCEPT
+ *   -t filter -I FORWARD -o <iface> -j ACCEPT
  *
  * Called with DS_NAT_BRIDGE ("ds-br0") when bridge-nf-call-iptables=1 so
  * the FORWARD hook sees the bridge interface name as the ingress/egress. */
 
-int ds_ipt_ensure_forward_accept(const char *iface) {
-  ds_log("[IPT] ensure_forward_accept: iface=%s", iface);
+int ds_ipt_ensure_forward_accept(int family, const char *iface) {
+  const struct xt_family *f = xt_family_of(family);
+  ds_log("[IPT] ensure_forward_accept: %s iface=%s", f->bin, iface);
 
-  if (!should_use_raw_api())
-    goto binary_fallback_fwd;
-
-  {
-    int fd = open_raw_socket();
-    if (fd < 0)
-      goto binary_fallback_fwd;
-
-    int ret = insert_iface_accept(fd, NF_INET_FORWARD, "FORWARD", iface, 0);
-    if (ret == 0)
-      ret = insert_iface_accept(fd, NF_INET_FORWARD, "FORWARD", iface, 1);
+  int fd = open_raw_socket(f);
+  int in = ensure_iface_accept(f, fd, NF_INET_FORWARD, "FORWARD", iface, 0);
+  int out = ensure_iface_accept(f, fd, NF_INET_FORWARD, "FORWARD", iface, 1);
+  if (fd >= 0)
     close(fd);
-
-    if (ret < 0) {
-      if (ret == -ENOENT || ret == -ENOPROTOOPT || ret == -EACCES ||
-          ret == -EOPNOTSUPP)
-        goto binary_fallback_fwd;
-      return ret;
-    }
-    return 0;
-  }
-
-binary_fallback_fwd:
-  ds_log("[IPT] FORWARD ACCEPT binary fallback for iface=%s", iface);
-  {
-    char *a[] = {"iptables", "-I",     "FORWARD",
-                 "1",        "-i",     (char *)(uintptr_t)iface,
-                 "-j",       "ACCEPT", NULL};
-    run_command_quiet(a);
-  }
-  {
-    char *a[] = {"iptables", "-I",     "FORWARD",
-                 "1",        "-o",     (char *)(uintptr_t)iface,
-                 "-j",       "ACCEPT", NULL};
-    return run_command_quiet(a);
-  }
+  return (in == 0 && out == 0) ? 0 : -1;
 }
 
 /* Public API: ds_ipt_ensure_input_accept
  *
- * Inserts: -t filter -I INPUT 1 -i <iface> -j ACCEPT */
+ * Inserts: -t filter -I INPUT -i <iface> -j ACCEPT */
 
-int ds_ipt_ensure_input_accept(const char *iface) {
-  ds_log("[IPT] ensure_input_accept: iface=%s", iface);
+int ds_ipt_ensure_input_accept(int family, const char *iface) {
+  const struct xt_family *f = xt_family_of(family);
+  ds_log("[IPT] ensure_input_accept: %s iface=%s", f->bin, iface);
 
-  if (!should_use_raw_api())
-    goto binary_fallback_inp;
-
-  {
-    int fd = open_raw_socket();
-    if (fd < 0)
-      goto binary_fallback_inp;
-
-    int ret = insert_iface_accept(fd, NF_INET_LOCAL_IN, "INPUT", iface, 0);
+  int fd = open_raw_socket(f);
+  int ret = ensure_iface_accept(f, fd, NF_INET_LOCAL_IN, "INPUT", iface, 0);
+  if (fd >= 0)
     close(fd);
-
-    if (ret < 0) {
-      if (ret == -ENOENT || ret == -ENOPROTOOPT || ret == -EACCES ||
-          ret == -EOPNOTSUPP)
-        goto binary_fallback_inp;
-      return ret;
-    }
-    return 0;
-  }
-
-binary_fallback_inp: {
-  char *a[] = {"iptables", "-I",     "INPUT",
-               "1",        "-i",     (char *)(uintptr_t)iface,
-               "-j",       "ACCEPT", NULL};
-  return run_command_quiet(a);
-}
+  return ret;
 }
 
 /* Public API: ds_ipt_ensure_mss_clamp
  *
  * MSS clamping rule for TCP SYN packets - prevents MTU blackhole through
- * bridge + veth path.
+ * bridge + veth path. It matters most on IPv6, where routers never fragment
+ * and a mobile uplink is often well under the veth's 1500.
  *
  * The raw socket API for this rule is disproportionately complex because it
  * requires two match extension payloads (xt_tcp + xt_TCPMSS with pmtu flag).
- * We use the iptables binary exclusively, with an existence check first to
- * remain idempotent. */
+ * We use the binary exclusively. On a host without it the clamp is simply
+ * absent and path MTU discovery has to do the job. */
 
-int ds_ipt_ensure_mss_clamp(void) {
-  ds_log("[IPT] ensure_mss_clamp");
-
-  char *check[] = {"iptables",
-                   "-t",
-                   "mangle",
-                   "-C",
-                   "POSTROUTING",
-                   "-p",
-                   "tcp",
-                   "--tcp-flags",
-                   "SYN,RST",
-                   "SYN",
-                   "-j",
-                   "TCPMSS",
-                   "--clamp-mss-to-pmtu",
-                   NULL};
-  if (run_command_quiet(check) == 0) {
-    ds_log("[IPT] MSS clamp already present");
-    return 0;
-  }
-
-  char *add[] = {"iptables",    "-t",
-                 "mangle",      "-I",
-                 "POSTROUTING", "1",
-                 "-p",          "tcp",
-                 "--tcp-flags", "SYN,RST",
-                 "SYN",         "-j",
-                 "TCPMSS",      "--clamp-mss-to-pmtu",
-                 NULL};
-  return run_command_quiet(add);
+int ds_ipt_ensure_mss_clamp(int family) {
+  const struct xt_family *f = xt_family_of(family);
+  ds_log("[IPT] ensure_mss_clamp: %s", f->bin);
+  return bin_ensure(f, "mangle", "POSTROUTING", k_mss_spec);
 }
 
-int ds_ipt_remove_iface_rules(const char *iface) {
+/* Remove one of our rules: raw first, then the binary.
+ *
+ * The binary also runs when the raw path found nothing. A rule that went in
+ * through the binary fallback may live somewhere the raw socket cannot see
+ * (iptables-nft keeps its rules in nftables), and skipping the delete there
+ * would leak it. Deleting a rule that does not exist fails quietly. */
+static void remove_rule(const struct xt_family *f, int fd, const char *table,
+                        unsigned int hook, const char *chain, const void *src,
+                        const void *mask, const char *iface,
+                        unsigned int iface_flags, const char *const spec[]) {
+  int removed = -1;
+
+  if (fd >= 0) {
+    struct ipt_getinfo info;
+    unsigned char *base = NULL;
+    if (get_table(f, fd, table, &info, &base) == 0) {
+      removed = remove_matching_rules(f, fd, table, &info, ENTRIES_BLOB(base),
+                                      hook, src, mask, iface, iface_flags);
+      free(base);
+    }
+  }
+  if (removed <= 0)
+    bin_rule(f, "-D", table, chain, spec);
+}
+
+/* The three ACCEPT rules ds_ipt_ensure_{forward,input}_accept put on iface. */
+static void remove_iface_accepts(const struct xt_family *f, int fd,
+                                 const char *iface) {
+  const char *const in_spec[] = {"-i", iface, "-j", "ACCEPT", NULL};
+  const char *const out_spec[] = {"-o", iface, "-j", "ACCEPT", NULL};
+
+  remove_rule(f, fd, "filter", NF_INET_FORWARD, "FORWARD", NULL, NULL, iface,
+              DS_IPT_MATCH_IN, in_spec);
+  remove_rule(f, fd, "filter", NF_INET_FORWARD, "FORWARD", NULL, NULL, iface,
+              DS_IPT_MATCH_OUT, out_spec);
+  remove_rule(f, fd, "filter", NF_INET_LOCAL_IN, "INPUT", NULL, NULL, iface,
+              DS_IPT_MATCH_IN, in_spec);
+}
+
+int ds_ipt_remove_iface_rules(int family, const char *iface) {
   if (!iface || !iface[0])
     return 0;
 
-  ds_log("[IPT] remove_iface_rules: iface=%s", iface);
-  int fd = open_raw_socket();
-  if (fd < 0) {
-    char *a1[] = {
-        "iptables", "-D",     "FORWARD", "-i", (char *)(uintptr_t)iface,
-        "-j",       "ACCEPT", NULL};
-    run_command_quiet(a1);
-    char *a2[] = {
-        "iptables", "-D",     "FORWARD", "-o", (char *)(uintptr_t)iface,
-        "-j",       "ACCEPT", NULL};
-    run_command_quiet(a2);
-    char *a3[] = {"iptables", "-D",     "INPUT", "-i", (char *)(uintptr_t)iface,
-                  "-j",       "ACCEPT", NULL};
-    run_command_quiet(a3);
-    return 0;
-  }
+  const struct xt_family *f = xt_family_of(family);
+  ds_log("[IPT] remove_iface_rules: %s iface=%s", f->bin, iface);
 
-  struct ipt_getinfo info;
-  unsigned char *base = NULL;
-
-  /* FORWARD -i */
-  if (get_table(fd, "filter", &info, &base) == 0) {
-    remove_matching_rules(fd, "filter", &info, ENTRIES_BLOB(base),
-                          NF_INET_FORWARD, 0, 0, iface, DS_IPT_MATCH_IN);
-    free(base);
-  }
-
-  /* FORWARD -o */
-  base = NULL;
-  if (get_table(fd, "filter", &info, &base) == 0) {
-    remove_matching_rules(fd, "filter", &info, ENTRIES_BLOB(base),
-                          NF_INET_FORWARD, 0, 0, iface, DS_IPT_MATCH_OUT);
-    free(base);
-  }
-
-  /* INPUT -i */
-  base = NULL;
-  if (get_table(fd, "filter", &info, &base) == 0) {
-    remove_matching_rules(fd, "filter", &info, ENTRIES_BLOB(base),
-                          NF_INET_LOCAL_IN, 0, 0, iface, DS_IPT_MATCH_IN);
-    free(base);
-  }
-
-  close(fd);
+  int fd = open_raw_socket(f);
+  remove_iface_accepts(f, fd, iface);
+  if (fd >= 0)
+    close(fd);
   return 0;
 }
 
 /* Public API: ds_ipt_remove_ds_rules
  *
- * Cleanly removes all rules Droidspaces inserted during NAT setup.
- * Safe to call even if container died unexpectedly. */
+ * Cleanly removes all rules Droidspaces inserted during NAT setup for one
+ * family. Safe to call even if container died unexpectedly, and when that
+ * family was never set up. */
 
-int ds_ipt_remove_ds_rules(void) {
-  ds_log("[IPT] remove_ds_rules");
-  probe_iptables_modules();
+int ds_ipt_remove_ds_rules(int family) {
+  const struct xt_family *f = xt_family_of(family);
+  const char *subnet =
+      (family == AF_INET6) ? DS_NAT6_SUBNET : DS_DEFAULT_SUBNET;
+  ds_log("[IPT] remove_ds_rules: %s", f->bin);
 
-  int fd = open_raw_socket();
+  uint8_t net[16], mask[16];
+  if (fam_parse_cidr(f, subnet, net, mask) < 0)
+    return -EINVAL;
 
-  uint32_t ds_src, ds_mask;
-  parse_cidr(DS_DEFAULT_SUBNET, &ds_src, &ds_mask);
+  int fd = open_raw_socket(f);
 
-  /* Binary `iptables -D` forms.  Used when there is no raw socket, and as a
-   * fallback whenever a raw-socket table replace fails to commit: the binary
-   * deletes reliably (taking the xtables lock), so the rule is actually removed
-   * rather than merely logged as removed. */
-  char *del_masq[] = {"iptables",
-                      "-t",
-                      "nat",
-                      "-D",
-                      "POSTROUTING",
-                      "-s",
-                      DS_DEFAULT_SUBNET,
-                      "!",
-                      "-d",
-                      DS_DEFAULT_SUBNET,
-                      "-j",
-                      "MASQUERADE",
-                      NULL};
-  char *del_fwd_in[] = {"iptables",    "-D", "FORWARD", "-i",
-                        DS_NAT_BRIDGE, "-j", "ACCEPT",  NULL};
-  char *del_fwd_out[] = {"iptables",    "-D", "FORWARD", "-o",
-                         DS_NAT_BRIDGE, "-j", "ACCEPT",  NULL};
-  char *del_inp[] = {"iptables",    "-D", "INPUT",  "-i",
-                     DS_NAT_BRIDGE, "-j", "ACCEPT", NULL};
-
-  struct ds_ipt_del_target {
-    const char *table;
-    unsigned int hook;
-    uint32_t src;
-    uint32_t mask;
-    const char *iface;
-    unsigned int iface_flags;
-    char **binary_del;
-  } targets[] = {
-      {"nat", NF_INET_POST_ROUTING, ds_src, ds_mask, NULL, 0, del_masq},
-      {"filter", NF_INET_FORWARD, 0, 0, DS_NAT_BRIDGE, DS_IPT_MATCH_IN,
-       del_fwd_in},
-      {"filter", NF_INET_FORWARD, 0, 0, DS_NAT_BRIDGE, DS_IPT_MATCH_OUT,
-       del_fwd_out},
-      {"filter", NF_INET_LOCAL_IN, 0, 0, DS_NAT_BRIDGE, DS_IPT_MATCH_IN,
-       del_inp},
-  };
-
-  for (size_t i = 0; i < sizeof(targets) / sizeof(targets[0]); i++) {
-    /* rc < 0 means "not removed via the raw path" (no socket, or the kernel
-     * rejected the table replace) -> use the binary.  rc == 0 means the raw
-     * path committed the delete, or nothing matched. */
-    int rc = -1;
-    if (fd >= 0) {
-      struct ipt_getinfo info;
-      unsigned char *base = NULL;
-      if (get_table(fd, targets[i].table, &info, &base) == 0) {
-        rc = remove_matching_rules(fd, targets[i].table, &info,
-                                   ENTRIES_BLOB(base), targets[i].hook,
-                                   targets[i].src, targets[i].mask,
-                                   targets[i].iface, targets[i].iface_flags);
-        free(base);
-      }
-    }
-    if (rc < 0) {
-      if (fd >= 0)
-        ds_log("[IPT] remove: raw delete failed for %s/hook%u - using the "
-               "iptables binary",
-               targets[i].table, targets[i].hook);
-      run_command_quiet(targets[i].binary_del);
-    }
-  }
+  const char *const masq_spec[] = {"-s",   subnet, "!",          "-d",
+                                   subnet, "-j",   "MASQUERADE", NULL};
+  remove_rule(f, fd, "nat", NF_INET_POST_ROUTING, "POSTROUTING", net, mask,
+              NULL, 0, masq_spec);
+  remove_iface_accepts(f, fd, DS_NAT_BRIDGE);
 
   if (fd >= 0)
     close(fd);
 
-  /* 3. MSS clamp: binary only */
-  {
-    char *del_mss[] = {"iptables",
-                       "-t",
-                       "mangle",
-                       "-D",
-                       "POSTROUTING",
-                       "-p",
-                       "tcp",
-                       "--tcp-flags",
-                       "SYN,RST",
-                       "SYN",
-                       "-j",
-                       "TCPMSS",
-                       "--clamp-mss-to-pmtu",
-                       NULL};
-    run_command_quiet(del_mss);
-  }
-
+  /* MSS clamp: binary only, like its install. */
+  bin_rule(f, "-D", "mangle", "POSTROUTING", k_mss_spec);
   return 0;
 }
 

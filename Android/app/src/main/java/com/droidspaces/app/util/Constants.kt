@@ -28,6 +28,7 @@ object Constants {
 
     // Preferences keys
     const val PREFS_NAME = "droidspaces_prefs"
+    const val KERNEL_CONFIG_DOC_URL = "https://github.com/ravindu644/Droidspaces-OSS/blob/main/Documentation/Kernel-Configuration.md"
     const val KEY_SETUP_COMPLETED = "setup_completed"
     const val KEY_ROOT_CHECKED = "root_checked"
     const val KEY_ROOT_SKIPPED = "root_skipped"
@@ -51,6 +52,8 @@ object Constants {
     const val KEY_APP_LOCALE = "app_locale"
     const val KEY_BACKEND_MODE = "backend_mode"
     const val KEY_SELINUX_STATUS = "selinux_status"
+    const val KEY_HOST_CAPABILITIES = "host_capabilities"
+    const val KEY_HOST_CAPABILITIES_BOOT_ID = "host_capabilities_boot_id"
     const val KEY_DAEMON_MODE_ENABLED = "daemon_mode_enabled"
     const val KEY_WAYLAND_COMPOSITOR_ENABLED = "wayland_compositor_enabled"
     const val KEY_TREAT_AS_64BIT = "treat_as_64bit"

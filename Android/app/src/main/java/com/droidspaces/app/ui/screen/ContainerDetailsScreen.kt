@@ -215,7 +215,7 @@ fun ContainerDetailsScreen(
                                 add { IdentityToken(context.getString(R.string.ip_address), info.ipAddress ?: "127.0.0.1", rememberVectorPainter(image = Icons.Default.Lan), MaterialTheme.colorScheme.outline) }
                                 if (container.isRunning) {
                                     add { IdentityToken(context.getString(R.string.cpu_usage_label), info.cpuUsage?.let { context.getString(R.string.cpu_percent_label, it) } ?: "---", rememberVectorPainter(image = Icons.Default.Speed), MaterialTheme.colorScheme.primary) }
-                                    add { IdentityToken(context.getString(R.string.ram_usage_label), info.ramUsageMb?.let { context.getString(R.string.ram_percent_label, it, info.ramPercent ?: 0.0) } ?: "---", rememberVectorPainter(image = Icons.Default.Memory), MaterialTheme.colorScheme.secondary) }
+                                    add { IdentityToken(context.getString(R.string.ram_usage_label), info.ramLabel(context) ?: "---", rememberVectorPainter(image = Icons.Default.Memory), MaterialTheme.colorScheme.secondary) }
                                 }
                             } }
 
@@ -295,8 +295,9 @@ private fun hasOSInfoChanged(old: ContainerOSInfoManager.OSInfo, new: ContainerO
            old.ipAddress != new.ipAddress ||
            old.uptime != new.uptime ||
            old.cpuUsage != new.cpuUsage ||
-           old.ramUsageMb != new.ramUsageMb ||
-           old.ramPercent != new.ramPercent
+           old.ramUsedKb != new.ramUsedKb ||
+           old.ramPercent != new.ramPercent ||
+           old.ramLimitKb != new.ramLimitKb
 }
 
 

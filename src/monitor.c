@@ -55,6 +55,16 @@ static void ds_console_drain(int master_fd, int log_fd, size_t *logged) {
  * ends with _exit(). sync_pipe_write is the write-end of the parent sync
  * pipe; the monitor (or its intermediate child) writes the container init PID
  * through it on the first boot cycle, then closes it. */
+/* Close a descriptor the monitor keeps a number for, and forget the number.
+ * The handshake pipes live in cfg across boot cycles. Closing one without
+ * resetting it leaves a stale number that the next cycle closes again, and by
+ * then that number belongs to whatever was opened in between. */
+static void close_and_forget(int *fd) {
+  if (*fd >= 0)
+    close(*fd);
+  *fd = -1;
+}
+
 void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write) {
   int sync_pipe[2];
   sync_pipe[0] = -1;
@@ -65,6 +75,10 @@ void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write) {
     ds_error("setsid failed: %s", strerror(errno));
     _exit(EXIT_FAILURE);
   }
+
+  /* Held until we exit. It tells the pruners in pid.c that this container's
+   * leftovers still have an owner, so they leave its pidfile alone. */
+  ds_container_claim_supervision(cfg->container_name);
 
   /* Monitor Hardening
    * Ignore common termination signals to prevent Android's process manager
@@ -88,102 +102,12 @@ void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write) {
 
   prctl(PR_SET_NAME, "[ds-monitor]", 0, 0, 0);
 
-  /* Unshare namespaces - Monitor enters new UTS, IPC, and optionally Cgroup
-   * namespaces immediately. PID namespace is NOT unshared here because
-   * unshare(CLONE_NEWPID) can only be called once per process. Instead,
-   * each boot/reboot cycle forks an intermediate that creates a fresh
-   * PID namespace. */
+  /* The monitor takes new UTS and IPC namespaces now. The PID namespace is
+   * NOT unshared here because unshare(CLONE_NEWPID) can only be called once
+   * per process: each boot/reboot cycle forks an intermediate that creates a
+   * fresh one. The cgroup namespace belongs to that intermediate too, the
+   * monitor never enters the container's cgroups. */
   int ns_flags = CLONE_NEWUTS | CLONE_NEWIPC;
-
-  /* Adaptive Cgroup Namespace (introduced in Linux 4.6).
-   *
-   * CGROUP SELECTION: Only enable cgroupns when V2 is active.
-   * If --force-cgroupv1 is set, we skip cgroupns so setup_cgroups()
-   * has full rights to create named V1 hierarchies from the host context. */
-  int cg_ns_ok = (access("/proc/self/ns/cgroup", F_OK) == 0) &&
-                 (ds_cgroup_host_is_v2() && !cfg->force_cgroupv1);
-  if (cg_ns_ok) {
-    /* To get isolation from a cgroup namespace, we must be in a sub-cgroup
-     * BEFORE we unshare. If we are in the root '/', the namespace root
-     * will be the host's root, providing zero isolation.
-     * We use a container-specific path to avoid conflicts. */
-    if (access("/sys/fs/cgroup/cgroup.procs", F_OK) == 0) {
-      char safe_name[256];
-      sanitize_container_name(cfg->container_name, safe_name,
-                              sizeof(safe_name));
-
-      /* v2: enable requested controllers top-down BEFORE mkdir.
-       * Controllers only appear in a child cgroup if the parent's
-       * subtree_control has them enabled first. Walk two levels:
-       * /sys/fs/cgroup -> /sys/fs/cgroup/droidspaces */
-      if (cfg->memory_limit || cfg->cpu_quota || cfg->pids_limit) {
-        /* Build enable string with snprintf offsets instead of strncat to
-         * avoid truncation. Use ds_cg_word_in_list() for exact word-boundary
-         * matching to prevent false positives (e.g. matching "cpuset"
-         * when looking for "cpu"). */
-        char enable[64] = {0};
-        char buf[256];
-        int eoff = 0;
-        if (read_file("/sys/fs/cgroup/cgroup.controllers", buf, sizeof(buf)) >
-            0) {
-          if (cfg->memory_limit && ds_cg_word_in_list(buf, "memory")) {
-            int n = snprintf(enable + eoff, sizeof(enable) - (size_t)eoff,
-                             "%s+memory", eoff ? " " : "");
-            if (n > 0)
-              eoff += n;
-          }
-          if (cfg->cpu_quota && ds_cg_word_in_list(buf, "cpu")) {
-            int n = snprintf(enable + eoff, sizeof(enable) - (size_t)eoff,
-                             "%s+cpu", eoff ? " " : "");
-            if (n > 0)
-              eoff += n;
-          }
-          if (cfg->pids_limit && ds_cg_word_in_list(buf, "pids")) {
-            int n = snprintf(enable + eoff, sizeof(enable) - (size_t)eoff,
-                             "%s+pids", eoff ? " " : "");
-            if (n > 0)
-              eoff += n;
-          }
-        }
-        if (eoff > 0) {
-          if (write_file("/sys/fs/cgroup/cgroup.subtree_control", enable) < 0)
-            ds_warn("[CGROUP] subtree_control (root): %s", strerror(errno));
-          mkdir_p("/sys/fs/cgroup/droidspaces", 0755);
-          if (write_file("/sys/fs/cgroup/droidspaces/cgroup.subtree_control",
-                         enable) < 0)
-            ds_warn("[CGROUP] subtree_control (droidspaces): %s",
-                    strerror(errno));
-        }
-      }
-
-      char cg_path[PATH_MAX];
-      snprintf(cg_path, sizeof(cg_path), "/sys/fs/cgroup/droidspaces/%s",
-               safe_name);
-      mkdir_p(cg_path, 0755);
-
-      char cg_procs[PATH_MAX];
-      safe_strncpy(cg_procs, cg_path, sizeof(cg_procs));
-      strncat(cg_procs, "/cgroup.procs",
-              sizeof(cg_procs) - strlen(cg_procs) - 1);
-      FILE *f = fopen(cg_procs, "we");
-      if (f) {
-        fprintf(f, "%d\n", getpid());
-        fclose(f);
-      }
-    }
-    ns_flags |= CLONE_NEWCGROUP;
-  } else {
-    /* Legacy kernel without force flag - skip cgroupns, run in host
-     * cgroupns with full rights so setup_cgroups() can create named
-     * v1 hierarchies. */
-  }
-
-  /* Apply resource limits. On v2 hosts this writes memory.max / cpu.max /
-   * pids.max into the delegated cgroup. On v1 or --force-cgroupv1 the
-   * function skips with a warning since v1 delegation is unreliable. */
-  if (ds_cgroup_apply_limits(cfg) < 0 &&
-      (cfg->memory_limit || cfg->cpu_quota || cfg->pids_limit))
-    ds_warn("[CGROUP] Some resource limits could not be enforced.");
 
   if (unshare(ns_flags) < 0)
     ds_die("unshare failed: %s", strerror(errno));
@@ -229,18 +153,17 @@ void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write) {
    *
    * This eliminates ghost containers because the Monitor never handles
    * SIGHUP - it only checks a deterministic exit code. */
+  /* The lifecycle lock, held while we act on our container's exit: through
+   * an internal reboot until the new init is visible, or through cleanup. */
+  int lifecycle_fd = -1;
+
 reboot_loop:;
-  /* Close existing pipes from previous cycle to prevent FD leaks */
-  if (cfg->net_ready_pipe[0] >= 0) {
-    close(cfg->net_ready_pipe[0]);
-    close(cfg->net_ready_pipe[1]);
-    cfg->net_ready_pipe[0] = cfg->net_ready_pipe[1] = -1;
-  }
-  if (cfg->net_done_pipe[0] >= 0) {
-    close(cfg->net_done_pipe[0]);
-    close(cfg->net_done_pipe[1]);
-    cfg->net_done_pipe[0] = cfg->net_done_pipe[1] = -1;
-  }
+  /* Close whatever is left of the previous cycle's pipes. The handshake
+   * closes each end as it finishes with it, so normally nothing is. */
+  close_and_forget(&cfg->net_ready_pipe[0]);
+  close_and_forget(&cfg->net_ready_pipe[1]);
+  close_and_forget(&cfg->net_done_pipe[0]);
+  close_and_forget(&cfg->net_done_pipe[1]);
 
   /* Networking pipes (created fresh for every boot cycle) */
   int mid_sync_pipe[2] = {-1, -1};
@@ -300,20 +223,33 @@ reboot_loop:;
     }
   }
 
+  /* This boot's cgroups, built from nothing, with the limits the config
+   * holds now. Done here and not once up front so that a restart, an
+   * internal reboot and a start after a crash all get the same clean slate. */
+  ds_cgroup_setup(cfg);
+
   pid_t mid_pid = fork();
   if (mid_pid < 0)
     _exit(EXIT_FAILURE);
 
   if (mid_pid == 0) {
     /* INTERMEDIATE PROCESS
-     * Create a fresh PID namespace (and NET namespace for NAT/none modes)
-     * for this boot cycle. */
+     * Join the container's cgroups, then create a fresh PID namespace (and
+     * NET namespace for NAT/none modes) for this boot cycle.
+     *
+     * The cgroup namespace (Linux 4.6+) is unshared here, after the join: its
+     * root is wherever we sit at that moment, and from the root cgroup it
+     * would isolate nothing. */
+    ds_cgroup_join(cfg->container_name);
+
     int clone_flags = CLONE_NEWPID;
     if (cfg->net_mode != DS_NET_HOST)
       clone_flags |= CLONE_NEWNET;
+    if (access("/proc/self/ns/cgroup", F_OK) == 0)
+      clone_flags |= CLONE_NEWCGROUP;
 
     if (unshare(clone_flags) < 0) {
-      ds_error("unshare(PID|NET) failed: %s", strerror(errno));
+      ds_error("unshare(PID|NET|CGROUP) failed: %s", strerror(errno));
       _exit(EXIT_FAILURE);
     }
 
@@ -330,7 +266,9 @@ reboot_loop:;
         if (mid_sync_pipe[1] >= 0)
           close(mid_sync_pipe[1]);
       }
-      close(sync_pipe[1]);
+      /* Init keeps the sync pipe's write end, and it is close-on-exec. The
+       * command that started us reads end of file on it when init execs, which
+       * is how it knows the boot is over. Do not close it here. */
       _exit(internal_boot(cfg));
     }
 
@@ -439,8 +377,8 @@ reboot_loop:;
       cfg->container_pid = netns_pid;
 
       /* Close the ends we don't need */
-      close(cfg->net_ready_pipe[1]); /* monitor reads, init writes */
-      close(cfg->net_done_pipe[0]);  /* monitor writes, init reads  */
+      close_and_forget(&cfg->net_ready_pipe[1]); /* monitor reads */
+      close_and_forget(&cfg->net_done_pipe[0]);  /* monitor writes */
 
       char rdy;
       if (read(cfg->net_ready_pipe[0], &rdy, 1) < 0) {
@@ -450,7 +388,7 @@ reboot_loop:;
         ds_log("[NET] Monitor: READY received from init (pid=%d)",
                (int)netns_pid);
       }
-      close(cfg->net_ready_pipe[0]);
+      close_and_forget(&cfg->net_ready_pipe[0]);
 
       if (cfg->net_mode == DS_NET_NAT) {
         if (setup_veth_host_side(cfg, netns_pid) < 0) {
@@ -495,7 +433,7 @@ reboot_loop:;
                hs.ip_str);
       if (write(cfg->net_done_pipe[1], &hs, sizeof(hs)) != (ssize_t)sizeof(hs))
         ds_warn("[NET] Monitor: failed to write handshake to init");
-      close(cfg->net_done_pipe[1]);
+      close_and_forget(&cfg->net_done_pipe[1]);
     }
   }
 
@@ -521,6 +459,28 @@ reboot_loop:;
     stdio_redirected = 1;
   }
 
+  /* An internal reboot kept the lifecycle lock across the gap where the old
+   * init is dead and the new one is not yet visible as running. Without it a
+   * command would read that gap as "not running" and boot a second instance.
+   * Let go once the pidfile validates, or the boot has clearly failed. */
+  if (lifecycle_fd >= 0) {
+    for (int i = 0; i < 50; i++) {
+      pid_t booted = 0;
+      siginfo_t gone;
+      memset(&gone, 0, sizeof(gone));
+      if (read_and_validate_pid(cfg->pidfile, &booted) == 0)
+        break;
+      /* WNOWAIT: only look, the wait loop below does the reaping. */
+      if (waitid(P_PID, (id_t)mid_pid, &gone, WEXITED | WNOHANG | WNOWAIT) ==
+              0 &&
+          gone.si_pid == mid_pid)
+        break;
+      usleep(100000); /* 100ms */
+    }
+    ds_container_unlock(lifecycle_fd);
+    lifecycle_fd = -1;
+  }
+
   /* MONITOR waits for intermediate to complete */
 
   /* CRITICAL TIMING: Close sync pipe write end ONLY after intermediate
@@ -542,6 +502,7 @@ reboot_loop:;
     sigaddset(&mask, SIGCHLD);
     sigprocmask(SIG_BLOCK, &mask, NULL);
     int sfd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+    int gw_wired = 0, gw_tick = 0;
 
     while (1) {
       pid_t r = waitpid(mid_pid, &status, WNOHANG);
@@ -566,6 +527,11 @@ reboot_loop:;
       }
 
       ds_virtualize_update(cfg);
+
+      /* A gateway client whose gateway was not up yet is still unwired. Look
+       * again every couple of seconds until the cable is in, then stop. */
+      if (cfg->net_mode == DS_NET_GATEWAY && !gw_wired && ++gw_tick % 4 == 0)
+        gw_wired = ds_net_gateway_reconcile(cfg, cfg->container_pid);
 
       /* Poll the signalfd and, in background mode, the console PTY master.
        * poll() wakes immediately when the master becomes readable, so draining
@@ -621,17 +587,49 @@ reboot_loop:;
                             WTERMSIG(status), strsignal(WTERMSIG(status)));
   }
 
-  /* Reboot detection (internal reboot) */
-  if (WIFEXITED(status) && WEXITSTATUS(status) == DS_REBOOT_EXIT) {
-    /* Check for external lock - if exists, abort reboot and let CLI handle it
-     */
-    if (is_external_lock_active(cfg->container_name)) {
-      write_monitor_debug_log(
-          cfg->container_name,
-          "External command lock detected - aborting internal reboot");
+  /* Stop our helper threads before anything else. They serve a container that
+   * no longer exists, and the route monitor in particular must not outlive
+   * it: while we wait for the lock below, a stop or restart removes the
+   * shared host rules, and a still-running route monitor would see them
+   * missing and put them back from its own stale snapshot (old port forwards
+   * included). A reboot cycle starts both again in setup_veth_host_side().
+   * Joining the DHCP thread here also keeps the next cycle's
+   * ds_dhcp_server_start() from resetting state under a live thread. */
+  ds_net_stop_route_monitor();
+  ds_dhcp_server_stop();
+
+  /* Our container is gone. Take the lifecycle lock, waiting for any command
+   * that is working on this container to finish, and only then look at what
+   * is on disk. The pidfile, mount point and cgroup are keyed by name, so
+   * acting on a guess here would tear down somebody else's instance: that is
+   * how a restarted container used to lose its early services.
+   *
+   *   pidfile names a live container -> a successor owns the name (restart)
+   *   pidfile is gone                -> a command already tore us down
+   *   pidfile names a dead PID       -> nobody has claimed this exit: it is
+   *                                     ours to reboot or to clean up
+   *
+   * If the lock cannot be taken at all, carry on with the same checks: they
+   * are still right, just no longer race free. */
+  lifecycle_fd = ds_container_lock(cfg->container_name, 1);
+  {
+    pid_t owner = 0;
+    if (read_and_validate_pid(cfg->pidfile, &owner) == 0) {
+      write_monitor_debug_log(cfg->container_name,
+                              "Successor instance (PID %d) owns this "
+                              "container now - nothing to do",
+                              (int)owner);
       goto monitor_cleanup_and_exit;
     }
+    if (access(cfg->pidfile, F_OK) != 0) {
+      write_monitor_debug_log(cfg->container_name,
+                              "Already torn down by a command");
+      goto monitor_cleanup_and_exit;
+    }
+  }
 
+  /* Reboot detection (internal reboot) */
+  if (WIFEXITED(status) && WEXITSTATUS(status) == DS_REBOOT_EXIT) {
     if (cfg->foreground) {
       printf("\n" C_WHITE "Droidspaces v%s : Container " C_GREEN
              "%s" C_RESET C_WHITE " is now Rebooting...." C_RESET "\n",
@@ -694,7 +692,7 @@ reboot_loop:;
 
     /* Mirror restart behavior: ensure X, VirGL, and PulseAudio servers are up
      * before next boot */
-    if (is_android() && cfg->termux_x11) {
+    if (is_android() && cfg->x11) {
       if (ds_x11_daemon_start(cfg) == 0)
         wait_for_socket_or_death(
             cfg->x11_pid, TX11_SOCK_DIR "/" TX11_DISPLAY_SOCK, 5000, 50000);
@@ -717,50 +715,18 @@ reboot_loop:;
     if (cfg->foreground)
       ds_log_silent = 1;
 
-    /* ds_dhcp_server_start() memsets g_dhcp under g_dhcp_lock on the next
-     * cycle, racing the still-running dhcp_server_loop thread that reads from
-     * the same memory.  The DHCP thread is intentionally joinable so stop()
-     * can join before memset. */
-    ds_dhcp_server_stop();
     ds_socketd_record_core_event("restart", cfg->container_name, cfg->uuid);
 
     goto reboot_loop;
   }
 
-  /* Not a reboot - check if external command is handling cleanup */
-  if (is_external_lock_active(cfg->container_name)) {
-    write_monitor_debug_log(cfg->container_name,
-                            "External command lock detected - yielding "
-                            "cleanup to CLI");
-    goto monitor_cleanup_and_exit;
-  }
-
   /* Normal exit - monitor does cleanup */
   write_monitor_debug_log(cfg->container_name, "Monitor performing cleanup");
-
-  /* Before cleaning up the container's cgroup subtree, move the
-   * monitor process itself back to the root cgroup.  The monitor wrote its
-   * own PID into /sys/fs/cgroup/droidspaces/<name>/ at start (for cgroup
-   * namespace isolation).  If it is still in that cgroup when
-   * ds_cgroup_cleanup_container() calls rmdir, the kernel sees a non-empty
-   * cgroup and returns EBUSY - the directory is never removed.
-   *
-   * Writing our PID to the root cgroup.procs atomically migrates us out.
-   * This is safe: the monitor is about to _exit() anyway. */
-  {
-    int root_fd = open("/sys/fs/cgroup/cgroup.procs", O_WRONLY | O_CLOEXEC);
-    if (root_fd >= 0) {
-      char pid_s[32];
-      int len = snprintf(pid_s, sizeof(pid_s), "%d", (int)getpid());
-      if (write(root_fd, pid_s, len) < 0) {
-      }
-      close(root_fd);
-    }
-  }
 
   cleanup_container_resources(cfg, 0, 0, 0);
 
 monitor_cleanup_and_exit:
+  ds_container_unlock(lifecycle_fd);
   /* Capture any final console output, then close the background console log. */
   if (!cfg->foreground && cfg->console.master >= 0)
     ds_console_drain(cfg->console.master, console_log_fd, &console_logged);

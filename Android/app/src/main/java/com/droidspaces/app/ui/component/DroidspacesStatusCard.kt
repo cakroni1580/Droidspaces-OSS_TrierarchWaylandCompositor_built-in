@@ -34,7 +34,6 @@ enum class DroidspacesStatus {
     Working,
     UpdateAvailable,
     NotInstalled,
-    Unsupported,
     Corrupted,
     ModuleMissing
 }
@@ -47,10 +46,14 @@ fun DroidspacesStatusCard(
     isRootAvailable: Boolean = true,
     refreshTrigger: Int = 0,
     appUpdate: AppUpdateInfo? = null,
+    isKernelSupported: Boolean = true,
     onClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val isWorking = isRootAvailable && status == DroidspacesStatus.Working
+    val isWorking = isRootAvailable && isKernelSupported && status == DroidspacesStatus.Working
+    // Backend fine, kernel failed a MUST HAVE probe. Rendered like the root
+    // state: no wordmark, no version, no mode pill, the whole card is the link.
+    val kernelBlocked = isRootAvailable && !isKernelSupported && status == DroidspacesStatus.Working
 
     var droidspacesVersion by remember {
         mutableStateOf(version ?: SystemInfoManager.getCachedDroidspacesVersion(context))
@@ -59,7 +62,7 @@ fun DroidspacesStatusCard(
         mutableStateOf(if (isWorking) SystemInfoManager.getCachedBackendMode(context) else null)
     }
 
-    LaunchedEffect(status, isRootAvailable, refreshTrigger) {
+    LaunchedEffect(status, isRootAvailable, isKernelSupported, refreshTrigger) {
         if (isWorking) {
             droidspacesVersion = SystemInfoManager.getDroidspacesVersion(context)
             backendMode = SystemInfoManager.getBackendMode(context)
@@ -109,6 +112,7 @@ fun DroidspacesStatusCard(
                     Text(
                         text = when {
                             !isRootAvailable -> context.getString(R.string.root_unavailable)
+                            kernelBlocked -> context.getString(R.string.kernel_unsupported)
                             isChecking -> context.getString(R.string.backend_checking)
                             isWorking -> context.getString(R.string.backend_installed)
                             status == DroidspacesStatus.UpdateAvailable -> context.getString(R.string.backend_update_available)
@@ -140,6 +144,7 @@ fun DroidspacesStatusCard(
                     text = when {
                         isWorking || status == DroidspacesStatus.UpdateAvailable -> "DROIDSPACES"
                         !isRootAvailable -> context.getString(R.string.root_unavailable)
+                        kernelBlocked -> context.getString(R.string.kernel_unsupported)
                         status == DroidspacesStatus.NotInstalled -> context.getString(R.string.backend_not_installed)
                         else -> context.getString(R.string.backend_corrupted)
                     },
@@ -181,6 +186,7 @@ fun DroidspacesStatusCard(
                         Text(
                             text = when {
                                 !isRootAvailable -> context.getString(R.string.grant_root_message)
+                                kernelBlocked -> context.getString(R.string.kernel_unsupported_message)
                                 status == DroidspacesStatus.UpdateAvailable -> context.getString(R.string.update_available_message)
                                 else -> context.getString(R.string.tap_to_fix_system)
                             },

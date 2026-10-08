@@ -412,8 +412,7 @@ int internal_boot(struct ds_config *cfg) {
   }
 
   /* 13. Setup /tmp: always mount a fresh isolated tmpfs.
-   * The X11 socket lives in /run/.X11-unix so systemd's tmp.mount
-   * cannot interfere with it. */
+   * The X11 socket is bind-mounted into it later at /tmp/.X11-unix. */
   if (domount("tmpfs", "tmp", "tmpfs", MS_NOSUID | MS_NODEV, "mode=1777") < 0)
     ds_warn("Failed to mount tmpfs at /tmp: %s", strerror(errno));
 
@@ -474,7 +473,8 @@ int internal_boot(struct ds_config *cfg) {
   setup_devpts(cfg->hw_access);
 
   /* Apply jail mask after pivot_root for correct path resolution */
-  ds_apply_jail_mask(cfg->hw_access, cfg->privileged_mask);
+  ds_apply_jail_mask(cfg->hw_access, cfg->privileged_mask,
+                     cfg->sandboxing_allowed);
 
   /* 18b. Resource Visibility Virtualization
    * Always runs: uptime/loadavg are fundamental container features.
@@ -501,8 +501,8 @@ int internal_boot(struct ds_config *cfg) {
            cfg->custom_init[0] ? cfg->custom_init : DS_DEFAULT_INIT);
   }
 
-  /* 20b. Write identity markers for PID discovery (AFTER logs to ensure CLI
-   * parent sees them before exiting background mode). */
+  /* 20b. Write identity markers for PID discovery. The command that started us
+   * does not watch for these, it waits for the exec at the end. */
   mkdir("run/droidspaces", 0755);
   if (cfg->sandboxing_allowed)
     mount_pristine_proc_sys();

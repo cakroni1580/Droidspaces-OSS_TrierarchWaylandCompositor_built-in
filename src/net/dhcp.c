@@ -16,6 +16,10 @@
  * + udhcpc, dhcpcd, dhclient) speaks DHCP and will configure eth0 correctly
  * without any rootfs modifications.
  *
+ * The same thread does the IPv6 half when NAT66 is available: it answers
+ * Router Solicitations and re-announces on a timer (see ra.c), since it
+ * already owns the only packet socket on this veth.
+ *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -104,6 +108,8 @@ typedef struct {
   uint32_t dns1_be;      /* DNS 1 */
   uint32_t dns2_be;      /* DNS 2 */
   uint8_t server_mac[6]; /* Bridge's MAC (source MAC for replies) */
+  int ra_on;             /* also answer IPv6 Router Solicitations */
+  struct in6_addr ra_prefix;
   volatile sig_atomic_t stop;
   pthread_t tid; /* Server thread ID */
   /* Startup synchronization: ds_dhcp_server_start() blocks until the thread
@@ -301,6 +307,24 @@ static int send_reply(int sock, int ifindex, const struct dhcp_pkt *pkt,
   return 0;
 }
 
+/* The IPv6 counterpart of an OFFER: one Router Advertisement out of our veth.
+ * It goes to the all-nodes group, but the frame leaves through this
+ * container's own bridge port, so no sibling ever sees it. */
+static void send_ra(int sock, int ifindex, const ds_dhcp_ctx_t *ctx) {
+  uint8_t frame[DS_RA_FRAME_LEN];
+  ds_ra_build(frame, ctx->server_mac, &ctx->ra_prefix);
+
+  struct sockaddr_ll dst;
+  memset(&dst, 0, sizeof(dst));
+  dst.sll_family = AF_PACKET;
+  dst.sll_ifindex = ifindex;
+  dst.sll_halen = 6;
+  memcpy(dst.sll_addr, frame, 6);
+  if (sendto(sock, frame, sizeof(frame), 0, (struct sockaddr *)&dst,
+             sizeof(dst)) < 0)
+    ds_warn("[DHCP] RA sendto: %s", strerror(errno));
+}
+
 /* Core server loop (runs as joinable thread) */
 
 static void *dhcp_server_loop(void *arg) {
@@ -369,9 +393,15 @@ static void *dhcp_server_loop(void *arg) {
   fds[1].fd = ctx->stop_efd;
   fds[1].events = POLLIN;
 
+  /* Unsolicited RAs keep the container's default route from expiring. The
+   * deadline is checked after every wakeup, not only on a poll timeout,
+   * because steady traffic on the veth would otherwise starve the timeout. */
+  struct timespec now;
+  time_t next_ra = 0;
+
   while (!ctx->stop) {
     /* Multiplex */
-    int poll_ret = poll(fds, 2, -1);
+    int poll_ret = poll(fds, 2, ctx->ra_on ? DS_RA_INTERVAL_SEC * 1000 : -1);
     if (poll_ret < 0) {
       if (errno == EINTR || errno == EAGAIN)
         continue;
@@ -382,6 +412,12 @@ static void *dhcp_server_loop(void *arg) {
     if (fds[1].revents & POLLIN) {
       /* Stop signaled via eventfd */
       break;
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (ctx->ra_on && now.tv_sec >= next_ra) {
+      send_ra(packet_sock, sll.sll_ifindex, ctx);
+      next_ra = now.tv_sec + DS_RA_INTERVAL_SEC;
     }
 
     if (!(fds[0].revents & POLLIN))
@@ -417,6 +453,11 @@ static void *dhcp_server_loop(void *arg) {
      * container. */
     if (rx_sll.sll_pkttype == PACKET_OUTGOING)
       continue;
+
+    if (ctx->ra_on && ds_ra_is_solicit(rx_buf, (size_t)len)) {
+      send_ra(packet_sock, sll.sll_ifindex, ctx);
+      continue;
+    }
 
     /* 1. Ethernet Header (14 bytes) */
     if (len < (ssize_t)(sizeof(struct ethhdr) + sizeof(struct iphdr) +
@@ -520,7 +561,8 @@ out:
 /* Public API */
 
 void ds_dhcp_server_start(struct ds_config *cfg, const char *veth_host,
-                          uint32_t offer_ip_be, uint32_t gw_ip_be) {
+                          uint32_t offer_ip_be, uint32_t gw_ip_be,
+                          const struct in6_addr *ra_prefix) {
   pthread_mutex_lock(&g_dhcp_lock);
 
   memset(&g_dhcp, 0, sizeof(g_dhcp));
@@ -536,6 +578,10 @@ void ds_dhcp_server_start(struct ds_config *cfg, const char *veth_host,
   safe_strncpy(g_dhcp.iface, veth_host, sizeof(g_dhcp.iface));
   g_dhcp.offer_ip_be = offer_ip_be;
   g_dhcp.gw_ip_be = gw_ip_be;
+  if (ra_prefix) {
+    g_dhcp.ra_on = 1;
+    g_dhcp.ra_prefix = *ra_prefix;
+  }
 
   /* Source MAC for DHCP replies = the MAC of the interface we transmit on
    * (veth_host, the bind interface).  That device egresses the reply frame,
@@ -602,7 +648,7 @@ void ds_dhcp_server_start(struct ds_config *cfg, const char *veth_host,
    * guarantee the thread has fully exited before the next start() call
    * calls memset(&g_dhcp, 0).  A detached thread could still be running
    * when memset fires, corrupting its own context mid-loop. */
-  if (pthread_create(&g_dhcp.tid, NULL, dhcp_server_loop, &g_dhcp) != 0) {
+  if (ds_thread_create(&g_dhcp.tid, dhcp_server_loop, &g_dhcp) != 0) {
     ds_warn("[DHCP] pthread_create: %s", strerror(errno));
     g_dhcp.sock = -1;
     pthread_mutex_unlock(&g_dhcp_lock);

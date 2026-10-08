@@ -68,6 +68,12 @@
 #define DS_VERSION "6.6.0"
 #define DS_MIN_KERNEL_MAJOR 3
 #define DS_MIN_KERNEL_MINOR 10
+
+/* The smallest --pids-limit we accept. The limit counts every task in the
+ * container's cgroup: the per-boot intermediate and init are always there,
+ * and an enter or run session adds three before its shell forks anything.
+ * Below this a container may boot, but there is no room to get a shell. */
+#define DS_MIN_PIDS_LIMIT 16
 #define DS_RECOMMENDED_KERNEL_MAJOR 4
 #define DS_RECOMMENDED_KERNEL_MINOR 14
 #define DS_AUTHOR "ravindu644"
@@ -102,6 +108,9 @@
 /* Default DNS servers */
 #define DS_DNS_DEFAULT_1 "1.1.1.1"
 #define DS_DNS_DEFAULT_2 "8.8.8.8"
+/* The only resolver a container can reach when the uplink has no IPv4. One
+ * is all there is room for: glibc reads three nameserver lines. */
+#define DS_DNS_DEFAULT_6 "2606:4700:4700::1111"
 
 /* Common Paths & Patterns */
 #define DS_PROC_ROOT_FMT "/proc/%d/root"
@@ -235,6 +244,26 @@ struct ds_net_handshake {
 #define DS_NAT_PREFIX 16
 #endif
 
+/* NAT66. One ULA /48 for everything we masquerade. RFC 4193 wants the global
+ * ID random; ours is fixed (64:73:70 is "dsp") for the same reason the IPv4
+ * side is a fixed 172.28.0.0/16: the monitor, the cleanup path and the docs
+ * all need to name it without reading state.
+ *   Bridge mode:  ds-br0 is fd64:7370::1 and containers share fd64:7370::/64.
+ *   Bridgeless:   each container gets fd64:7370:0:XXYY::/64, where XX.YY are
+ *                 the last two octets of its 172.28.XX.YY address.
+ * Containers always route through fe80::1, which sits on the bridge or on the
+ * bridgeless host veth. */
+#define DS_NAT6_SUBNET "fd64:7370::/48"
+#define DS_NAT6_PREFIX "fd64:7370::"
+#define DS_NAT6_PREFIX_LEN 48
+#define DS_NAT6_GW_LL "fe80::1"
+
+/* Router Advertisement frame: ethernet + IPv6 + RA with a prefix option. The
+ * router lifetime is 30 minutes and the DHCP thread re-announces every 5. */
+#define DS_RA_FRAME_LEN 102
+#define DS_RA_ROUTER_LIFETIME 1800
+#define DS_RA_INTERVAL_SEC 300
+
 /* Android ip rule priorities for DS subnet routing.
  *
  * Must be < 10000 so they are evaluated BEFORE Android's VPN rule range
@@ -357,12 +386,13 @@ struct ds_config {
   char uuid[DS_UUID_LEN + 1];
 
   /* Flags */
-  int foreground;         /* --foreground */
-  int hw_access;          /* --hw-access */
-  int gpu_mode;           /* --gpu: mirror GPU nodes into isolated tmpfs /dev */
-  int termux_x11;         /* --termux-x11 (Android only) */
-  char *tx11_extra_flags; /* --tx11-flags "..." (heap, NULL if unset) */
-  int virgl;              /* --virgl (Android only) */
+  int foreground; /* --foreground */
+  int hw_access;  /* --hw-access */
+  int gpu_mode;   /* --gpu: mirror GPU nodes into isolated tmpfs /dev */
+  int x11; /* -X, --x11: bridge host X11 socket (launches Termux:X11 on Android)
+            */
+  char *tx11_extra_flags;  /* --tx11-flags "..." (heap, NULL if unset) */
+  int virgl;               /* --virgl (Android only) */
   char *virgl_extra_flags; /* --virgl-flags "..." (heap, NULL if unset) */
   int pulseaudio;          /* --pulse-audio (Android only) */
   int wayland;             /* --wayland (Android only) */
@@ -467,9 +497,14 @@ struct ds_status {
   char hostname[256]; /* from the container config, same source as info */
   char os[256];       /* PRETTY_NAME from /proc/<pid>/root/etc/os-release */
   char ip[256];       /* non-loopback IPv4 addresses, comma separated */
+  char ip6[512];      /* global and ULA IPv6 addresses, comma separated */
   long uptime_sec;
   long ram_used_kb;
   long cpu_permill;
+  /* Limits in force, 0 when unlimited. cpu_limit_permill is the share of the
+   * host the container may use, the same scale as cpu_permill. */
+  long ram_limit_kb;
+  long cpu_limit_permill;
 };
 
 /* Caller fills name, pid and hostname. Fills the rest for every entry in one
@@ -519,7 +554,10 @@ int get_user_shell(const char *user, char *shell_buf, size_t size);
 void check_kernel_recommendation(void);
 void write_monitor_debug_log(const char *name, const char *fmt, ...);
 void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write);
-int is_external_lock_active(const char *name);
+int ds_container_lock(const char *name, int wait);
+void ds_container_unlock(int fd);
+int ds_container_lock_orphan(const char *name);
+void ds_container_claim_supervision(const char *name);
 int wait_for_socket_or_death(pid_t pid, const char *path, int timeout_ms,
                              int interval_us);
 void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
@@ -549,6 +587,7 @@ void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
                            pid_t *pid_out, const char *pidfile,
                            const char *sock_path, const char *tag);
 void ds_oom_protect(void);
+int ds_thread_create(pthread_t *tid, void *(*fn)(void *), void *arg);
 /* Common preamble for a forked long-lived daemon child (audio/GPU/X11 helper):
  * ignore terminal-disconnect signals so it outlives the launching session and
  * protect it from the OOM killer.  Must run while still root. */
@@ -631,7 +670,7 @@ int domount_silent(const char *src, const char *tgt, const char *fstype,
 int bind_mount(const char *src, const char *tgt);
 int ds_stage_dev_node(const char *staging, const char *dev_dir, const char *rel,
                       mode_t mode, dev_t dev, gid_t gid);
-int ds_apply_jail_mask(int hw_access, int privileged_mask);
+int ds_apply_jail_mask(int hw_access, int privileged_mask, int sandboxing);
 int setup_dev(const char *rootfs, int hw_access, int gpu_mode, int allow_vts);
 int create_devices(const char *rootfs, const char *staging);
 int setup_devpts(int hw_access);
@@ -650,17 +689,27 @@ int is_mountpoint(const char *path);
 int ds_cgroup_v2_usable(void);
 int ds_cgroup_kernel_supports_v2(void);
 int ds_cgroup_host_is_v2(void);
+int ds_cgroup_has_controller(const char *name);
 int setup_cgroups(int is_systemd, int force_cgroupv1);
 void ds_cgroup_host_bootstrap(int force_cgroupv1);
-int ds_cgroup_attach(pid_t target_pid);
-/* Remove the ds-enter-<child_pid> leaf cgroup after an enter/run session. */
-void ds_cgroup_detach(pid_t child_pid, const char *container_name);
+int ds_cgroup_attach(const char *container_name);
 /* Remove the entire /sys/fs/cgroup/droidspaces/<name>/ subtree on stop. */
 void ds_cgroup_cleanup_container(const char *container_name);
 void print_cgroup_status(struct ds_config *cfg);
-int ds_cgroup_apply_limits(struct ds_config *cfg);
-int ds_cgroup_get_usage(struct ds_config *cfg, long long *mem,
-                        long long *cpu_us, long long *pids);
+void ds_cgroup_apply_limits(struct ds_config *cfg);
+int ds_cgroup_ctrl_dir(const char *ctrl, const char *container_name, char *dir,
+                       size_t size);
+void ds_cgroup_setup(struct ds_config *cfg);
+void ds_cgroup_join(const char *container_name);
+void ds_cgroup_get_limits(const char *container_name, long long *mem,
+                          long long *cpu_quota, long long *cpu_period,
+                          long long *pids);
+int ds_cgroup_count_tasks(const char *container_name, int *running, int *total);
+int ds_cgroup_cpu_times(const char *container_name, long long *user_us,
+                        long long *system_us);
+int ds_cgroup_get_usage(const char *container_name, long long *mem,
+                        long long *file_cache, long long *cpu_us,
+                        long long *pids);
 long long ds_parse_size(const char *str);
 void ds_format_size(long long bytes, char *buf, size_t sz);
 /* Word-boundary controller name check (used by container.c for subtree_control
@@ -671,6 +720,7 @@ int ds_cg_word_in_list(const char *list, const char *name);
 
 int ds_virtualize_init(struct ds_config *cfg);
 void ds_virtualize_update(struct ds_config *cfg);
+void ds_virtualize_join(pid_t init_pid);
 unsigned long ds_get_pid_ns_inode(pid_t pid);
 
 /* hardware.c */
@@ -729,6 +779,7 @@ void ds_net_derive_handshake(pid_t init_pid, struct ds_config *cfg,
                              struct ds_net_handshake *hs);
 void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid);
 void ds_net_start_route_monitor(void);
+void ds_net_stop_route_monitor(void);
 /* Marks route_localnet as required; route monitor re-asserts it every cycle
  * (same pattern as ip_forward). Called once port-forward rules with localhost
  * DNAT are installed. Sticky for process lifetime - never cleared. */
@@ -737,6 +788,7 @@ void ds_net_mark_local_forward_active(void);
  * cable to every running client that delegates to it, with no client restart.
  * Called from the gateway container's monitor on each boot cycle. */
 void ds_net_rewire_gateway_clients(const char *gateway_name, pid_t gateway_pid);
+int ds_net_gateway_reconcile(struct ds_config *cfg, pid_t client_pid);
 /* Gateway teardown: when a container that ACTS AS A GATEWAY stops, explicitly
  * delete the gateway-side veth(s) it serves and reap any now-idle delegated
  * bridge.  The kernel does not auto-reap these (the host-side veth pins its
@@ -746,7 +798,6 @@ int ds_net_disable_tx_checksum(const char *ifname);
 void parse_cidr(const char *cidr, uint32_t *ip_out, uint32_t *mask_out);
 
 int ds_get_dns_servers(const char *custom_dns, char *out, size_t size);
-int detect_ipv6_in_container(pid_t pid);
 
 /* ds_netlink.c */
 
@@ -756,6 +807,8 @@ int ds_nl_link_exists(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_get_ifindex(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_create_bridge(ds_nl_ctx_t *ctx, const char *name);
 int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer);
+int ds_nl_create_veth_in(ds_nl_ctx_t *ctx, const char *host, const char *peer,
+                         int peer_netns_fd, const uint8_t *peer_mac);
 int ds_nl_set_master(ds_nl_ctx_t *ctx, const char *ifname, const char *master);
 int ds_nl_link_up(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_link_down(ds_nl_ctx_t *ctx, const char *ifname);
@@ -766,12 +819,20 @@ int ds_nl_add_addr4(ds_nl_ctx_t *ctx, const char *ifname, uint32_t ip_be,
                     uint8_t prefix);
 int ds_nl_add_route4(ds_nl_ctx_t *ctx, uint32_t dst_be, uint8_t dst_len,
                      uint32_t gw_be, int oif_idx);
+int ds_nl_add_addr6(ds_nl_ctx_t *ctx, const char *ifname,
+                    const struct in6_addr *ip, uint8_t prefix);
+int ds_nl_add_route6(ds_nl_ctx_t *ctx, const struct in6_addr *dst,
+                     uint8_t dst_len, int oif_idx);
+int ds_nl_rule6(ds_nl_ctx_t *ctx, int add, const struct in6_addr *net,
+                uint8_t len, int from_net, int table, int priority);
 int ds_nl_move_to_netns(ds_nl_ctx_t *ctx, const char *ifname, int netns_fd);
 int ds_nl_move_to_netns_named(ds_nl_ctx_t *ctx, const char *ifname,
                               int netns_fd, const char *newname);
-int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, const char *ifname, int *table_out);
-int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int table, char *ifname_out);
-int ds_nl_get_android_default(ds_nl_ctx_t *ctx, char *ifname_out,
+int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, int family, const char *ifname,
+                          int *table_out);
+int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int family, int table,
+                                char *ifname_out);
+int ds_nl_get_android_default(ds_nl_ctx_t *ctx, int family, char *ifname_out,
                               int *table_out);
 int ds_nl_add_rule4(ds_nl_ctx_t *ctx, uint32_t src_be, uint8_t src_len,
                     uint32_t dst_be, uint8_t dst_len, int table, int priority);
@@ -789,17 +850,21 @@ int ds_nl_probe_nat_capability(char *reason, size_t rsz);
 
 /* ds_iptables.c */
 
-int ds_ipt_ensure_masquerade(const char *src_cidr);
-int ds_ipt_host_rules_present(const char *iface, const char *src_cidr,
-                              int expect_dnat);
-int ds_ipt_ensure_forward_accept(const char *iface);
-int ds_ipt_ensure_input_accept(const char *iface);
-int ds_ipt_ensure_mss_clamp(void);
-int ds_ipt_remove_iface_rules(const char *iface);
-int ds_ipt_remove_ds_rules(void);
+/* family is AF_INET or AF_INET6. Each call tries the raw ip_tables /
+ * ip6_tables socket first and falls back to the iptables / ip6tables binary
+ * for whatever the kernel rejects. */
+int ds_ipt_ensure_masquerade(int family, const char *src_cidr);
+int ds_ipt_host_rules_present(int family, const char *iface,
+                              const char *src_cidr, int expect_dnat);
+int ds_ipt_ensure_forward_accept(int family, const char *iface);
+int ds_ipt_ensure_input_accept(int family, const char *iface);
+int ds_ipt_ensure_mss_clamp(int family);
+int ds_ipt_remove_iface_rules(int family, const char *iface);
+int ds_ipt_remove_ds_rules(int family);
 int ds_ipt_add_portforwards(struct ds_port_forward *pfs, int count,
                             const char *container_ip);
 int ds_ipt_remove_portforwards(struct ds_config *cfg);
+int ds_ipt6_available(void);
 
 /* Static NAT IP management (network.c) */
 
@@ -832,7 +897,14 @@ void ds_net_resolve_static_ip(struct ds_config *cfg);
  * Isolation is enforced by AF_PACKET bind to veth_host's ifindex; no MAC
  * filter is needed or used (see ds_dhcp.c for rationale). */
 void ds_dhcp_server_start(struct ds_config *cfg, const char *veth_host,
-                          uint32_t offer_ip_be, uint32_t gw_ip_be);
+                          uint32_t offer_ip_be, uint32_t gw_ip_be,
+                          const struct in6_addr *ra_prefix);
+
+/* ra.c: the Router Advertisement the DHCP thread sends when ra_prefix (a /64)
+ * is given, so the container also configures IPv6 by itself. */
+int ds_ra_is_solicit(const uint8_t *frame, size_t len);
+void ds_ra_build(uint8_t *out, const uint8_t mac[6],
+                 const struct in6_addr *prefix);
 
 /* Stop the DHCP server and unblock its recv() loop. Call before veth teardown.
  */
@@ -909,8 +981,7 @@ int stop_rootfs_with_timeout(struct ds_config *cfg, int skip_unmount,
                              int timeout_seconds);
 int enter_namespace(pid_t pid, struct ds_config *cfg);
 int enter_rootfs(struct ds_config *cfg, const char *user);
-int run_in_rootfs(struct ds_config *cfg, int argc, char **argv,
-                  const char *as_user);
+int run_in_rootfs(struct ds_config *cfg, char **argv, const char *as_user);
 int show_info(struct ds_config *cfg, int trust_cfg_pid);
 /* argc/argv: the process's original arguments, so restart can re-apply CLI
  * overrides after its post-stop config reload. NULL argv skips that step. */
@@ -929,12 +1000,16 @@ void print_documentation(const char *argv0);
 
 int check_requirements(void);
 int check_requirements_hw(int hw_access);
-int check_requirements_detailed(void);
+int check_requirements_detailed(int format_output);
 
 /* daemon.c - daemon, client, and probe entry points */
 
 int ds_daemon_run(int foreground, char **argv);
-int ds_client_run(int argc, char **argv);
+/* cmd is the sub-command main() discovered, so a payload word like "run"
+ * inside the command does not decide whether the session is interactive.
+ * want_stdin is --stdin: relay our stdin to a pipe-mode run instead of
+ * handing it /dev/null. */
+int ds_client_run(int argc, char **argv, const char *cmd, int want_stdin);
 int ds_daemon_probe(void);
 
 #endif /* DROIDSPACE_H */

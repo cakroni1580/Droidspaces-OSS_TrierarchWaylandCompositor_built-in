@@ -61,6 +61,10 @@ data class ContainerInfo(
     val gatewayBridge: String = "",
     val privileged: String = "",
     val customInit: String = "",
+    /** Bytes, cpu_quota microseconds per [ResourceLimits.CPU_PERIOD_US], process count. 0 is unlimited. */
+    val memoryLimit: Long = 0,
+    val cpuQuota: Long = 0,
+    val pidsLimit: Long = 0,
     val uuid: String = ""
 ) {
     val isRunning: Boolean
@@ -78,7 +82,7 @@ data class ContainerInfo(
         appendLine("enable_android_storage=${if (enableAndroidStorage) "1" else "0"}")
         appendLine("enable_hw_access=${if (enableHwAccess) "1" else "0"}")
         appendLine("enable_gpu_mode=${if (enableGpuMode) "1" else "0"}")
-        appendLine("enable_termux_x11=${if (enableTermuxX11) "1" else "0"}")
+        appendLine("enable_x11=${if (enableTermuxX11) "1" else "0"}")
         if (tx11ExtraFlags.isNotBlank()) appendLine("tx11_extra_flags=$tx11ExtraFlags")
         appendLine("enable_virgl=${if (enableVirgl) "1" else "0"}")
         if (virglExtraFlags.isNotBlank()) appendLine("virgl_extra_flags=$virglExtraFlags")
@@ -128,6 +132,12 @@ data class ContainerInfo(
         if (privileged.isNotEmpty()) {
             appendLine("privileged=$privileged")
         }
+        if (memoryLimit > 0) appendLine("memory_limit=$memoryLimit")
+        if (cpuQuota > 0) {
+            appendLine("cpu_quota=$cpuQuota")
+            appendLine("cpu_period=${ResourceLimits.CPU_PERIOD_US}")
+        }
+        if (pidsLimit > 0) appendLine("pids_limit=$pidsLimit")
         if (customInit.isNotEmpty()) {
             appendLine("custom_init=$customInit")
         }
@@ -389,7 +399,7 @@ object ContainerManager {
                 enableAndroidStorage = configMap["enable_android_storage"] == "1",
                 enableHwAccess = configMap["enable_hw_access"] == "1",
                 enableGpuMode = configMap["enable_gpu_mode"] == "1",
-                enableTermuxX11 = configMap["enable_termux_x11"] == "1",
+                enableTermuxX11 = (configMap["enable_x11"] ?: configMap["enable_termux_x11"]) == "1",
                 tx11ExtraFlags = configMap["tx11_extra_flags"] ?: "",
                 enableVirgl = configMap["enable_virgl"] == "1",
                 virglExtraFlags = configMap["virgl_extra_flags"] ?: "",
@@ -416,6 +426,11 @@ object ContainerManager {
                 gatewayBridge = configMap["gateway_bridge"] ?: "",
                 privileged = configMap["privileged"] ?: "",
                 customInit = configMap["custom_init"] ?: "",
+                memoryLimit = configMap["memory_limit"]?.toLongOrNull() ?: 0,
+                // The CLI can set any period, we always write the default one.
+                cpuQuota = (configMap["cpu_quota"]?.toLongOrNull() ?: 0) * ResourceLimits.CPU_PERIOD_US /
+                    (configMap["cpu_period"]?.toLongOrNull()?.takeIf { it > 0 } ?: ResourceLimits.CPU_PERIOD_US),
+                pidsLimit = configMap["pids_limit"]?.toLongOrNull() ?: 0,
                 uuid = configMap["uuid"] ?: ""
             )
         } catch (e: Exception) {

@@ -88,7 +88,6 @@
     <string name="status_running">EN COURS</string>
     <string name="status_stopped">ARRÊTÉ</string>
     <string name="pid_label">PID : %1$d</string>
-    <string name="hostname_label">Nom d\'hôte : %1$s</string>
     <string name="options_label">Options : %1$s</string>
     <string name="start">Démarrer</string>
     <string name="stop">Arrêter</string>
@@ -113,7 +112,6 @@
     <string name="changes_take_effect_after_restart">Les changements prendront effet après le redémarrage</string>
     <string name="disable_ipv6">Désactiver IPv6</string>
     <string name="disable_ipv6_description">Désactiver IPv6 dans ce conteneur. La désactivation d\'IPv6 peut casser les applications VPN sur l\'hôte.</string>
-    <string name="disable_ipv6_nat_forced">IPv6 est toujours désactivé en mode NAT et None.</string>
     <string name="android_storage">Stockage Android</string>
     <string name="android_storage_description">Monter le stockage Android</string>
     <string name="hardware_access">Accès matériel</string>
@@ -142,23 +140,10 @@
     <!-- Installation Screen -->
     <string name="installation_complete">Installation terminée</string>
     <string name="installation_failed">Échec de l\'installation</string>
-    <string name="installing_module">Installation du module</string>
     <string name="installing_droidspaces">Installation de Droidspaces</string>
-    <string name="module_installed_success">Module Magisk installé avec succès</string>
     <string name="backend_installed_success">Le backend a été installé avec succès</string>
     <string name="module_installation_failed">Échec de l\'installation du module</string>
     <string name="binary_installation_failed">Échec de l\'installation du binaire</string>
-    <string name="removing_old_module">Suppression de l\'ancien module...</string>
-    <string name="extracting_module_files">Extraction des fichiers du module...</string>
-    <string name="installing_module_step">Installation du module...</string>
-    <string name="setting_permissions">Configuration des permissions...</string>
-    <string name="verifying_installation">Vérification de l\'installation...</string>
-    <string name="preparing_module_installation">Préparation de l\'installation du module...</string>
-    <string name="detected_architecture">Architecture détectée : %1$s</string>
-    <string name="creating_directories">Création des répertoires...</string>
-    <string name="installing_binary">Installation du binaire : %1$s</string>
-    <string name="granting_permissions">Attribution des permissions...</string>
-    <string name="preparing_installation">Préparation de l\'installation...</string>
     <!-- Control Panel Screen -->
     <string name="no_containers_running">Aucun conteneur en cours</string>
     <string name="start_container_first">Démarrez d\'abord un conteneur pour le voir ici</string>

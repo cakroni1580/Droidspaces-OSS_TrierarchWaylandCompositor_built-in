@@ -2,50 +2,52 @@
 title: Troubleshooting
 section: Reference
 order: 1
-desc: Troubleshoot Droidspaces containers: systemd hangs, paranoid networking, SELinux corruption, OverlayFS f2fs, sparse image reclaim, WiFi power save.
+desc: Fixes for common Droidspaces container problems: systemd hangs, paranoid networking, SELinux corruption, OverlayFS on f2fs, sparse image reclaim, Wi-Fi power save.
 keywords: droidspaces, troubleshooting, systemd, hang, fix, network, issues, selinux, overlayfs, ffs, container, errors
 -->
 
 # Troubleshooting
 
-Common issues, their causes, and how to fix them.
+Common problems, what causes them, and how to fix them.
 
-### Quick Navigation
-- [Modern Distros (Arch, Fedora, etc.) Failure on Legacy Kernels](#modern-distros-arch-fedora-etc-failure-on-legacy-kernels)
+### Quick navigation
+
+- [Modern distros (Arch, Fedora, etc.) failure on legacy kernels](#modern-distros-arch-fedora-etc-failure-on-legacy-kernels)
 - ["Required key not available" (ENOKEY)](#required-key-not-available)
-- [Mount Errors on Kernel 4.14](#mount-errors-on-kernel-414)
-- [OverlayFS Not Supported (f2fs)](#overlayfs-not-supported-f2fs)
-- [Container Name Conflicts](#container-name-conflicts)
-- [Systemd Hangs on Older Kernels](#systemd-hangs-on-older-kernels)
-- [Container Won't Stop](#container-wont-stop)
-- [Rootfs Image I/O Errors on Android](#rootfs-image-io-errors-on-android)
-- [Networking is completely dead - ping fails with "socket: permission denied"](#paranoid-networking)
-- [DNS / Name Resolution Issues](#dns--name-resolution-issues)
-- [WiFi/Mobile Data Disconnects](#wifimobile-data-disconnects)
-- [SELinux-Induced Rootfs Corruption](#selinux-induced-rootfs-corruption-directory-mode)
-- [Reclaiming Storage (Sparse Image)](#reclaim-storage)
-- [WIFI `Power save: on` make the networking experience sluggish in Android](#nuke-wifi-powersave)
-- [Getting Help](#getting-help)
+- [Mount errors on kernel 4.14](#mount-errors-on-kernel-414)
+- [OverlayFS not supported (f2fs)](#overlayfs-not-supported-f2fs)
+- [Container name conflicts](#container-name-conflicts)
+- [systemd hangs on older kernels](#systemd-hangs-on-older-kernels)
+- [Container won't stop](#container-wont-stop)
+- [Rootfs image I/O errors on Android](#rootfs-image-io-errors-on-android)
+- [Networking is completely dead: ping fails with "socket: permission denied"](#paranoid-networking)
+- [DNS / name resolution issues](#dns--name-resolution-issues)
+- [WiFi/mobile data disconnects](#wifimobile-data-disconnects)
+- [SELinux-induced rootfs corruption](#selinux-induced-rootfs-corruption-directory-mode)
+- [Reclaiming storage (sparse image)](#reclaim-storage)
+- [Wi-Fi `Power save: on` makes networking sluggish on Android](#nuke-wifi-powersave)
+- [LuCI, or another tool, shows the host's RAM and load despite a limit](#sysinfo-host-values)
+- [A resource limit is unavailable although its kernel option is enabled](#controller-disabled-at-boot)
+- [Getting help](#getting-help)
 
 ---
 
 <a id="modern-distros"></a>
-## Modern Distros (Arch, Fedora, etc.) Failure on Legacy Kernels
+## Modern distros (Arch, Fedora, etc.) failure on legacy kernels
 
-This is not a bug in Droidspaces; it is a limitation of the distribution's `systemd` version. Modern distributions like Arch Linux, Fedora, or openSUSE use recent versions of `systemd` (v258 and newer) that require kernel features missing in older versions. On legacy kernels (3.18, 4.4, 4.9, 4.14, 4.19), these distros will either fail to boot with an "Unsupported Kernel" message, crash during initialization, or appear to hang when executing `systemctl` commands.
+This is not a Droidspaces bug. It is a limitation of the distribution's `systemd` version. Arch Linux, Fedora, openSUSE and other current distributions ship recent `systemd` (v258 and newer), which needs kernel features that older kernels do not have. On legacy kernels (3.18, 4.4, 4.9, 4.14, 4.19) these distros either refuse to boot with an "Unsupported Kernel" message, crash during initialization, or appear to hang when you run `systemctl` commands.
 
-Systemd's development philosophy increasingly targets modern Linux environments. Starting with v258 (released in September 2025), the codebase was purged of many legacy workarounds and backward-compatibility layers intended for pre-5.4 kernels.
+systemd increasingly targets modern Linux. Starting with v258 (released in September 2025), many legacy workarounds and backward-compatibility layers for pre-5.4 kernels were removed from the codebase: old capability checks, deprecated fallback mechanisms and obsolete D-Bus methods.
 
-Specifically, developers removed old capability checks, deprecated fallback mechanisms, and deleted obsolete D-Bus methods.
+Without those fallbacks, modern `systemd` assumes modern kernel APIs are present. When they are not, as on legacy kernels, it fails hard instead of degrading gracefully.
 
-By removing these fallbacks, modern `systemd` assumes modern kernel APIs are present. When they are not (as in legacy kernels), it hard-fails rather than degrading gracefully.
+**Cause:** The host kernel is too old for the syscalls and features newer `systemd` versions require.
 
-**Cause:** The host kernel is too old to support modern syscalls and features required by newer `systemd` versions.
-
-Legacy kernels lack modern system calls (e.g., `clone3`, `openat2`, or newer `bpf` hooks) that `systemd` now utilizes by default. When `systemd` invokes a syscall that a 4.14 or 4.19 kernel doesn't recognize, the kernel rejects it, leading to a failure.
+Legacy kernels lack newer system calls (e.g., `clone3`, `openat2`, or newer `bpf` hooks) that `systemd` now uses by default. When `systemd` makes a syscall a 4.14 or 4.19 kernel does not know, the kernel rejects it and systemd fails.
 
 **Solution:**
-- Use any container that utilizes **OpenRC**, **runit**, or **s6** as its init system.
+
+- Use any container that uses **OpenRC**, **runit**, or **s6** as its init system.
 - Use distributions with `systemd` versions older than v258, such as **Ubuntu 22.04**, **Ubuntu 24.04**, **Ubuntu 25.04**, or **Ubuntu 25.10 (which uses v257.9 as of March 2026)**.
 - Use **Debian 12 (Bookworm)** or **Debian 13 (Trixie)**.
 
@@ -54,43 +56,45 @@ Legacy kernels lack modern system calls (e.g., `clone3`, `openat2`, or newer `bp
 
 ## "Required key not available"
 
-**Symptoms:** The container crashes or filesystem operations fail with "Required key not available" errors. Most commonly seen on Android devices with File-Based Encryption (FBE).
+**Symptoms:** The container crashes, or filesystem operations fail with "Required key not available" errors. Most often seen on Android devices with File-Based Encryption (FBE).
 
-**Cause:** systemd services inside the container attempt to create new session keyrings, which causes the process to lose access to Android's FBE encryption keys.
+**Cause:** systemd services inside the container create new session keyrings, and the process loses access to Android's FBE encryption keys.
 
 **Affected kernels:** 3.18, 4.4, 4.9, 4.14, 4.19 (legacy Android kernels)
 
-**Solution:** This is handled automatically by Droidspaces' Adaptive Seccomp Shield on kernels below 5.0. The shield intercepts keyring-related syscalls and returns `ENOSYS`, causing systemd to fall back to the existing session keyring.
+**Solution:** On kernels below 5.0, Droidspaces' Adaptive Seccomp Shield handles this automatically. It intercepts the keyring syscalls and returns `ENOSYS`, so systemd falls back to the existing session keyring.
 
-If you're still seeing this error:
+If you still see this error:
+
 - Verify your Droidspaces binary is up to date (v4.2.4+)
 - Run `droidspaces check` to verify seccomp support
 - Ensure `CONFIG_SECCOMP=y` and `CONFIG_SECCOMP_FILTER=y` are in your kernel config
 - Move to **rootfs.img mode** (recommended on Android to isolate filesystem keys)
-- **Advanced**: Decrypt the `/data` partition by surgically editing the `fstab` file in `boot`/`vendor`/`vendor_boot` partitions (requires advanced Android modding knowledge)
+- **Advanced**: Decrypt the `/data` partition by editing the `fstab` file in `boot`/`vendor`/`vendor_boot` partitions (requires advanced Android modding knowledge)
 
 ---
 
-## Mount Errors on Kernel 4.14
+## Mount errors on kernel 4.14
 
-**Symptoms:** The first container start attempt after stopping fails with a mount error, but the second attempt succeeds.
+**Symptoms:** The first start after stopping a container fails with a mount error, and the second attempt succeeds.
 
-**Cause:** On kernel 4.14, loop device cleanup is asynchronous. After unmounting a rootfs image, the loop device may not be fully released when the next mount attempt occurs.
+**Cause:** On kernel 4.14, loop device cleanup is asynchronous. After a rootfs image is unmounted, the loop device may not be fully released by the time the next mount runs.
 
-**Solution:** Droidspaces v4.2.3+ includes a 3-attempt retry loop with `sync()` calls and 1-second settle delays between attempts. This handles the race condition automatically.
+**Solution:** Droidspaces v4.2.3+ retries the mount up to 3 times, with `sync()` calls and a 1-second settle delay between attempts. This handles the race automatically.
 
-If you're still experiencing issues:
+If you still have problems:
+
 - Update to the latest Droidspaces version
 - Wait a few seconds between stopping and starting a container
 - Use `sync` before restarting: `sync && droidspaces --name=mycontainer restart`
 
 ---
 
-## OverlayFS Not Supported (f2fs)
+## OverlayFS not supported (f2fs)
 
-**Symptoms:** Starting a container with `--volatile` fails with an error about OverlayFS not being supported or f2fs incompatibility.
+**Symptoms:** Starting a container with `--volatile` fails with an error saying OverlayFS is not supported or f2fs is incompatible.
 
-**Cause:** Most Android devices use f2fs for the `/data` partition. OverlayFS on many Android kernels (4.14, 5.15) does not support f2fs as a lower directory.
+**Cause:** Most Android devices use f2fs for the `/data` partition. OverlayFS on many Android kernels (4.14, 5.15) does not accept f2fs as a lower directory.
 
 **Solution:** Use a rootfs image instead of a directory:
 
@@ -104,18 +108,18 @@ droidspaces --name=test --rootfs-img=/data/rootfs.img --volatile start
 
 ---
 
-## Container Name Conflicts
+## Container name conflicts
 
-**Symptoms:** Starting a container fails because a container with the same name is already running, or PID file conflicts occur.
+**Symptoms:** A container fails to start because one with the same name is already running, or PID files conflict.
 
 **Solution:**
 
-1. Check what's currently running:
+1. Check what is running:
    ```bash
    droidspaces show
    ```
 
-2. If the container is listed but you believe it's actually stopped, clean up stale state:
+2. If the container is listed but you believe it has stopped, clean up the stale state:
    ```bash
    droidspaces scan
    ```
@@ -127,9 +131,9 @@ droidspaces --name=test --rootfs-img=/data/rootfs.img --volatile start
 
 ---
 
-## Systemd Hangs on Older Kernels
+## systemd hangs on older kernels
 
-**Symptoms:** The entire systemd hangs or becomes unresponsive when starting a container on legacy kernels (3.18, 4.4, 4.9, 4.14, 4.19).
+**Symptoms:** systemd hangs or stops responding when a container starts on a legacy kernel (3.18, 4.4, 4.9, 4.14, 4.19).
 
 **Cause:** systemd's service sandboxing (`PrivateTmp=yes`, `ProtectSystem=yes`) triggers a race condition in the kernel's VFS `grab_super` path on legacy kernels.
 
@@ -137,25 +141,26 @@ droidspaces --name=test --rootfs-img=/data/rootfs.img --volatile start
 
 ---
 
-## Container Won't Stop
+## Container won't stop
 
-**Symptoms:** `droidspaces stop` takes more than 15 seconds to stop the container and eventually fail.
+**Symptoms:** `droidspaces stop` takes more than 15 seconds and then fails.
 
-**Cause:** Exact same cuase of [Systemd Hangs on Older Kernels](#systemd-hangs-on-older-kernels).
+**Cause:** The same as [systemd hangs on older kernels](#systemd-hangs-on-older-kernels).
 
 **Solution:** This is a kernel bug (`grab_super()` on 4.14.113 and neighbours) and Droidspaces cannot work around it. Use a kernel that carries the fix.
 
 ---
 
-## Rootfs Image I/O Errors on Android
+## Rootfs image I/O errors on Android
 
-**Symptoms:** Loop-mounting a rootfs image silently fails.
+**Symptoms:** Loop-mounting a rootfs image fails silently.
 
-**Cause:** On certain Android devices, the SELinux context of the `.img` file prevents the loop driver from performing I/O.
+**Cause:** On some Android devices, the SELinux context of the `.img` file stops the loop driver from doing I/O.
 
-**Solution:** Droidspaces v4.3.0+ automatically applies the `vold_data_file` SELinux context to image files before mounting. If you're on an older version, update to the latest release.
+**Solution:** Droidspaces v4.3.0+ applies the `vold_data_file` SELinux context to image files before mounting them. On an older version, update to the latest release.
 
-You can also manually apply the context:
+You can also apply the context by hand:
+
 ```bash
 chcon u:object_r:vold_data_file:s0 /path/to/rootfs.img
 ```
@@ -166,9 +171,9 @@ chcon u:object_r:vold_data_file:s0 /path/to/rootfs.img
 
 ## Networking is completely dead - ping fails with "socket: permission denied"
 
-**Symptoms:** You have no internet access inside the container. Even basic commands like `ping` fail immediately with a `socket: permission denied` error, even when running as root.
+**Symptoms:** There is no internet access inside the container. Even `ping` fails immediately with `socket: permission denied`, even as root.
 
-**Cause:** This is caused by **Android Paranoid Networking**, a security feature found in many Android kernels (especially version 4.14 and older). Unlike standard Linux, the Android kernel restricts network socket creation to specific supplementary Group IDs (GIDs). Without these specific IDs, the kernel's security hooks block the process:
+**Cause:** **Android Paranoid Networking**, a security feature in many Android kernels (especially 4.14 and older). Unlike standard Linux, the Android kernel allows network socket creation only to processes in specific supplementary group IDs (GIDs). Without them, the kernel's security hooks block the process:
 
 * **AID_INET (3003):** Required to create any AF_INET/AF_INET6 socket. Without this, `connect()` and `bind()` calls fail.
 * **AID_NET_RAW (3004):** Required for `ping` and other raw networking tasks.
@@ -176,26 +181,26 @@ chcon u:object_r:vold_data_file:s0 /path/to/rootfs.img
 
 **Solutions:**
 
-- **Kernel Level Fix:** If you are building your own kernel, the most effective solution is to disable this restriction entirely in your kernel configuration:
+- **Kernel fix:** If you build your own kernel, the most effective fix is to turn the restriction off in the kernel configuration:
   ```bash
   CONFIG_ANDROID_PARANOID_NETWORK=n
   ```
 
-- **Userland Fix:** Use a rootfs that has been specifically patched to include these Android-specific GIDs in the group database. Our official rootfs tarballs come pre-configured to handle these permission requirements:
+- **Userland fix:** Use a rootfs that has these Android GIDs added to its group database. Our official rootfs tarballs come with them already configured:
 
    [Droidspaces-rootfs-builder Releases](https://github.com/ravindu644/Droidspaces-rootfs-builder/releases/latest)
 
 ---
 
-## DNS / Name Resolution Issues
+## DNS / name resolution issues
 
-**Symptoms:** Internet works (you can ping IPs), but domain names fail to resolve, even though `/etc/resolv.conf` has the correct DNS nameservers. This issue happens especially with Mobile Data, but can also occur on Wi-Fi with some ISPs.
+**Symptoms:** Internet works (you can ping IPs), but domain names do not resolve, even though `/etc/resolv.conf` lists the correct nameservers. It happens mostly on mobile data, but also on Wi-Fi with some ISPs.
 
-**Cause:** It seems some ISPs don’t like custom DNS setups. They completely block common DNS servers like `8.8.8.8` and `1.1.1.1`.
+**Cause:** Some ISPs appear to block custom DNS setups, including common public DNS servers like `8.8.8.8` and `1.1.1.1`.
 
-**Solution:** Use your ISP’s own DNS servers instead of custom ones.
+**Solution:** Use your ISP's own DNS servers instead of custom ones.
 
-1. Run this command in an Android root shell to get the default DNS addresses your ISP assigned:
+1. Run this command in an Android root shell to get the DNS addresses your ISP assigned:
 
    ```shell
    dumpsys connectivity | sed 's/}}/\n/g' | grep 'InterfaceName: wlan0' | grep -o 'DnsAddresses: \[[^]]*\]' | grep -o '/[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' | tr -d '/'
@@ -205,79 +210,82 @@ chcon u:object_r:vold_data_file:s0 /path/to/rootfs.img
 
 ---
 
-## WiFi/Mobile Data Disconnects
+## WiFi/mobile data disconnects
 
-**Symptoms:** WiFi or mobile data permanently stops working on the host device during container start or stop processes. You may be unable to turn them back on without a device reboot.
+**Symptoms:** Wi-Fi or mobile data on the host stops working while a container starts or stops, and may not come back on without a device reboot.
 
-**Cause:** The container's `systemd-networkd` service may conflict with Android's network management or attempt to override host-side network configurations.
+**Cause:** The container's `systemd-networkd` service can conflict with Android's network management or try to override the host's network configuration.
 
 **Solutions:**
 
-- If you are using the host networking mode: Mask the `systemd-networkd` service inside the container to prevent it from starting:
+- In host networking mode, mask the `systemd-networkd` service inside the container so it never starts:
 
    1. **Via Android App**: Go to **Panel** -> **Container Name** -> **Manage** (Systemd Menu) and find `systemd-networkd`, then tap on 3 dot icon next to the `systemd-networkd` card and select **Mask**.
    2. **Via Terminal**:
       ```bash
       sudo systemctl mask systemd-networkd
       ```
-- Use isolated NAT mode for maximum networking freedom without any conflicts to the host's networking.
+- Use NAT mode, where the container has its own network stack and cannot conflict with the host's.
 
 ---
 
-## SELinux-Induced Rootfs Corruption (Directory Mode)
+## SELinux-induced rootfs corruption (directory mode)
 
-**Symptoms:** Symbolic link sizes changing unexpectedly (e.g., `dpkg` warnings about `libstdc++.so.6`), shared library load failures (`LD_LIBRARY_PATH` issues), or random binary crashes.
+**Symptoms:** Symbolic link sizes change unexpectedly (e.g., `dpkg` warnings about `libstdc++.so.6`), shared libraries fail to load (`LD_LIBRARY_PATH` issues), or binaries crash at random.
 
-**Cause:** On Android, the `/data/local/Droidspaces/Containers` directory often receives a generic SELinux context. This causes the kernel to block or silently interfere with advanced filesystem operations (like creating certain symlinks or special files) when running in **Directory-based mode** (`--rootfs=/path/to/dir`). Because every file and symlink inside the directory tree is exposed directly to the host filesystem, Android's SELinux policy can relabel or restrict individual entries, corrupting the internal Linux filesystem's expected layout.
+**Cause:** On Android, the `/data/local/Droidspaces/Containers` directory often gets a generic SELinux context. In **directory-based mode** (`--rootfs=/path/to/dir`), the kernel then blocks or silently interferes with some filesystem operations, such as creating certain symlinks or special files. Every file and symlink in the directory tree is exposed directly to the host filesystem, so Android's SELinux policy can relabel or restrict individual entries and corrupt the layout the Linux system inside expects.
 
-**Recommended Solution:** Move to **rootfs.img mode** (`--rootfs-img=/path/to/rootfs.img`).
+**Recommended solution:** Move to **rootfs.img mode** (`--rootfs-img=/path/to/rootfs.img`).
 
-In this mode, the rootfs is stored as a standalone ext4 image and loop-mounted at runtime. SELinux xattr labels for files inside the image are encapsulated within the image's own filesystem metadata, so Android's policy engine cannot relabel or conflict with them. This avoids the core problem of the host assigning a generic context to every file in the directory tree.
+In this mode the rootfs is a standalone ext4 image, loop-mounted at runtime. The SELinux xattr labels of files inside the image live in the image's own filesystem metadata, where Android's policy engine cannot relabel or conflict with them. The host no longer assigns a generic context to every file in the tree.
 
 > [!Note]
 >
-> SELinux enforcement still applies at the process level - the container process's domain and access to the loop device or mount point remain subject to host policy. The `.img` mode does not create a fully SELinux-transparent environment, but it does eliminate host-side interference with the internal filesystem's structure and extended attributes.
+> SELinux enforcement still applies at the process level: the container process's domain and its access to the loop device or mount point remain subject to host policy. The `.img` mode does not make the environment fully SELinux-transparent, but it does stop the host from interfering with the internal filesystem's structure and extended attributes.
 
 > [!WARNING]
-> While switching to `permissive` mode may seem to fix this, it is **not recommended** as a permanent solution. If the rootfs has already been corrupted by SELinux denials, the damage is often permanent and cannot be undone by simply changing modes.
+> Switching SELinux to `permissive` may look like a fix, but it is **not recommended** as a permanent solution. If the rootfs has already been corrupted by SELinux denials, the damage is often permanent, and changing modes will not undo it.
 
 ---
 
 <a id="reclaim-storage"></a>
-## Reclaiming Storage (Sparse Image)
+## Reclaiming storage (sparse image)
 
-**Symptoms:** You have deleted large files or uninstalled heavy packages inside a container using **Sparse Image mode** (`rootfs.img`), but the `rootfs.img` file on your Android internal storage still takes up the same amount of space (it doesn't "shrink" back).
+**Symptoms:** You deleted large files or removed heavy packages inside a container in **Sparse Image mode** (`rootfs.img`), but the `rootfs.img` file on your Android internal storage takes up the same space as before. It does not shrink back.
 
-**Cause:** Ext4 sparse images expand as you write data, but the host filesystem cannot automatically detect when blocks are freed inside the image. This is especially common on legacy kernels (e.g., 4.14).
+**Cause:** Ext4 sparse images grow as data is written, but the host filesystem cannot tell on its own when blocks inside the image are freed. This is especially common on legacy kernels (e.g., 4.14).
 
-**Solution:** Use `fstrim` inside the container to tell the kernel to "discard" unused blocks, which punches holes in the sparse image and reclaims space on the physical disk.
+**Solution:** Run `fstrim` inside the container. It tells the kernel to discard unused blocks, which punches holes in the sparse image and frees the space on the physical disk.
 
 1. **Start the container** normally.
 2. **Run fstrim** as root inside the container:
    ```bash
    sudo fstrim -av
    ```
-3. The command will report how many bytes were trimmed. You will notice the `rootfs.img` size on your Android storage has now decreased to match the actual data usage.
+3. The command reports how many bytes were trimmed. The `rootfs.img` size on your Android storage now drops to match the data actually in use.
 
 ---
 
 <a id="nuke-wifi-powersave"></a>
 
-## Wi-Fi `Power save: on` Causing Sluggish Networking on Android
+## Wi-Fi `Power save: on` causing sluggish networking on Android
 
-**Symptoms:** Android automatically puts Wi-Fi hardware into power-saving mode when the device's screen turns off. This can cause sluggish networking or dropped connections within containers. Because there is no universal toggle to disable this behavior from the Android userspace, you must explicitly force the power save state to "off" using a background service.
+**Symptoms:** Android puts the Wi-Fi hardware into power-saving mode when the screen turns off. Networking in containers becomes sluggish or connections drop. Android userspace has no universal toggle to turn this off, so you have to force power save off yourself from a background service.
 
-**Solution:** You can create a lightweight, dedicated container in host networking mode (`--net=host`) that runs a simple "watchdog" script to keep Wi-Fi power save disabled. We recommend using a minimal Alpine Linux container for this purpose.
+**Solution:** Create a small, dedicated container in host networking mode (`--net=host`) that runs a "watchdog" script to keep Wi-Fi power save off. We recommend a minimal Alpine Linux container for this.
 
-Here is how to set it up:
+To set it up:
 
-### 1. Install Required Utilities
-First, ensure that the `iw` utility is installed in your container.
+### 1. Install required utilities
+
+First, make sure the `iw` utility is installed in the container.
+
 - **Alpine:** `apk add iw`
 - **Ubuntu/Debian:** `apt install iw`
 
-### 2. Create the Watchdog Script
-Create a new file at `/usr/local/bin/wifi-watchdog.sh` with the following content:
+### 2. Create the watchdog script
+
+Create `/usr/local/bin/wifi-watchdog.sh` with this content:
 
 ```shell
 #!/bin/sh
@@ -296,9 +304,9 @@ Make the script executable:
 chmod +x /usr/local/bin/wifi-watchdog.sh
 ```
 
-### 3. Wire Up the Init Service
+### 3. Wire up the init service
 
-Depending on your container's init system, configure the script to run as a background service.
+Set the script up as a background service for your container's init system.
 
 **For OpenRC (Alpine Linux)**
 
@@ -364,13 +372,52 @@ systemctl start wifi-watchdog
 ```
 
 > [!NOTE]
-> This workaround **requires Host Networking Mode** (`--net=host`). The script expects direct access to Android's `wlan0` interface, which is not visible in `NAT` or `None` modes. We recommend dedicating a small "burner" container specifically for this watchdog.
+> This workaround **requires host networking mode** (`--net=host`). The script needs direct access to Android's `wlan0` interface, which is not visible in `NAT` or `None` modes. We recommend a small "burner" container used only for this watchdog.
 
 ---
 
-## Getting Help
+<a id="sysinfo-host-values"></a>
 
-If your issue isn't listed here:
+## LuCI, or another tool, shows the host's RAM and load despite a limit
+
+**Symptom:** a container has a memory or CPU limit, and `free`, `nproc` and fastfetch inside it show the limited values, but OpenWRT's LuCI overview still shows the device's full RAM and its real load average.
+
+**Cause:** there are two ways for a program to ask how much memory the machine has. Most read `/proc/meminfo`, which Droidspaces replaces with the container's own figures. Some call the kernel's `sysinfo()` system call instead, and a system call cannot be replaced by a file. OpenWRT's `procd` is one of them: `ubus call system info` takes total, free, shared and buffered memory, swap, load and uptime from `sysinfo()`, and LuCI displays what `procd` reports. Some Java runtimes and a few Alpine tools do the same.
+
+**What still holds:** the limit is enforced either way. The container cannot use more than it was given. Only the number these tools display is wrong.
+
+**Checking a limit yourself:** run `droidspaces -n <name> info` on the host, or `cat /proc/meminfo` inside the container.
+
+There is no fix for this at the moment. Intercepting `sysinfo()` needs seccomp user notifications, which only exist on kernel 5.0 and later.
+
+---
+
+<a id="controller-disabled-at-boot"></a>
+
+## A resource limit is unavailable although its kernel option is enabled
+
+**Symptom:** `droidspaces check` marks "Memory limit support", "CPU limit support" or "Process limit support" as missing, the app greys out the matching toggle, or a start prints for example `memory.max is not available on this kernel`, yet `/proc/config.gz` has the option (`CONFIG_MEMCG=y`, `CONFIG_CFS_BANDWIDTH=y`, `CONFIG_CGROUP_PIDS=y`).
+
+**Cause:** the controller is built in but was switched off at boot. Look at the last column of `/proc/cgroups`:
+
+```
+#subsys_name    hierarchy  num_cgroups  enabled
+memory          0          255          0
+```
+
+A `0` there means the kernel was booted with `cgroup_disable=` for that controller: `cgroup_disable=memory`, `cgroup_disable=cpu` or `cgroup_disable=pids`. Confirm it with `cat /proc/cmdline`. `cgroup_disable=memory` is the common one, many vendor and custom Android kernels use it to save a little memory.
+
+**Fix:** remove the argument from the kernel command line. It comes from `CONFIG_CMDLINE` in the kernel config, from the boot image header (`boot` or `vendor_boot`), or from the bootloader. If `zcat /proc/config.gz | grep CMDLINE` does not show it, it is one of the last two. Avoid `CONFIG_CMDLINE_FORCE` as a way out on Android: it drops every other argument the device passes at boot as well.
+
+The container still starts either way, only the limit is skipped.
+
+If the controller has no row in `/proc/cgroups` at all, the kernel is 6.12 or later and was built without that controller's cgroup v1 code (`CONFIG_MEMCG_V1`, `CONFIG_CPUSETS_V1`). That file only lists controllers with v1 support compiled in. The controller is still there on cgroup v2: `cat /sys/fs/cgroup/cgroup.controllers` shows it, and the limit works. Droidspaces reads that file too, so an up to date build reports the limit as supported.
+
+---
+
+## Getting help
+
+If your problem is not listed here:
 
 1. Run `droidspaces check` and note any failures
 2. Check the container logs: `droidspaces --name=mycontainer run journalctl -n 100`

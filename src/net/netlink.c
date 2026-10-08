@@ -217,11 +217,17 @@ int ds_nl_probe_nat_capability(char *reason, size_t rsz) {
     return -1;
   }
 
+  /* The probe interfaces have fixed names, so two starts probing at the same
+   * moment collide, and a crashed probe can leave one behind. Either way the
+   * interface existing is the proof we were after. It is just not ours to
+   * delete. */
+
   /* Step 2: CONFIG_BRIDGE */
   int has_bridge = 1;
   const char *probe_br = "ds-cap-br0";
   ret = ds_nl_create_bridge(ctx, probe_br);
-  if (ret < 0) {
+  int own_bridge = (ret == 0);
+  if (ret < 0 && ret != -EEXIST) {
     if (ret == -EOPNOTSUPP) {
       has_bridge = 0;
       ds_log("[NET] CONFIG_BRIDGE not supported - will fallback to bridgeless "
@@ -236,13 +242,14 @@ int ds_nl_probe_nat_capability(char *reason, size_t rsz) {
 
   /* Step 3: CONFIG_VETH */
   ret = ds_nl_create_veth(ctx, "ds-cap-h0", "ds-cap-p0");
-  int has_veth = (ret == 0);
+  int own_veth = (ret == 0);
+  int has_veth = (ret == 0 || ret == -EEXIST);
   int veth_err = ret;
 
   /* Cleanup Probe Interfaces */
-  if (has_bridge)
+  if (own_bridge)
     ds_nl_del_link(ctx, probe_br);
-  if (has_veth)
+  if (own_veth)
     ds_nl_del_link(ctx, "ds-cap-h0");
 
   ds_nl_close(ctx);
@@ -338,7 +345,15 @@ int ds_nl_create_bridge(ds_nl_ctx_t *ctx, const char *name) {
  * We write the ifinfomsg directly at NLMSG_TAIL (it is NOT an rtattr payload)
  * then append IFLA_IFNAME as a normal sub-rtattr. */
 
-int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer) {
+/* Create a veth pair. With peer_netns_fd >= 0 the peer is born inside that
+ * network namespace, already under its final name and with peer_mac if given.
+ * That matters when the namespace belongs to a running container: a link
+ * created on the host and moved in afterwards shows up there under its
+ * temporary name first on kernels before 5.x, even when the move carries the
+ * new name, and older systemd-networkd does not look at it again after the
+ * rename. Peer placement at creation works on every kernel we support. */
+int ds_nl_create_veth_in(ds_nl_ctx_t *ctx, const char *host, const char *peer,
+                         int peer_netns_fd, const uint8_t *peer_mac) {
   struct {
     struct nlmsghdr n;
     struct ifinfomsg i;
@@ -379,6 +394,11 @@ int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer) {
     /* Peer-side IFLA_IFNAME */
     nl_addattr(&req.n, (int)sizeof(req), IFLA_IFNAME, peer,
                (int)strlen(peer) + 1);
+    if (peer_netns_fd >= 0)
+      nl_addattr(&req.n, (int)sizeof(req), IFLA_NET_NS_FD, &peer_netns_fd,
+                 (int)sizeof(int));
+    if (peer_mac)
+      nl_addattr(&req.n, (int)sizeof(req), IFLA_ADDRESS, peer_mac, 6);
   }
 
   nl_nest_end(&req.n, peer_rta);
@@ -386,6 +406,10 @@ int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer) {
   nl_nest_end(&req.n, linfo);
 
   return ds_nl_talk(ctx, &req.n);
+}
+
+int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer) {
+  return ds_nl_create_veth_in(ctx, host, peer, -1, NULL);
 }
 
 /* Attach an interface to a bridge (IFLA_MASTER) */
@@ -585,6 +609,64 @@ int ds_nl_add_route4(ds_nl_ctx_t *ctx, uint32_t dst_be, uint8_t dst_len,
     nl_addattr(&req.n, (int)sizeof(req), RTA_GATEWAY, &gw_be, 4);
   nl_addattr(&req.n, (int)sizeof(req), RTA_OIF, &oif_idx, (int)sizeof(int));
 
+  return ds_nl_talk(ctx, &req.n);
+}
+
+/* IPv6 siblings of the two helpers above, for NAT66.
+ *
+ * IFA_F_NODAD: these are our own router addresses on a link we created, so
+ * there is nobody to collide with, and waiting out duplicate address detection
+ * would leave the address unusable for the first second of every boot. It is
+ * the old 8-bit flag, so it works on the 3.10 floor.
+ *
+ * The route is always link scope (no gateway): the only caller points a
+ * container's /64 at its point-to-point veth. */
+
+int ds_nl_add_addr6(ds_nl_ctx_t *ctx, const char *ifname,
+                    const struct in6_addr *ip, uint8_t prefix) {
+  int idx = ds_nl_get_ifindex(ctx, ifname);
+  if (idx <= 0)
+    return -ENODEV;
+
+  struct {
+    struct nlmsghdr n;
+    struct ifaddrmsg ifa;
+    char buf[256];
+  } req;
+  memset(&req, 0, sizeof(req));
+  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+  req.n.nlmsg_type = RTM_NEWADDR;
+  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE | NLM_F_ACK;
+  req.ifa.ifa_family = AF_INET6;
+  req.ifa.ifa_prefixlen = prefix;
+  req.ifa.ifa_index = (unsigned int)idx;
+  req.ifa.ifa_flags = IFA_F_NODAD;
+
+  nl_addattr(&req.n, (int)sizeof(req), IFA_LOCAL, ip, sizeof(*ip));
+  nl_addattr(&req.n, (int)sizeof(req), IFA_ADDRESS, ip, sizeof(*ip));
+  return ds_nl_talk(ctx, &req.n);
+}
+
+int ds_nl_add_route6(ds_nl_ctx_t *ctx, const struct in6_addr *dst,
+                     uint8_t dst_len, int oif_idx) {
+  struct {
+    struct nlmsghdr n;
+    struct rtmsg r;
+    char buf[256];
+  } req;
+  memset(&req, 0, sizeof(req));
+  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
+  req.n.nlmsg_type = RTM_NEWROUTE;
+  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_REPLACE | NLM_F_ACK;
+  req.r.rtm_family = AF_INET6;
+  req.r.rtm_dst_len = dst_len;
+  req.r.rtm_table = RT_TABLE_MAIN;
+  req.r.rtm_protocol = RTPROT_BOOT;
+  req.r.rtm_scope = RT_SCOPE_LINK;
+  req.r.rtm_type = RTN_UNICAST;
+
+  nl_addattr(&req.n, (int)sizeof(req), RTA_DST, dst, sizeof(*dst));
+  nl_addattr(&req.n, (int)sizeof(req), RTA_OIF, &oif_idx, (int)sizeof(int));
   return ds_nl_talk(ctx, &req.n);
 }
 
@@ -902,12 +984,15 @@ member_done:
 
 /* Per-interface route table lookup
  *
- * Finds the routing table that carries a specific named interface's IPv4
- * egress routes. This is the core primitive used by the uplink monitor:
- * rather than guessing the active internet table from all routes (which is
- * ambiguous on Android where multiple interfaces can have simultaneous
- * default routes in separate per-interface tables), we ask directly:
- * "what table does wlan0 / rmnet0 / ccmni1 use?"
+ * Finds the routing table that carries a specific named interface's egress
+ * routes for `family` (AF_INET or AF_INET6; the /8 cut-off below holds for
+ * both, since a connected IPv6 subnet is a /64 and the internet-bearing
+ * routes are ::/0 or 2000::/3).
+ * This is the core primitive used by the uplink monitor: rather than guessing
+ * the active internet table from all routes (which is ambiguous on Android
+ * where multiple interfaces can have simultaneous default routes in separate
+ * per-interface tables), we ask directly: "what table does wlan0 / rmnet0 /
+ * ccmni1 use?"
  *
  * The route with the shortest prefix wins. A real default route (/0) always
  * does, but split-tunnel VPNs on Android (NordVPN, Tailscale, WireGuard with
@@ -919,7 +1004,7 @@ member_done:
  * Returns 0 and fills *table_out on success.
  * Returns -ENODEV if the interface doesn't exist.
  * Returns -ENOENT if no unicast route is found for that interface. */
-int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, const char *ifname,
+int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, int family, const char *ifname,
                           int *table_out) {
   unsigned int target_idx = if_nametoindex(ifname);
   if (target_idx == 0)
@@ -933,7 +1018,7 @@ int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, const char *ifname,
   req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
   req.n.nlmsg_type = RTM_GETROUTE;
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-  req.r.rtm_family = AF_INET;
+  req.r.rtm_family = (unsigned char)family;
   req.n.nlmsg_seq = ++ctx->seq;
   req.n.nlmsg_pid = (uint32_t)ctx->pid;
 
@@ -963,7 +1048,7 @@ int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, const char *ifname,
         continue;
 
       struct rtmsg *r = NLMSG_DATA(h);
-      if (r->rtm_family != AF_INET || r->rtm_type != RTN_UNICAST ||
+      if (r->rtm_family != family || r->rtm_type != RTN_UNICAST ||
           r->rtm_dst_len >= best_len)
         continue;
 
@@ -996,10 +1081,10 @@ iface_table_done:
 
 /* Default-route OIF lookup for a specific routing table
  *
- * Dumps IPv4 routes and returns the interface owning the default route in
- * `table`.  When several default routes coexist in the table (multi-homed
- * hosts), the lowest metric (RTA_PRIORITY) wins - the same tie-break the
- * kernel itself applies.
+ * Dumps the routes of `family` and returns the interface owning the default
+ * route in `table`.  When several default routes coexist in the table
+ * (multi-homed hosts), the lowest metric (RTA_PRIORITY) wins - the same
+ * tie-break the kernel itself applies.
  *
  * On Android this transparently handles 464xlat: on IPv6-only mobile
  * networks the IPv4 default route inside the default network's table points
@@ -1007,8 +1092,9 @@ iface_table_done:
  * IPv4 forwarding needs.
  *
  * Returns 0 and fills ifname_out (IFNAMSIZ) on success.
- * Returns -ENOENT if the table has no IPv4 default route. */
-int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int table, char *ifname_out) {
+ * Returns -ENOENT if the table has no default route for that family. */
+int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int family, int table,
+                                char *ifname_out) {
   struct {
     struct nlmsghdr n;
     struct rtmsg r;
@@ -1017,7 +1103,7 @@ int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int table, char *ifname_out) {
   req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
   req.n.nlmsg_type = RTM_GETROUTE;
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-  req.r.rtm_family = AF_INET;
+  req.r.rtm_family = (unsigned char)family;
   req.n.nlmsg_seq = ++ctx->seq;
   req.n.nlmsg_pid = (uint32_t)ctx->pid;
 
@@ -1042,8 +1128,8 @@ int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int table, char *ifname_out) {
         continue;
 
       struct rtmsg *r = NLMSG_DATA(h);
-      /* Only IPv4 unicast default routes */
-      if (r->rtm_family != AF_INET || r->rtm_dst_len != 0)
+      /* Only unicast default routes of the family asked for */
+      if (r->rtm_family != family || r->rtm_dst_len != 0)
         continue;
       if (r->rtm_type != RTN_UNICAST)
         continue;
@@ -1086,7 +1172,7 @@ table_oif_done:
 
 /* Android default-network detection via the kernel FIB rule table
  *
- * Android's netd installs exactly one IPv4 rule of the form:
+ * Android's netd installs exactly one rule per family of the form:
  *   "<prio>: from all fwmark 0x0/0xffff iif lo lookup <table>"
  * for the active default internet network.  It is swapped atomically when
  * the default network changes (wifi <-> mobile data handoffs), making it
@@ -1102,7 +1188,7 @@ table_oif_done:
  *
  * Returns 0 and fills ifname_out (IFNAMSIZ) / table_out on success.
  * Returns -ENOENT when no such rule exists (non-Android, airplane mode). */
-int ds_nl_get_android_default(ds_nl_ctx_t *ctx, char *ifname_out,
+int ds_nl_get_android_default(ds_nl_ctx_t *ctx, int family, char *ifname_out,
                               int *table_out) {
   struct {
     struct nlmsghdr n;
@@ -1112,7 +1198,7 @@ int ds_nl_get_android_default(ds_nl_ctx_t *ctx, char *ifname_out,
   req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
   req.n.nlmsg_type = RTM_GETRULE;
   req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-  req.r.rtm_family = AF_INET;
+  req.r.rtm_family = (unsigned char)family;
   req.n.nlmsg_seq = ++ctx->seq;
   req.n.nlmsg_pid = (uint32_t)ctx->pid;
 
@@ -1137,7 +1223,7 @@ int ds_nl_get_android_default(ds_nl_ctx_t *ctx, char *ifname_out,
         continue;
 
       struct rtmsg *r = NLMSG_DATA(h);
-      if (r->rtm_family != AF_INET)
+      if (r->rtm_family != family)
         continue;
       /* Only table-lookup actions - skips prohibit/unreachable variants */
       if (r->rtm_type != FR_ACT_TO_TBL)
@@ -1214,14 +1300,81 @@ rule_dump_done:
     return -ENOENT;
   if (table_out)
     *table_out = best_table;
-  return ds_nl_get_table_default_oif(ctx, best_table, ifname_out);
+  return ds_nl_get_table_default_oif(ctx, family, best_table, ifname_out);
 }
 
-/* IPv4 policy rule management (RTM_NEWRULE / RTM_DELRULE) */
+/* Policy rule management (RTM_NEWRULE / RTM_DELRULE), either family.
+ * src and dst point at an in_addr or in6_addr matching `family`. */
 
-static int ds_nl_rule_op(ds_nl_ctx_t *ctx, int cmd, uint32_t src_be,
-                         uint8_t src_len, uint32_t dst_be, uint8_t dst_len,
+/* Is this exact rule already installed? Kernels before 4.12 ignore NLM_F_EXCL
+ * on RTM_NEWRULE and happily add a second copy, so the EEXIST that makes
+ * re-installing a rule a no-op never comes. The monitor re-installs on every
+ * rule change, its own included, and on those kernels that fed itself: about
+ * fifteen duplicates a second until reboot. The dump is always read to the
+ * end, a half-read one would be mistaken for the next request's reply. */
+static int ds_nl_rule_exists(ds_nl_ctx_t *ctx, int family, const void *src,
+                             uint8_t src_len, const void *dst, uint8_t dst_len,
+                             int table, int priority) {
+  size_t alen = (family == AF_INET6) ? 16 : 4;
+  struct {
+    struct nlmsghdr n;
+    struct rtmsg r;
+  } req;
+  memset(&req, 0, sizeof(req));
+  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct rtmsg));
+  req.n.nlmsg_type = RTM_GETRULE;
+  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.r.rtm_family = (unsigned char)family;
+  req.n.nlmsg_seq = ++ctx->seq;
+  req.n.nlmsg_pid = (uint32_t)ctx->pid;
+
+  if (send(ctx->fd, &req, req.n.nlmsg_len, 0) < 0)
+    return 0;
+
+  uint8_t buf[NL_BUFSIZE];
+  int found = 0;
+  for (;;) {
+    ssize_t n = recv(ctx->fd, buf, sizeof(buf), 0);
+    if (n <= 0)
+      return found;
+
+    struct nlmsghdr *h = (struct nlmsghdr *)buf;
+    for (; NLMSG_OK(h, (uint32_t)n); h = NLMSG_NEXT(h, n)) {
+      if (h->nlmsg_type == NLMSG_DONE || h->nlmsg_type == NLMSG_ERROR)
+        return found;
+      struct rtmsg *r = NLMSG_DATA(h);
+      if (h->nlmsg_type != RTM_NEWRULE || r->rtm_family != family ||
+          r->rtm_src_len != src_len || r->rtm_dst_len != dst_len)
+        continue;
+
+      int r_table = r->rtm_table, r_prio = 0, addr_ok = 1;
+      struct rtattr *rta = RTM_RTA(r);
+      int rlen = (int)RTM_PAYLOAD(h);
+      for (; RTA_OK(rta, rlen); rta = RTA_NEXT(rta, rlen)) {
+        if (rta->rta_type == FRA_TABLE)
+          r_table = (int)nl_rta_u32(rta);
+        else if (rta->rta_type == FRA_PRIORITY)
+          r_prio = (int)nl_rta_u32(rta);
+        else if (rta->rta_type == FRA_SRC && src_len &&
+                 (RTA_PAYLOAD(rta) != alen || memcmp(RTA_DATA(rta), src, alen)))
+          addr_ok = 0;
+        else if (rta->rta_type == FRA_DST && dst_len &&
+                 (RTA_PAYLOAD(rta) != alen || memcmp(RTA_DATA(rta), dst, alen)))
+          addr_ok = 0;
+      }
+      if (addr_ok && r_table == table && r_prio == priority)
+        found = 1;
+    }
+  }
+}
+
+static int ds_nl_rule_op(ds_nl_ctx_t *ctx, int cmd, int family, const void *src,
+                         uint8_t src_len, const void *dst, uint8_t dst_len,
                          int table, int priority) {
+  int alen = (family == AF_INET6) ? 16 : 4;
+  if (cmd == RTM_NEWRULE && ds_nl_rule_exists(ctx, family, src, src_len, dst,
+                                              dst_len, table, priority))
+    return 0;
   struct {
     struct nlmsghdr n;
     struct rtmsg r;
@@ -1238,7 +1391,7 @@ static int ds_nl_rule_op(ds_nl_ctx_t *ctx, int cmd, uint32_t src_be,
                                                      * by the idempotency
                                                      * handler below */
 
-  req.r.rtm_family = AF_INET;
+  req.r.rtm_family = (unsigned char)family;
   req.r.rtm_protocol = 0; /* res1 in fib_rule_hdr */
   req.r.rtm_scope = 0;    /* res2 in fib_rule_hdr */
   req.r.rtm_type = 1;     /* FR_ACT_TO_TBL (1) == RTN_UNICAST */
@@ -1248,9 +1401,9 @@ static int ds_nl_rule_op(ds_nl_ctx_t *ctx, int cmd, uint32_t src_be,
       (table > 0 && table < 256) ? (uint8_t)table : 0; /* RT_TABLE_UNSPEC */
 
   if (src_len > 0)
-    nl_addattr(&req.n, (int)sizeof(req), FRA_SRC, &src_be, 4);
+    nl_addattr(&req.n, (int)sizeof(req), FRA_SRC, src, alen);
   if (dst_len > 0)
-    nl_addattr(&req.n, (int)sizeof(req), FRA_DST, &dst_be, 4);
+    nl_addattr(&req.n, (int)sizeof(req), FRA_DST, dst, alen);
   if (table > 0) {
     uint32_t t = (uint32_t)table;
     nl_addattr(&req.n, (int)sizeof(req), FRA_TABLE, &t, sizeof(uint32_t));
@@ -1267,12 +1420,22 @@ static int ds_nl_rule_op(ds_nl_ctx_t *ctx, int cmd, uint32_t src_be,
 
 int ds_nl_add_rule4(ds_nl_ctx_t *ctx, uint32_t src_be, uint8_t src_len,
                     uint32_t dst_be, uint8_t dst_len, int table, int priority) {
-  return ds_nl_rule_op(ctx, RTM_NEWRULE, src_be, src_len, dst_be, dst_len,
-                       table, priority);
+  return ds_nl_rule_op(ctx, RTM_NEWRULE, AF_INET, &src_be, src_len, &dst_be,
+                       dst_len, table, priority);
 }
 
 int ds_nl_del_rule4(ds_nl_ctx_t *ctx, uint32_t src_be, uint8_t src_len,
                     uint32_t dst_be, uint8_t dst_len, int table, int priority) {
-  return ds_nl_rule_op(ctx, RTM_DELRULE, src_be, src_len, dst_be, dst_len,
-                       table, priority);
+  return ds_nl_rule_op(ctx, RTM_DELRULE, AF_INET, &src_be, src_len, &dst_be,
+                       dst_len, table, priority);
+}
+
+/* IPv6 rules only ever match on one side, so `net` is the source when
+ * from_net is set and the destination otherwise. */
+int ds_nl_rule6(ds_nl_ctx_t *ctx, int add, const struct in6_addr *net,
+                uint8_t len, int from_net, int table, int priority) {
+  return ds_nl_rule_op(ctx, add ? RTM_NEWRULE : RTM_DELRULE, AF_INET6,
+                       from_net ? net : NULL, from_net ? len : 0,
+                       from_net ? NULL : net, from_net ? 0 : len, table,
+                       priority);
 }

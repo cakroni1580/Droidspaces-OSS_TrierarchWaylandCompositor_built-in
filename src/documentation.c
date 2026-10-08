@@ -237,7 +237,9 @@ static void print_page(int page, const char *bin) {
 
     p_printf("%sRunning Commands:%s\n", bold, reset);
     p_printf("  %s --name=mycontainer run 'uname -a'\n", bin);
-    p_printf("  %s --name=mycontainer --user=myuser run whoami\n\n", bin);
+    p_printf("  %s --name=mycontainer --user=myuser run whoami\n", bin);
+    p_printf("  %s --name=mycontainer --stdin run 'sh -s' < script.sh\n\n",
+             bin);
 
     p_printf("%sStopping:%s\n", bold, reset);
     p_printf("  %s --name=mycontainer stop\n", bin);
@@ -272,6 +274,8 @@ static void print_page(int page, const char *bin) {
 
     p_printf("%sTechnical Information (JSON):%s\n", bold, reset);
     p_printf("  %s --name=mycontainer --format info\n\n", bin);
+    p_printf("%sHost Capabilities (JSON):%s\n", bold, reset);
+    p_printf("  %s --format check\n\n", bin);
 
     p_printf("%sMetadata Recovery:%s\n", bold, reset);
     p_printf("  %s scan\n", bin);
@@ -356,8 +360,7 @@ static void print_page(int page, const char *bin) {
     p_printf(
         "  %s --name=mycontainer --rootfs=/path/to/rootfs --hw-access start\n",
         bin);
-    p_printf("  (Exposes host /dev nodes, maps GPU groups, setups X11 in "
-             "Linux)\n");
+    p_printf("  (Exposes host /dev nodes, maps GPU groups)\n");
     p_printf("  --allow-vts               Leave the host VTs (tty1-6) visible. "
              "Off by default so a\n");
     p_printf("                            systemd container's getty does not "
@@ -368,10 +371,15 @@ static void print_page(int page, const char *bin) {
              bin);
     p_printf("  (Maps ONLY GPU nodes into an isolated tmpfs /dev)\n\n");
 
+    p_printf("%sX11 Display (--x11):%s\n", bold, reset);
+    p_printf("  %s --name=mycontainer --rootfs=/path/to/rootfs --x11 start\n",
+             bin);
+    p_printf(
+        "  (Bridges the host X11 socket, launches Termux:X11 on Android)\n\n");
+
     p_printf("%sAndroid-specific Features:%s\n", bold, reset);
-    p_printf("  --enable-android-storage  Mounts /storage/emulated/0\n");
-    p_printf("  --termux-x11              Setups Termux:X11 socket\n\n");
-    p_printf("  --wayland                 Bridges Wayland compositor socket (requires Droidspaces app compositor)\n\n");  
+    p_printf("  --enable-android-storage  Mounts /storage/emulated/0\n\n");
+    p_printf("  --wayland                 Bridges Wayland compositor socket (requires Droidspaces app compositor)\n\n");
 
     p_printf("%sSystem Integration:%s\n", bold, reset);
     p_printf("  --selinux-permissive      Set host SELinux to permissive\n");

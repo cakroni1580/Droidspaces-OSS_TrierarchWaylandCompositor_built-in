@@ -57,6 +57,7 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/net/iptables.c \
        $(SRC_DIR)/net/netlink.c \
        $(SRC_DIR)/net/dhcp.c \
+       $(SRC_DIR)/net/ra.c \
        $(SRC_DIR)/daemon.c \
        $(SRC_DIR)/check.c \
        $(SRC_DIR)/android/x11.c \

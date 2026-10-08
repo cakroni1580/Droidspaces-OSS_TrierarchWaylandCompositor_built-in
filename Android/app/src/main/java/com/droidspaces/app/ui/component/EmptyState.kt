@@ -121,3 +121,19 @@ fun RootUnavailableState(
     )
 }
 
+/**
+ * The backend is installed but a MUST HAVE probe failed, so no container can
+ * run. The Home card carries the link to the kernel guide.
+ */
+@Composable
+fun KernelUnsupportedState(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    EmptyState(
+        icon = Icons.Default.Error,
+        title = context.getString(R.string.kernel_unsupported),
+        description = context.getString(R.string.kernel_unsupported_description),
+        modifier = modifier
+    )
+}

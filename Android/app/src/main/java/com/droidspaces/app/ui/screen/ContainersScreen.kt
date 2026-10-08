@@ -50,6 +50,7 @@ import com.droidspaces.app.ui.component.DialogFooterRow
 import com.droidspaces.app.ui.component.TerminalDialog
 import com.droidspaces.app.ui.component.EmptyState
 import com.droidspaces.app.ui.component.ErrorState
+import com.droidspaces.app.ui.component.KernelUnsupportedState
 import com.droidspaces.app.ui.component.RootUnavailableState
 import com.droidspaces.app.ui.component.RootfsRepoSheet
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
@@ -59,7 +60,6 @@ import com.droidspaces.app.ui.viewmodel.SparseOperation
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import com.droidspaces.app.R
-import com.droidspaces.app.util.AnimationUtils
 import androidx.compose.ui.window.Dialog
 import com.droidspaces.app.wayland.WaylandManager
 
@@ -68,6 +68,7 @@ import com.droidspaces.app.wayland.WaylandManager
 fun ContainersScreen(
     isBackendAvailable: Boolean,
     isRootAvailable: Boolean = true,
+    isKernelSupported: Boolean = true,
     onNavigateToInstallation: (Uri) -> Unit = {},
     onNavigateToEditContainer: (String) -> Unit = {},
     onNavigateToContainerDetails: (String) -> Unit = {},
@@ -143,6 +144,9 @@ fun ContainersScreen(
             !isBackendAvailable -> {
                 ErrorState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
             }
+            !isKernelSupported -> {
+                KernelUnsupportedState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+            }
             containers.isEmpty() -> {
                 if (containerViewModel.isRefreshing) {
                     Box(
@@ -180,8 +184,10 @@ fun ContainersScreen(
                         // Console button is always visible - logs persist for each container
                         val isRunning = opsViewModel.runningOperationContainer == container.name
 
+                        // No animateItemPlacement here: a card animates its own height when
+                        // its drawer opens, and a placement animation makes the card below
+                        // chase that edge 200ms behind, so the two overlap all the way down.
                         ContainerCard(
-                            modifier = Modifier.animateItemPlacement(AnimationUtils.mediumSpec()),
                             container = container,
                             isOperationRunning = isRunning,
                             isExpanded = expandedContainerName == container.name,
@@ -260,7 +266,7 @@ fun ContainersScreen(
         }
 
         // FAB LAYER (Above everything, below dialogs)
-        if (isBackendAvailable && isRootAvailable) {
+        if (isBackendAvailable && isRootAvailable && isKernelSupported) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)

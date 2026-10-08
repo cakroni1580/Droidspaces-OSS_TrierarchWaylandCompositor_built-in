@@ -70,12 +70,18 @@ CONFIG_SECCOMP_FILTER=y
 # 控制组支持
 CONFIG_CGROUPS=y
 CONFIG_CGROUP_DEVICE=y
-CONFIG_CGROUP_PIDS=y
-CONFIG_MEMCG=y
 CONFIG_CGROUP_SCHED=y
 CONFIG_FAIR_GROUP_SCHED=y
 CONFIG_CGROUP_FREEZER=y
 CONFIG_CGROUP_NET_PRIO=y
+
+# 资源限制：依次对应 --memory、--cpus、--pids-limit，
+# 最后一项用于在 4.15 之前的内核上统计 CPU 用量。
+# 可选：缺少某个选项时，对应的限制会被跳过并给出警告
+CONFIG_MEMCG=y
+CONFIG_CFS_BANDWIDTH=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_CGROUP_CPUACCT=y
 
 # 设备文件系统支持
 CONFIG_DEVTMPFS=y
@@ -118,6 +124,19 @@ CONFIG_IP_MULTIPLE_TABLES=y
 CONFIG_NF_CONNTRACK_IPV4=y
 CONFIG_NF_NAT_IPV4=y
 CONFIG_IP_NF_NAT=y
+
+# NAT 模式下的 IPv6 (NAT66)。可选：缺少这些选项时，NAT 容器仅支持 IPv4
+CONFIG_IPV6=y
+CONFIG_IPV6_MULTIPLE_TABLES=y
+CONFIG_IP6_NF_IPTABLES=y
+CONFIG_IP6_NF_FILTER=y
+CONFIG_IP6_NF_MANGLE=y
+CONFIG_IP6_NF_NAT=y
+CONFIG_IP6_NF_TARGET_MASQUERADE=y
+
+# 旧版兼容
+CONFIG_NF_CONNTRACK_IPV6=y
+CONFIG_NF_NAT_IPV6=y
 
 # 在旧内核上禁用此选项以使互联网正常工作
 CONFIG_ANDROID_PARANOID_NETWORK=n
@@ -252,6 +271,10 @@ CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
 # 修复 Docker unsafe procfs 错误
 CONFIG_USER_NS=y
 
+# NAT 模式下的 IPv6 (NAT66)
+CONFIG_IP6_NF_NAT=y
+CONFIG_IP6_NF_TARGET_MASQUERADE=y
+
 # UFW 支持
 CONFIG_NETFILTER_XT_TARGET_REJECT=y
 CONFIG_NETFILTER_XT_TARGET_LOG=y
@@ -267,6 +290,15 @@ CONFIG_NETFILTER_XT_SET=y
 # 用于 NixOS 支持
 CONFIG_TMPFS_POSIX_ACL=y
 CONFIG_TMPFS_XATTR=y
+
+# 资源限制：--cpus 和 --pids-limit。GKI 已默认开启 CONFIG_MEMCG。
+# 这两项会破坏 kABI，且没有补丁可以解决：它们会改变调度器和 cgroup 结构体的
+# 大小，导致数千个导出符号的 CRC 发生变化。原厂供应商模块将拒绝加载，设备会
+# 无限重启。
+# 除非你从同一份源码重新编译所有内核模块，并将 vendor_boot、vendor_dlkm 和
+# system_dlkm 与新的 boot.img 一次性全部刷入，否则请保持注释状态。
+# CONFIG_CFS_BANDWIDTH=y
+# CONFIG_CGROUP_PIDS=y
 ```
 
 **工作流程规则：**
@@ -310,6 +342,8 @@ su -c droidspaces check
 - devtmpfs 支持
 - OverlayFS 支持（可选，用于易失模式）
 - VETH 和 Bridge 支持（可选，用于 NAT 模式）
+- IPv6 NAT 支持（可选，用于 NAT 模式下的 IPv6）
+- 内存、CPU 和进程数限制支持（可选，用于 `--memory`、`--cpus` 和 `--pids-limit`）
 - PTY/devpts 支持
 - Loop 设备支持
 - ext4 支持
@@ -335,6 +369,7 @@ su -c droidspaces check
 | OverlayFS | `CONFIG_OVERLAY_FS` | 易失模式不可用。 |
 | 网络命名空间 | `CONFIG_NET_NS=y` | NAT 模式和无网络模式不可用。 |
 | VETH / Bridge | `CONFIG_VETH` / `CONFIG_BRIDGE` | NAT 模式不可用。 |
+| IPv6 NAT | `CONFIG_IP6_NF_NAT` / `CONFIG_IP6_NF_TARGET_MASQUERADE` | NAT 容器仅支持 IPv4。 |
 | Seccomp | `CONFIG_SECCOMP=y` | Seccomp 防护盾已禁用。存在安全风险。 |
 
 ---

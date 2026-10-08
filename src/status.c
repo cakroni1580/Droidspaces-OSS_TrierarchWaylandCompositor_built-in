@@ -16,7 +16,7 @@
  *   cpu     same walk, sum utime+stime jiffies, two samples 250 ms apart,
  *           divided by the host CPU delta. Per-mille avoids integer floor
  *           on sub-1% values.
- *   ip      setns() into the container's netns and getifaddrs(), no `ip`
+ *   ip/ip6  setns() into the container's netns and getifaddrs(), no `ip`
  *           binary needed inside the rootfs.
  *
  * One walk pair serves every container at once, so the app's heartbeat costs
@@ -59,10 +59,23 @@ void get_os_pretty(const char *osrelease_path, char *buf, size_t size) {
   fclose(fp);
 }
 
-/* Non-loopback IPv4 addresses of the container's netns, comma separated.
- * Host-mode containers share our netns, so setns() is a no-op there. */
-static void netns_ipv4(pid_t pid, char *buf, size_t size) {
-  buf[0] = '\0';
+/* Append one address to a comma separated list. Returns 0 once it is full. */
+static int addr_append(char *buf, size_t size, size_t *pos, const char *ip) {
+  int w = snprintf(buf + *pos, size - *pos, "%s%s", *pos ? ", " : "", ip);
+  if (w < 0 || (size_t)w >= size - *pos) {
+    buf[*pos] = '\0';
+    return 0;
+  }
+  *pos += (size_t)w;
+  return 1;
+}
+
+/* Addresses of the container's netns, comma separated: IPv4 without loopback,
+ * IPv6 without loopback and link-local. Host-mode containers share our netns,
+ * so setns() is a no-op there. */
+static void netns_addrs(pid_t pid, char *v4, size_t v4_size, char *v6,
+                        size_t v6_size) {
+  v4[0] = v6[0] = '\0';
   char path[PATH_MAX];
   snprintf(path, sizeof(path), "/proc/%d/ns/net", (int)pid);
   int self_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
@@ -70,19 +83,24 @@ static void netns_ipv4(pid_t pid, char *buf, size_t size) {
   if (self_fd >= 0 && ns_fd >= 0 && setns(ns_fd, CLONE_NEWNET) == 0) {
     struct ifaddrs *ifa = NULL;
     if (getifaddrs(&ifa) == 0) {
-      size_t pos = 0;
+      size_t pos4 = 0, pos6 = 0;
+      int room4 = 1, room6 = 1;
       for (struct ifaddrs *p = ifa; p; p = p->ifa_next) {
-        if (!p->ifa_addr || p->ifa_addr->sa_family != AF_INET)
+        char ip[INET6_ADDRSTRLEN];
+        if (!p->ifa_addr)
           continue;
-        char ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &((struct sockaddr_in *)p->ifa_addr)->sin_addr, ip,
-                  sizeof(ip));
-        if (strncmp(ip, "127.", 4) == 0)
-          continue;
-        int w = snprintf(buf + pos, size - pos, "%s%s", pos ? ", " : "", ip);
-        if (w < 0 || (size_t)w >= size - pos)
-          break;
-        pos += (size_t)w;
+        if (p->ifa_addr->sa_family == AF_INET && room4) {
+          inet_ntop(AF_INET, &((struct sockaddr_in *)p->ifa_addr)->sin_addr, ip,
+                    sizeof(ip));
+          if (strncmp(ip, "127.", 4) != 0)
+            room4 = addr_append(v4, v4_size, &pos4, ip);
+        } else if (p->ifa_addr->sa_family == AF_INET6 && room6) {
+          struct in6_addr *a = &((struct sockaddr_in6 *)p->ifa_addr)->sin6_addr;
+          if (IN6_IS_ADDR_LOOPBACK(a) || IN6_IS_ADDR_LINKLOCAL(a))
+            continue;
+          inet_ntop(AF_INET6, a, ip, sizeof(ip));
+          room6 = addr_append(v6, v6_size, &pos6, ip);
+        }
       }
       freeifaddrs(ifa);
     }
@@ -212,7 +230,8 @@ long ds_collect_status(struct ds_status *st, int n) {
     if (build_proc_root_path(st[i].pid, "/etc/os-release", path,
                              sizeof(path)) == 0)
       get_os_pretty(path, st[i].os, sizeof(st[i].os));
-    netns_ipv4(st[i].pid, st[i].ip, sizeof(st[i].ip));
+    netns_addrs(st[i].pid, st[i].ip, sizeof(st[i].ip), st[i].ip6,
+                sizeof(st[i].ip6));
     /* An unreadable link leaves ns[i] empty, which no process can match. */
     snprintf(path, sizeof(path), "/proc/%d/ns/pid", (int)st[i].pid);
     ssize_t r = readlink(path, ns[i], sizeof(ns[i]) - 1);
@@ -238,6 +257,24 @@ long ds_collect_status(struct ds_status *st, int n) {
       delta = 0;
     long permill = delta_host > 0 ? (long)(delta * 1000 / delta_host) : 0;
     st[i].cpu_permill = permill > 1000 ? 1000 : permill;
+
+    /* A container with a memory cgroup is charged there, and that is the
+     * figure its own /proc/meminfo and `info` report: usage without the
+     * reclaimable file cache. The RSS sum above counts shared pages once per
+     * process and misses kernel memory, so it only stands in when there is no
+     * cgroup to ask. */
+    long long mem, cache;
+    ds_cgroup_get_usage(st[i].name, &mem, &cache, NULL, NULL);
+    if (mem >= 0 && mem >= cache)
+      st[i].ram_used_kb = (long)((mem - cache) / 1024);
+
+    long long lim_mem, quota, period, lim_pids;
+    ds_cgroup_get_limits(st[i].name, &lim_mem, &quota, &period, &lim_pids);
+    st[i].ram_limit_kb = (long)(lim_mem / 1024);
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    long cpu_lim =
+        quota > 0 && ncpu > 0 ? (long)(quota * 1000 / (period * ncpu)) : 0;
+    st[i].cpu_limit_permill = cpu_lim > 1000 ? 1000 : cpu_lim;
   }
 
   free(ns);
@@ -276,8 +313,11 @@ void ds_json_status(const struct ds_status *st, int *first) {
   ds_json_str("os", st->os, first);
   ds_json_str("hostname", st->hostname, first);
   ds_json_str("ip", st->ip, first);
+  ds_json_str("ip6", st->ip6, first);
   ds_json_int("uptime_sec", st->uptime_sec, first);
   ds_json_str("uptime", uptime, first);
   ds_json_int("ram_used_kb", st->ram_used_kb, first);
   ds_json_int("cpu_permill", st->cpu_permill, first);
+  ds_json_int("ram_limit_kb", st->ram_limit_kb, first);
+  ds_json_int("cpu_limit_permill", st->cpu_limit_permill, first);
 }
