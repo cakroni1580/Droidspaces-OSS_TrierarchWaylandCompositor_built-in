@@ -379,6 +379,7 @@ static void print_page(int page, const char *bin) {
 
     p_printf("%sAndroid-specific Features:%s\n", bold, reset);
     p_printf("  --enable-android-storage  Mounts /storage/emulated/0\n\n");
+    p_printf("  --wayland                 Bridges Wayland compositor socket (requires Droidspaces app compositor)\n\n");
 
     p_printf("%sSystem Integration:%s\n", bold, reset);
     p_printf("  --selinux-permissive      Set host SELinux to permissive\n");
