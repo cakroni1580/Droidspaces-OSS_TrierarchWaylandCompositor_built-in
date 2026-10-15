@@ -3,6 +3,9 @@
 *.ap_
 *.aab
 
+# CMakeLists.txt files are source — un-ignore them (root .gitignore has *.txt)
+!**/CMakeLists.txt
+
 # Files for the ART/Dalvik VM
 *.dex
 

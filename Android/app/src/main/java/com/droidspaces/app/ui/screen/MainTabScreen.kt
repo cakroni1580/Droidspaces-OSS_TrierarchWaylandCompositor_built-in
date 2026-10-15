@@ -76,6 +76,7 @@ fun MainTabScreen(
     onNavigateToEditContainer: (String) -> Unit = {},
     onNavigateToContainerDetails: (String) -> Unit = {},
     onNavigateToTerminal: (String) -> Unit = {},
+    onNavigateToWaylandDisplay: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -364,6 +365,8 @@ fun MainTabScreen(
                             onNavigateToContainerDetails = onNavigateToContainerDetails,
                             onNavigateToTerminal = onNavigateToTerminal,
                             bottomBarInset = bottomBarHeight
+                            onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
+                            emptyStateBottomInset = bottomBarHeight
                         )
                     }
                 }
@@ -611,6 +614,8 @@ private fun ControlPanelTabContent(
     onNavigateToContainerDetails: (String) -> Unit,
     onNavigateToTerminal: (String) -> Unit,
     bottomBarInset: Dp = 0.dp
+    onNavigateToWaylandDisplay: () -> Unit = {},
+    emptyStateBottomInset: Dp = 0.dp
 ) {
     var refreshTrigger by remember { mutableStateOf(0) }
 
@@ -626,6 +631,8 @@ private fun ControlPanelTabContent(
             onNavigateToContainerDetails = onNavigateToContainerDetails,
             onNavigateToTerminal = onNavigateToTerminal,
             bottomBarInset = bottomBarInset
+            onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
+            emptyStateBottomInset = emptyStateBottomInset
         )
     }
 }

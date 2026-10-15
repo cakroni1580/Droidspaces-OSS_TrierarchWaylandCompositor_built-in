@@ -179,3 +179,80 @@
 (allow system_server droidspacesd (binder (call transfer)))
 (allow system_server droidspacesd (fd (use)))
 (allow system_server droidspacesd (fifo_file (write)))
+
+(allow droidspacesd gpu_device
+    (chr_file (open read write ioctl getattr map)))
+
+(allow droidspacesd gpu_device
+    (dir (search getattr)))
+
+(allow droidspacesd kgsl_device
+    (chr_file (open read write ioctl getattr map)))
+
+(allow droidspacesd kgsl_device
+    (dir (search getattr)))
+
+(allow droidspacesd drm_device
+    (chr_file (open read write ioctl getattr map)))
+
+(allow droidspacesd drm_device
+    (dir (search getattr)))
+
+(allow droidspacesd rendernode
+    (chr_file (open read write ioctl getattr map)))
+
+(allow droidspacesd rendernode
+    (dir (search getattr)))
+
+(allow droidspacesd dma_heap_device
+    (chr_file (open read write ioctl getattr map)))
+
+(allow droidspacesd dmabuf_system
+    (file (read write open ioctl getattr map)))
+
+(allow droidspacesd wayland
+    (unix_stream_socket (connectto read write ioctl)))
+
+(allow droidspacesd untrusted_app
+    (unix_stream_socket
+        (connectto read write getattr getopt)))
+
+(allow droidspacesd untrusted_app
+    (fd (use)))
+
+(allow droidspacesd app_data_file
+    (sock_file (write getattr read)))
+
+(allow droidspacesd proc
+    (dir (search)))
+
+(allow droidspacesd self
+    (process (getsched setsched)))
+
+; ================================
+; Droidspaces extra runtime fixes
+; ================================
+
+(allow droidspacesd tmpfs
+    (file (link)))
+
+(allow droidspacesd sysfs_devices_block
+    (dir (search)))
+
+(allow droidspacesd sysfs_devices_block
+    (file (open read getattr)))
+
+(allow droidspacesd self
+    (unix_stream_socket
+        (read write)))
+
+(allow droidspacesd self
+    (dir (search)))
+
+(allow kernel device
+    (chr_file
+        (create setattr getattr unlink)))
+
+(allow kernel device
+    (dir
+        (remove_name)))

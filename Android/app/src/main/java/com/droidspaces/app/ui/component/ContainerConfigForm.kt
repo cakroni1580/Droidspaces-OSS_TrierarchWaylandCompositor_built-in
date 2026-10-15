@@ -252,7 +252,23 @@ fun ContainerConfigForm(
                 else context.getString(R.string.termux_not_installed),
             checked = state.enablePulseaudio,
             enabled = termux,
-            onCheckedChange = { clearFocus(); onStateChange(state.copy(enablePulseaudio = it)) }
+
+            onCheckedChange = { clearFocus(); onStateChange(state.copy(enablePulseaudio = it)) },
+            enabled = true
+        )
+        
+        ToggleCard(
+            icon = Icons.Default.Devices,
+            title = context.getString(R.string.enable_wayland),
+            description = context.getString(R.string.enable_wayland_description),
+            checked = state.enableWayland,
+            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
+            enabled = true
+        )
+
+        SectionHeader(
+            text = context.getString(R.string.cat_resource_limits),
+            modifier = Modifier.padding(top = 16.dp)
         )
     }
 

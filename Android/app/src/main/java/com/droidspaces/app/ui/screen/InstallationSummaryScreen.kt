@@ -132,6 +132,7 @@ fun InstallationSummaryScreen(
                     if (config.enableAnland) SummaryItem(stringResource(R.string.enable_anland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
                     if (config.enableVirgl) SummaryItem(stringResource(R.string.enable_virgl), stringResource(R.string.enabled_legend), Icons.Default.Layers)
                     if (config.enablePulseaudio) SummaryItem(stringResource(R.string.enable_pulseaudio), stringResource(R.string.enabled_legend), Icons.AutoMirrored.Filled.VolumeUp)
+                    if (config.enableWayland && Constants.isArm64) SummaryItem(stringResource(R.string.enable_wayland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
                     if (config.selinuxPermissive) SummaryItem(stringResource(R.string.selinux_permissive), stringResource(R.string.enabled_legend), Icons.Default.Security)
                     if (config.allowSandboxing) SummaryItem(stringResource(R.string.allow_userns), stringResource(R.string.enabled_legend), Icons.Default.Groups)
                     if (config.volatileMode) SummaryItem(stringResource(R.string.volatile_mode), stringResource(R.string.enabled_legend), Icons.Default.AutoDelete)
@@ -173,6 +174,7 @@ fun InstallationSummaryScreen(
                         !config.runAtBoot && !config.disableIPv6 &&
                         !config.enableTermuxX11 && !config.enableAnland && !config.enableVirgl && !config.enablePulseaudio &&
                         !config.forceCgroupv1 &&
+                        !config.enableWayland &&
                         config.memoryLimit == 0L && config.cpuQuota == 0L && config.pidsLimit == 0L &&
                         config.upstreamInterfaces.isEmpty() && config.portForwards.isEmpty() &&
                         config.envFileContent.isNullOrBlank()) {

@@ -617,6 +617,8 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     ds_warn("--pulse-audio is only applicable on Android. Skipping.");
   if (cfg->anland && !is_android())
     ds_warn("--anland is only applicable on Android. Skipping.");
+  if (cfg->wayland && !is_android())
+    ds_warn("--wayland is only applicable on Android. Skipping.");
 
   /* If no hostname specified, default to container name */
   if (cfg->hostname[0] == '\0') {
@@ -1838,6 +1840,11 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       ds_json_int("anland", cfg->anland, &first);
     }
 
+
+    if (is_android()) {
+      printf("WAYLAND=%d\n", cfg->wayland);
+    }
+
     if (access("/sys/fs/selinux/enforce", R_OK) == 0)
       ds_json_str("selinux",
                   ds_get_selinux_status() == 0 ? "Permissive" : "Enforcing",
@@ -2044,6 +2051,9 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     /* 9b. Anland */
     if (is_android() && cfg->anland) {
       printf("  Anland: enabled\n");
+    /* 10. Wayland */
+    if (is_android() && cfg->wayland) {
+      printf("  Wayland: enabled (compositor in app)\n");
       feat_count++;
     }
 

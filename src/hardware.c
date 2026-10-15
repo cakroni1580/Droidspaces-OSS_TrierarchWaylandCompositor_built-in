@@ -445,6 +445,9 @@ int setup_hardware_access(struct ds_config *cfg) {
 
   /* 5. Setup anland display socket -> /run/display.sock (Android only) */
   ds_setup_anland_socket(cfg);
+  /* 5. Setup Wayland compositor socket (Android only).
+   *    The compositor runs inside the Droidspaces app; we only bridge the socket. */
+  ds_setup_wayland_socket(cfg);
 
   return 0;
 }

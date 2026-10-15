@@ -77,6 +77,7 @@ import androidx.compose.ui.draw.clip
 import com.droidspaces.app.R
 import com.droidspaces.app.ui.theme.DsIcons
 import androidx.compose.ui.window.Dialog
+import com.droidspaces.app.wayland.WaylandManager
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
