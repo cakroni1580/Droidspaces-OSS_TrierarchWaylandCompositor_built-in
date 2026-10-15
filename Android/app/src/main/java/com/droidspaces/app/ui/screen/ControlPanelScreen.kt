@@ -140,12 +140,11 @@ fun ControlPanelScreen(
                                 }
                             }
                         }
+                        // Wayland display card — shown on arm64 when compositor is running
+                        if (Constants.isArm64 && WaylandManager.isRunning) {
+                            WaylandDisplayCard(onClick = onNavigateToWaylandDisplay)
+                        }    
                     }
-                    // Wayland display card — shown on arm64 when compositor is running
-                    if (Constants.isArm64 && WaylandManager.isRunning) {
-                        WaylandDisplayCard(onClick = onNavigateToWaylandDisplay)
-                    }    
-
                 }
             }
         }
