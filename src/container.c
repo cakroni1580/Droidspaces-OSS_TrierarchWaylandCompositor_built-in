@@ -2051,6 +2051,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     /* 9b. Anland */
     if (is_android() && cfg->anland) {
       printf("  Anland: enabled\n");
+    }  
     /* 10. Wayland */
     if (is_android() && cfg->wayland) {
       printf("  Wayland: enabled (compositor in app)\n");
