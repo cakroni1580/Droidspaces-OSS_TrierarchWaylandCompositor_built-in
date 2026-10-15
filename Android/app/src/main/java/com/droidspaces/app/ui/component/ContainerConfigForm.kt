@@ -254,7 +254,6 @@ fun ContainerConfigForm(
             enabled = termux,
 
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enablePulseaudio = it)) },
-            enabled = true
         )
         
         ToggleCard(
