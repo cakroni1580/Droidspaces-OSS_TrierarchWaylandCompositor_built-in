@@ -236,6 +236,14 @@ fun ContainerConfigForm(
         )
         GroupDivider()
         SwitchItem(
+            icon = Icons.Default.DesktopWindows,
+            title = context.getString(R.string.enable_wayland),
+            summary = context.getString(R.string.enable_wayland_description),
+            checked = state.enableWayland,
+            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
+        )
+        GroupDivider()
+        SwitchItem(
             icon = Icons.Default.Layers,
             title = context.getString(R.string.enable_virgl),
             summary = if (termux) context.getString(R.string.enable_virgl_description)
@@ -243,14 +251,6 @@ fun ContainerConfigForm(
             checked = state.enableVirgl,
             enabled = termux,
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enableVirgl = it)) }
-        )
-        GroupDivider()
-        SwitchItem(
-            icon = Icons.Default.DesktopWindows,
-            title = context.getString(R.string.enable_wayland),
-            summary = context.getString(R.string.enable_wayland_description),
-            checked = state.enableWayland,
-            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
         )
         GroupDivider()
         SwitchItem(
