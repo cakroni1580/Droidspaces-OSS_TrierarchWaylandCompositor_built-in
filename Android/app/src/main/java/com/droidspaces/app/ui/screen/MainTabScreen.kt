@@ -364,7 +364,7 @@ fun MainTabScreen(
                             onRefresh = { performRefresh(TabItem.ControlPanel) },
                             onNavigateToContainerDetails = onNavigateToContainerDetails,
                             onNavigateToTerminal = onNavigateToTerminal,
-                            bottomBarInset = bottomBarHeight
+                            bottomBarInset = bottomBarHeight,
                             onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
                             emptyStateBottomInset = bottomBarHeight
                         )
@@ -613,7 +613,7 @@ private fun ControlPanelTabContent(
     onRefresh: suspend () -> Unit,
     onNavigateToContainerDetails: (String) -> Unit,
     onNavigateToTerminal: (String) -> Unit,
-    bottomBarInset: Dp = 0.dp
+    bottomBarInset: Dp = 0.dp,
     onNavigateToWaylandDisplay: () -> Unit = {},
     emptyStateBottomInset: Dp = 0.dp
 ) {
@@ -630,7 +630,7 @@ private fun ControlPanelTabContent(
             containerViewModel = containerViewModel,
             onNavigateToContainerDetails = onNavigateToContainerDetails,
             onNavigateToTerminal = onNavigateToTerminal,
-            bottomBarInset = bottomBarInset
+            bottomBarInset = bottomBarInset,
             onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
             emptyStateBottomInset = emptyStateBottomInset
         )
