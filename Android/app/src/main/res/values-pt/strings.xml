@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Começar</string>
-    <string name="root_check_title">Verificação de Acesso Root</string>
     <string name="checking_root">A verificar o acesso root…</string>
-    <string name="root_granted">Acesso Root Concedido</string>
     <string name="root_denied">Acesso Root Negado</string>
     <string name="root_required_message">O acesso root é necessário para gerir contentores.</string>
     <string name="check_root_access">Verificar o Acesso Root</string>
-    <string name="check_root_access_click">Clique abaixo para verificar o acesso root</string>
-    <string name="root_available_message">Agora pode usar o Droidspaces</string>
     <string name="skip">Pular</string>
     <string name="continue_button">Continuar</string>
     <string name="home_title">Início</string>
@@ -116,7 +112,6 @@
     <string name="container_name_exists">Já existe um contentor com este nome</string>
     <string name="next_configuration">Próximo: Configuração</string>
     <string name="configuration_title">Configuração</string>
-    <string name="container_options">Opções do Contentor</string>
     <string name="next_storage">Próximo: Armazenamento</string>
     <string name="installation_complete">Instalação Concluída</string>
     <string name="installation_failed">Instalação Falhou</string>
@@ -199,7 +194,6 @@
     <string name="requirements_check_completed_successfully">Verificação de requisitos concluída com sucesso</string>
     <string name="requirements_check_completed_with_errors">Verificação de requisitos concluída com erros</string>
     <string name="kernel_requirements_copied">Requisitos do kernel copiados para a área de transferência</string>
-    <string name="welcome_tagline">Contentores Linux. Nativo. Sem sobrecarga.</string>
     <string name="feat_containers_title">Contentores reais do Linux</string>
     <string name="feat_containers_desc">A mesma tecnologia de namespace do kernel como LXC, Podman e Docker. Sem emulação, sem chroot.</string>
     <string name="feat_overhead_title">Nenhuma sobrecarga</string>
@@ -225,5 +219,4 @@
     <string name="generate_bug_report">Gerar um relatório de bug</string>
     <string name="generate_bug_report_description">Coletar informações do sistema e logs para a depuração</string>
     <string name="bug_report_title">Relatório de erro</string>
-    <string name="install">Instalar</string>
 </resources>

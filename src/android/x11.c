@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - X11 Server and Socket Manager
+ * Droidspaces v7 - X11 Server and Socket Manager
  *
  * Manages the Termux-X11 server lifecycle on Android (spawning, logging, and
  * stopping) and unifies host-to-container X11 socket bridging for both Android

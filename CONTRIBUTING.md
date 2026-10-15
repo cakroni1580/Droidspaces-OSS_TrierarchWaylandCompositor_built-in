@@ -246,18 +246,21 @@ for the case where nothing here fits and you have to build something new.
 
 | Symbol | Path | Use it when |
 | --- | --- | --- |
-| `ContainerConfigForm(state, onStateChange, ...)` | `ui/component/ContainerConfigForm.kt` | Any screen that edits container settings. Add new options inside this file, never in a second form |
+| `ContainerConfigHost(title, onBack, bottomBar, state, onStateChange, ...)` | `ui/component/ContainerConfigHost.kt` | Any screen that edits container settings. It hosts the root form and its pages in one destination |
+| `ContainerConfigForm(state, onStateChange, onOpenPage, ...)` | `ui/component/ContainerConfigForm.kt` | The root of the config screen. Add new options inside this file or one of its pages, never in a second form |
+| `DraftPageScaffold(title, dirty, canSave, onSave, onClose, confirmLabel) { }` | `ui/component/ContainerConfigHost.kt` | A config page: a draft kept on back while the page's rules pass, a discard prompt when they fail. `confirmLabel` adds an explicit button instead. Built on `ConfigPageScaffold` |
 | `ContainerConfigState` | `util/ContainerConfigState.kt` | The single source of truth for editable config. Add a field here, not to a parallel state class |
 | `ContainerInfo.toConfigState()` / `.withConfig(state)` | `util/ContainerConfigState.kt` | Prefill the form from a container, or write edits back |
 | `InitServiceScreen(containerName, titleRes, isAvailable, fetchRows, filters, ...)` | `ui/screen/InitServiceScreen.kt` | Supporting a new init system. Supply the lambdas, do not write a new screen |
 | `InitServiceRow`, `InitServiceUiStatus`, `InitCommandResult`, `InitServiceMenuAction`, `InitServiceFilterChip` | `ui/screen/InitServiceScreen.kt` | Mapping a manager's service list into the shared screen. Status colors and filter counts derive from these, so they cannot drift |
-| `GatewaySettingsSection(visible, config, onConfigChange, ...)` + `GatewayConfig` | `ui/component/GatewaySettingsSection.kt` | The gateway networking block. Already embedded in the config form |
-| `PortForwardingList(portForwards, onPortForwardsChange)` | `ui/component/PortForwardingList.kt` | Editable port forward list, add dialog included |
-| `UpstreamInterfaceList(upstreamInterfaces, onInterfacesChange)` | `ui/component/UpstreamInterfaceList.kt` | Editable upstream interface chips |
+| `NetworkModePage(...)` | `ui/component/NetworkModePage.kt` | The network mode list and each mode's settings (NAT, gateway, macvlan). Add a mode's settings here |
+| `UpstreamPickerSheet`, `HostInterfaceSheet`, `AddPortForwardSheet` | `ui/component/NetworkSheets.kt` | Adding to the network page's lists |
+| `EnvironmentVariablesPage`, `PrivilegedModePage`, `BindMountsPage` | `ui/component/` | The config pages that hold a draft |
 | `DsDropdown(label, selected, options, displayName, onSelect, ...)` | `ui/component/DsDropdown.kt` | Any select field. Never hand-roll `ExposedDropdownMenuBox` |
 | `DsMenuTheme { }` + `Modifier.dsMenuBorder()` | `ui/component/DsMenuTheme.kt` | Any `DropdownMenu` that needs the opaque menu surface. `DsDropdown` already applies it |
 | `DsTextFieldDefaults.colors()` / `.surfaceColors()` | `ui/component/DsTextFieldDefaults.kt` | Every `OutlinedTextField`. `colors()` on screens, `surfaceColors()` inside dialogs |
-| `FocusUtils`, `rememberClearFocus()`, `ClearFocusOnClickOutside` | `ui/util/FocusUtils.kt` | IME actions and dismissing the keyboard on outside taps |
+| `MonoField(value, onValueChange, label, ...)` | `ui/component/MonoField.kt` | Every single-line field for a value the backend reads verbatim: paths, interface names, flags, DNS. Number fields and the env editor are their own |
+| `FocusUtils`, `rememberClearFocus()`, `ClearFocusOnClickOutside` | `ui/util/FocusUtils.kt` | IME actions and dismissing the keyboard. `MainActivity` already clears focus on an unconsumed tap on every screen; `ClearFocusOnClickOutside` is only for a sheet that is its own window |
 
 ### Android: dialogs
 
@@ -268,8 +271,9 @@ for the case where nothing here fits and you have to build something new.
 | `DialogCloseButton(onClick, enabled)` | `ui/component/DialogCloseButton.kt` | The 36.dp close square in a dialog's header row, for info pages that close from the top (terminal log viewer, About) |
 | `DialogFooterRow(dismissLabel, confirmLabel, onDismiss, onConfirm, confirmEnabled, destructive)` | `ui/component/DialogFooterRow.kt` | Every dialog's cancel and confirm row, thirteen call sites. Pass `destructive = true` for a delete or a wipe, never a colour |
 | `FilePickerDialog(onDismiss, onConfirm, title, showFiles)` | `ui/component/FilePickerDialog.kt` | Picking a host path or file |
-| `EnvironmentVariablesDialog(initialContent, onConfirm, onDismiss, ...)` | `ui/component/EnvironmentVariablesDialog.kt` | Key and value environment editor |
-| `PrivilegedModeDialog`, `HardwareAccessDialog` | `ui/component/` | Opt-in flows that need a typed confirmation phrase |
+| `HardwareAccessDialog(onConfirm, onDismiss)` | `ui/component/HardwareAccessDialog.kt` | Opt-in flow that needs a typed confirmation phrase |
+| `DsBottomSheet(onDismiss, title, footer, titleAction) { }` | `ui/component/DsBottomSheet.kt` | A short "add" form over the page it adds to. Same footer rule as `DsDialog` |
+| `DiscardEditsDialog(onDiscard, onKeepEditing)` | `ui/component/ContainerConfigHost.kt` | Leaving a page with unapplied edits. `rememberDraftBack` shows it for you |
 | `DangerousWarningCard(title, text)` + `ConfirmPhraseField(value, onValueChange, isError)` | `ui/component/DangerousActionConfirm.kt` | Building a destructive confirmation. Compose these two with `DialogFooterRow` |
 | `TerminalDialog(title, logs, onDismiss, onClear, isBlocking)` | `ui/component/TerminalDialog.kt` | Showing live or streaming command output |
 | `ProgressDialog(message)` / `ErrorLogsDialog(logs)` | `ui/util/DialogUtils.kt` | Blocking spinner, or a failed command's log lines |
@@ -288,15 +292,22 @@ the language and about dialogs in `ui/screen/SettingsScreen.kt`). Do not import 
 | `SaveActionBottomBar(isSaved, isSaving, canSave, onSave, ...)` | `ui/component/SaveActionBottomBar.kt` | A save bar with the save, saving and saved states |
 | `PullToRefreshWrapper(onRefresh) { ... }` | `ui/component/PullToRefreshWrapper.kt` | Any pull to refresh list or tab body |
 | `showSuccess/showError/showInfo(snackbarHostState, message)` | `ui/util/SnackbarUtils.kt` | All snackbars. Never call `showSnackbar` directly |
+| `FloatingActionButtonMenu` + `ToggleFloatingActionButton` | `ui/screen/ContainersScreen.kt` | A screen with more than one floating action. Copy that block, never stack FABs. See DESIGN.md "Floating action button" |
 
 ### Android: cards and list items
 
 | Symbol | Path | Use it when |
 | --- | --- | --- |
-| `SettingsCard(title, onClick, icon, subtitleContent, trailing, below, ...)` | `ui/component/SettingsCard.kt` | The base for every settings or option row. Build new variants on top of it |
-| `SettingsRowCard`, `ToggleCard` | `ui/component/` | Clickable row, or switch row. Both are thin wrappers over `SettingsCard`. `ToggleCard(expandedContent = ...)` opens a body inside the card while the switch is on |
+| `SettingsGroup { }` + `GroupHeader`, `GroupIntro`, `GroupDivider` | `ui/component/SettingsGroup.kt` | Any settings-style screen: one surface per section, rows flat inside, a header above |
+| `NavRow(title, onClick, icon, value, summary, danger, error)` | `ui/component/SettingsGroup.kt` | A row in a group that opens a page, showing the current value |
+| `RadioRow(title, description, selected, onClick)` | `ui/component/NetworkModePage.kt` | One option of a radio list in a group |
+| `EntryRow(text, onDelete, ...)` / `AddEntryButton(label, onClick)` | `ui/component/ListEntryCards.kt` | Editable lists: the entries inside a group, the add button under it |
+| `GroupField { }` / `InlineWarning(text)` | `ui/component/ContainerConfigForm.kt` | A text field inside a group, padded like the rows; an error-tinted note inside one |
+| `screenGutter()`, `isCompactWidth()`, `isShortHeight()` | `ui/component/SettingsGroup.kt` | Margins and layout switches for narrow and short windows. See DESIGN.md "Small screens" |
+| `SettingsCard(title, onClick, icon, subtitleContent, trailing, below, ...)` | `ui/component/SettingsCard.kt` | A standalone card row outside a group |
+| `ToggleCard` | `ui/component/ToggleCard.kt` | A standalone switch card. Inside a group use `SwitchItem` |
 | `DsSlider(value, onValueChange, valueRange, ...)` | `ui/component/DsSlider.kt` | Any slider. Never restyle a raw `Slider` at the call site |
-| `SwitchItem` | `ui/component/SwitchItem.kt` | Flat `ListItem` switch row, used on the Settings screen. See the duplicates note below |
+| `SwitchItem` | `ui/component/SwitchItem.kt` | The switch row inside a `SettingsGroup`. See the duplicates note below |
 | `ContainerCard(container, actions, ...)` + `ContainerCardActions` | `ui/component/ContainerCard.kt` | The expandable container row. Add new actions to `ContainerCardActions`, not as new parameters |
 | `RunningContainerCard(container, onEnter, onTerminalClick, osInfo)` | `ui/component/RunningContainerCard.kt` | Compact running container card on the control panel |
 | `DroidspacesStatusCard(status, version, ...)` + `DroidspacesStatus` | `ui/component/DroidspacesStatusCard.kt` | Backend or module status hero card |
@@ -310,9 +321,9 @@ the language and about dialogs in `ui/screen/SettingsScreen.kt`). Do not import 
 | `StatusPill(label, color)` | `ui/component/StatusPill.kt` | Any small status chip or badge |
 | `SectionHeader(text)` | `ui/component/SectionHeader.kt` | Any heading above a group of cards. Spacing goes on the modifier |
 | `CardContentPadding`, `CardHeaderHeight` | `ui/component/CardMetrics.kt` | Any card with a title-and-pill header. Keeps the dividers aligned across tabs, do not retype the values |
-| `LoadingIndicator(size, color)` + `LoadingSize` | `ui/util/LoadingIndicator.kt` | Inline spinners. Pick a `LoadingSize`, never a raw `.size(n.dp)` |
+| `LoadingIndicator(size, color, contained)` + `LoadingSize` | `ui/util/LoadingIndicator.kt` | Inline spinners. Pick a `LoadingSize`, never a raw `.size(n.dp)`. `contained` is the primaryContainer bubble for a hero |
 | `FullScreenLoading(message)` | `ui/util/LoadingIndicator.kt` | Whole screen loading state |
-| `ContainedLoadingIndicator`, `LoadingIndicatorDefaults`, `MaterialShapes` | `ui/util/LoadingIndicator.kt` | Determinate and morphing indicators, and their tokens |
+| `LoadingIndicator`, `ContainedLoadingIndicator`, `MaterialShapes` | `androidx.compose.material3` | The Expressive indicators and shapes come from the library; `ui/util/LoadingIndicator.kt` only wraps the sizes |
 | `TerminalConsole(logs, isProcessing, maxHeight)` | `ui/component/TerminalConsole.kt` | Inline scrolling log view |
 | `ShimmerAnimation(enabled) { ... }` | `ui/component/TerminalConsole.kt` | Skeleton loading effect |
 | `PercentCircle(percent, size, strokeWidth, ...)` | `ui/component/PercentCircle.kt` | Circular percentage gauge. Currently unused, reuse it before writing another |
@@ -324,8 +335,10 @@ the language and about dialogs in `ui/screen/SettingsScreen.kt`). Do not import 
 | `DroidspacesTheme(darkTheme, dynamicColor, amoledMode, themePalette)` | `ui/theme/Theme.kt` | The single theme root, applied in `MainActivity` |
 | `rememberThemeState()` + `ThemeState` | `ui/theme/ThemeStateHolder.kt` | Reading live theme preferences |
 | `ThemePalette` | `ui/theme/Color.kt` | Adding an accent palette. Here and nowhere else |
-| `MaterialTheme.colorScheme.*` | | All colors. `ui/theme/Color.kt` holds only `AMOLED_BLACK` and the palettes now |
+| `MaterialTheme.colorScheme.*` | | All colors. `ui/theme/Color.kt` holds `AMOLED_BLACK`, the palettes, the warning pair and `ColorScheme.isDark` |
+| `ColorScheme.isDark`, `warningContainer`, `onWarningContainer` | `ui/theme/Color.kt` | Dark-mode branches and the amber warning pair. Never re-derive from `luminance()` |
 | `MaterialTheme.typography.*`, `JetBrainsMono` | `ui/theme/Type.kt` | All text styles, and the mono font for terminal, log, and code text |
+| `DsIcons.Logo` | `ui/theme/DsIcons.kt` | The app mark as a tintable icon, wherever the UI means a container or its storage. Never `Icons.Default.Storage` |
 | Corner radii, spacing, type roles | [DESIGN.md](./DESIGN.md) | Every visual value. There is no shape token object, the numbers live in DESIGN.md |
 | `AnimationUtils` | `util/AnimationUtils.kt` | Durations, easing, and tween specs. Never a literal `tween(300)` |
 | `AccentColorPicker`, `ColorPaletteSwatch` | `ui/component/` | The palette picker in settings |
@@ -368,6 +381,7 @@ it should be set.
 | `ValidationUtils.validateConfigValues(config)` | same | Before writing a config. Rejects control characters in single-line values |
 | `ValidationUtils.validateGatewayConfig(...)` + `GatewayErrors` | same | Gateway collision rules across containers |
 | `ValidationUtils.effGatewayNet/Iface/Bridge` | same | Deriving gateway defaults. These mirror the C runtime, do not re-derive them |
+| `ValidationUtils.ifaceNameInput(input, wildcards)` | same | Filtering a typed interface name as the user types. Mirrors `ds_parse_iface_csv()` and IFNAMSIZ |
 | `ValidationResult` | same | The shared success and error result type |
 | `ContainerManager.sanitizeContainerName(name)` | `util/ContainerManager.kt` | Path shaping only. This is **not** a security validator, pair it with `isSafeContainerName` |
 
@@ -381,6 +395,7 @@ boundary.
 | --- | --- | --- |
 | `ContainerManager` | `util/ContainerManager.kt` | Container discovery, config parsing, status, updates, uninstall |
 | `ContainerInfo`, `BindMount`, `PortForward`, `ContainerStatus` | same | The container model. `ContainerInfo.toConfigContent()` is the single config serializer, never hand-write config lines |
+| `RootfsConfig.read(context, uri)` | `util/RootfsConfig.kt` | Reading optional root-level `container.config` recommendations, plus the opt-in `container.env`, before installation, from a 64 KiB prefix of the archive. Uses the shared config parser without loading host environment files |
 | `DaemonModeRepository` | `util/DaemonModeRepository.kt` | Reading and writing the daemon mode flag |
 | `RootfsRepository.fetchAllAssets(context)` + `RootfsAsset` | `util/RootfsRepository.kt` | Fetching official and user rootfs repos |
 | `PreferencesManager.getInstance(context)` | `util/PreferencesManager.kt` | All settings persistence. Collect `daemonModeFlow` and `symlinkEnabledFlow` rather than registering your own preference listener |
@@ -453,7 +468,7 @@ validation. Prefer the wrappers.
 | `BinaryInstaller` / `InstallationStep` | `util/BinaryInstaller.kt` | Installing the backend binary and signalling the daemon |
 | `ModuleInstaller` / `ModuleInstallationStep` | `util/ModuleInstaller.kt` | Installing the Magisk module |
 | `SymlinkInstaller` | `util/SymlinkInstaller.kt` | Enabling and disabling the binary symlink |
-| `FilePickerUtils`, `IconUtils` | `util/` | File name resolution, distro icon lookup |
+| `FilePickerUtils`, `IconUtils` | `util/` | File name resolution, distro icon lookup. `FilePickerUtils.realPath(context, uri)` turns a picked document into a path root can read or write in place, null for pipe-backed providers |
 
 ### C backend: logging
 
@@ -472,7 +487,7 @@ validation. Prefer the wrappers.
 
 The debug channel is a bracket prefix, not a flag. A message starting with `[DEBUG]`,
 `[NET]`, `[CGROUP]`, `[SEC]`, `[IPT]`, `[VIRT]`, `[GPU]`, `[FW]`, `[DHCP]`, `[X11]`,
-`[VirGL]`, or `[PulseAudio]` goes to the log file but not the terminal. Use that, do not add
+`[VirGL]`, `[PulseAudio]` or `[Anland]` goes to the log file but not the terminal. Use that, do not add
 a verbosity flag.
 
 ### C backend: strings
@@ -520,7 +535,7 @@ influenced, copy the `ds_bind_mount_socket` pattern: open with `O_NOFOLLOW|O_CLO
 | `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | Waiting for a socket to appear. Bails early if the server dies. Use instead of a sleep loop |
 | `ds_send_fd` / `ds_recv_fd` | SCM_RIGHTS descriptor passing |
 | `collect_pids`, `read_and_validate_pid` | Snapshotting `/proc`, and reading a pidfile with a liveness check |
-| `ds_container_lock(name, wait)` / `ds_container_unlock(fd)` | The per-container lifecycle lock, a `flock`. **Anything** that changes a container's on-disk state (pidfile, sidecars, mount, cgroup) must hold it, the monitor included. Commands pass `wait=0` and report busy; the monitor passes `wait=1`. Decide what to do from the state you find while holding it |
+| `ds_container_lock(name, wait)` / `ds_container_unlock(fd)` | The per-container lifecycle lock, a `flock`. **Anything** that changes a container's on-disk state (pidfile, mount, cgroup) must hold it, the monitor included. Commands pass `wait=0` and report busy; the monitor passes `wait=1`. Decide what to do from the state you find while holding it |
 | `ds_container_lock_orphan(name)` | Same lock, but only granted when no monitor is alive for the name. For pruning leftovers. On -1, leave the container alone |
 | `ds_container_claim_supervision(name)` | Called once by a monitor. It is what `ds_container_lock_orphan` checks |
 | `DS_SIG_STOP`, `ds_init_type_t`, `detect_container_init()` | Graceful stop. Each init family has its own stop and reboot signal, and under procd `SIGTERM` means reboot |
@@ -532,9 +547,9 @@ influenced, copy the `ds_bind_mount_socket` pattern: open with `O_NOFOLLOW|O_CLO
 | `is_android()` | The mandatory gate for every Android-only or Linux-only path, both directions |
 | `is_running_in_termux()` | Termux environment |
 | `get_kernel_version`, `check_kernel_recommendation` | Version gating against `DS_MIN_KERNEL_MAJOR` and `DS_MIN_KERNEL_MINOR` |
-| `check_ns(flag, name)` | Probing whether a `CLONE_NEW*` namespace is usable |
+| `check_ns(flag, name)` | Probing whether a `CLONE_NEW*` namespace is usable. The network namespace is answered from `/proc/self/ns/net` alone: creating one to test it stalls the real `unshare` behind its teardown on kernels before 4.17 |
 | `ds_cgroup_v2_usable`, `ds_cgroup_kernel_supports_v2`, `ds_cgroup_host_is_v2` | cgroup generation gates |
-| `ds_nl_probe_nat_capability(reason, size)` | Kernel bridge, veth, and NAT capability. Fork free. Run before any NAT setup |
+| `ds_nl_probe_nat_capability(reason, size)` | Kernel bridge, veth, and NAT capability. Fork free. Run before any NAT setup. A full pass is remembered for the boot in `Net/nat_caps`, keyed by boot_id; anything less is probed again |
 | `ds_get_selinux_status()`, `is_systemd_rootfs(path)` | SELinux mode, and rootfs flavour |
 
 ### C backend: config
@@ -594,7 +609,7 @@ shell-out on the fast path. The netfilter helpers take an address family (`AF_IN
 | `ds_nl_open` / `ds_nl_close` | Opening the netlink context every link, address, route, and rule call needs |
 | `ds_nl_create_bridge`, `ds_nl_create_veth`, `ds_nl_set_master`, `ds_nl_link_up/down`, `ds_nl_del_link`, `ds_nl_rename`, `ds_nl_set_mac` | Link operations |
 | `ds_nl_add_addr4`, `ds_nl_add_route4`, `ds_nl_add_addr6`, `ds_nl_add_route6` | Addresses and routes. The IPv6 route is link scope only |
-| `ds_nl_move_to_netns`, `ds_nl_move_to_netns_named` | Moving an interface into a namespace |
+| `ds_nl_create_veth_in(ctx, host, peer, netns_fd, mac)` | Creating a veth pair with the peer born inside a namespace under its final name. The only way an interface enters a container: moving one in and renaming it there is a race the guest's netifd loses |
 | `ds_nl_add_rule4`, `ds_nl_del_rule4`, `ds_nl_rule6` | FIB policy rules. Priorities come from `DS_RULE_PRIO_TO_SUBNET`, `DS_RULE_PRIO_TETHER`, `DS_RULE_PRIO_FROM_SUBNET`, which must sit above the OEM reserved range and below Android's VPN range |
 | `ds_nl_get_iface_table`, `ds_nl_get_table_default_oif`, `ds_nl_get_android_default` | Routing table introspection. All three take the address family |
 | `ds_nl_flush_stale_veths`, `ds_nl_list_ifaces`, `ds_nl_count_ifaces_with_prefix` | Enumeration and garbage collection |

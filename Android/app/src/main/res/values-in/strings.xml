@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Mulai</string>
-    <string name="root_check_title">Cek Akses Root</string>
     <string name="checking_root">Mengecek akses root...</string>
-    <string name="root_granted">Akses Root Berhasil</string>
     <string name="root_denied">Akses Root Ditolak</string>
     <string name="root_required_message">Akses Root di perlukan untuk mengelola kontainer.</string>
     <string name="check_root_access">Cek Akses Root</string>
-    <string name="check_root_access_click">Klik Dibawah ini untuk cek akses root</string>
-    <string name="root_available_message">Kamu sekarang bisa memakai Droidspaces</string>
     <string name="skip">Lewati</string>
     <string name="continue_button">Lanjut</string>
     <string name="home_title">Beranda</string>
@@ -50,7 +46,7 @@
     <string name="daemon_mode">Mode Daemon</string>
     <string name="daemon_mode_description">Jalankan Droidspaces sebagai daemon tingkat sistem yang berjalan terus-menerus untuk melewati blokir seccomp dari Magisk/APatch, GrapheneOS, dll. Ini menjalankan operasi dengan hak akses tinggi dengan mengambil dan menjalankan perintah dari ruang pengguna (Reboot diperlukan).</string>
     <string name="symlink_integration">Integrasi Droidspaces ke jalur sistem</string>
-    <string name="symlink_integration_description">Buat symlink di /system/bin untuk mengakses perintah droidspaces di shell root Android. PERINGATAN: MENGAKTIFKAN INI MENYEBABKAN BOOTLOOP JIKA SISTEM MOUNT KAMU ADALAH modul meta OVERLAYFS. Gunakan opsi ini hanya saat menggunakan sistem mount berbasis Magic Mount (Reboot diperlukan)</string>
+    <string name="symlink_integration_description">Buat symlink di /system/bin untuk mengakses perintah droidspaces dalam shell root Android. PERINGATAN: MENGAKTIFKAN OPSI INI MENYEBABKAN BOOTLOOP JIKA SISTEM MOUNT ANDA MENGGUNAKAN MODUL META OVERLAYFS. Gunakan opsi ini hanya jika Anda menggunakan sistem mount berbasis Magic Mount atau sistem mount nomount berbasis kernel (perlu memulai ulang perangkat)</string>
     <string name="about_section">Tentang</string>
     <string name="about_droidspaces">Tentang Droidspaces</string>
     <string name="about_description">LXC-Style kontainer manajer untuk android</string>
@@ -138,19 +134,10 @@
     <string name="network_mode_host">Host</string>
     <string name="network_mode_nat">NAT (Default)</string>
     <string name="network_mode_none">Tidak ada (terisolasi secara fisik)</string>
-    <string name="nat_settings">Pengaturan NAT</string>
     <string name="upstream_interface_title">Antarmuka Upstream (Opsional)</string>
     <string name="upstream_interface_hint">Sematkan akses internet ke antarmuka tertentu. Kosongkan untuk mendeteksi uplink aktif secara otomatis.</string>
     <string name="add_upstream_interface">Tambahkan Antarmuka Upstream</string>
-    <string name="available_system_interfaces">Antarmuka Sistem yang Tersedia:</string>
-    <string name="enter_manually">Atau masukkan secara manual (karakter pengganti juga didukung):</string>
-    <string name="interface_name_hint">Nama Antarmuka (misalnya wlan0, v4-rmnet_data*)</string>
     <string name="add_port_forward">Tambahkan Port Forward</string>
-    <string name="host_port_hint">Port Host (1–65535 atau rentang 100–200)</string>
-    <string name="container_port_hint">Port Kontainer (1–65535 atau rentang)</string>
-    <string name="protocol">Protokol</string>
-    <string name="optional_symmetric_hint">Opsional (misalnya 8080 atau 1000–2000)</string>
-    <string name="leave_blank_for_symmetric">Biarkan kosong untuk pemetaan simetris</string>
     <string name="error_invalid_range_format">Format rentang tidak valid (AWAL-AKHIR)</string>
     <string name="error_ports_must_be_numbers">Nama Port harus berupa angka</string>
     <string name="error_port_out_of_range">Nomor port harus berkisar antara 1 hingga 65535</string>
@@ -158,7 +145,6 @@
     <string name="error_port_must_be_number">Port harus berupa angka</string>
     <string name="error_port_width_mismatch">Ketidaksesuaian rentang host/kontainer</string>
     <string name="error_port_overlap">Tumpang tindih dengan aturan port forward yang sudah ada</string>
-    <string name="symmetric_label">(Simetris)</string>
     <string name="port_forward_examples">Contoh: 8080 (tunggal), 8000-8010 (rentang). Biarkan kolom tujuan kosong untuk pemetaan simetris.</string>
     <string name="saved">Tersimpan</string>
     <string name="saving">Menyimpan...</string>
@@ -173,10 +159,7 @@
     <string name="port_forwarding">Penerusan Port</string>
     <string name="add">Tambah</string>
     <string name="add_bind_mount">Tambah Bind Mount</string>
-    <string name="enter_container_path">Pilih Jalur Kontainer</string>
     <string name="container_path_placeholder">misalnya. /mnt/sdcard</string>
-    <string name="host_path">Jalur host: %1$s</string>
-    <string name="container_path">Jalur kontainer: %1$s</string>
     <string name="dns_servers_label">Server DNS</string>
     <string name="dns_servers_placeholder">Misalnya. 1.1.1.1,8.8.8.8 (Opsional)</string>
     <string name="dns_servers_hint">Hanya angka, titik, dan tanda titik dua</string>
@@ -191,7 +174,6 @@
     <string name="container_name_exists">Kontainer dengan nama ini sudah ada</string>
     <string name="next_configuration">Selanjutnya: Konfigurasi</string>
     <string name="configuration_title">Konfigurasi</string>
-    <string name="container_options">Opsi Kontainer</string>
     <string name="next_storage">Selanjutnya: Penyimpanan</string>
     <string name="installation_complete">Pemasangan Selesai</string>
     <string name="installation_failed">Pemasangan Gagal</string>
@@ -288,7 +270,6 @@
     <string name="help_card_title">Baru di Droidspaces?</string>
     <string name="help_card_message">Ketuk di sini untuk mempelajari cara menyiapkan kontainer Linux pertama Anda!</string>
     <string name="privileged_mode">Mode Istimewa</string>
-    <string name="privileged_mode_description">Konfigurasikan pelonggaran keamanan terperinci untuk virtualisasi bersarang atau akses perangkat keras tingkat lanjut.</string>
     <string name="privileged_nomask_desc">Nonaktifkan pembatasan akses untuk mengizinkan akses tulis ke /proc dan /sys. Catatan: /sys tetap hanya dapat dibaca kecuali jika Akses Perangkat Keras juga diaktifkan.</string>
     <string name="privileged_nocaps_desc">Jangan lepaskan kemampuan Linux (hak akses root penuh).</string>
     <string name="privileged_noseccomp_desc">Nonaktifkan penyaringan panggilan sistem Seccomp. Hal ini mengaktifkan fitur-fitur kernel tingkat lanjut seperti ruang nama pengguna tanpa hak istimewa, yang sangat diperlukan untuk sandboxing bersarang (Bubblewrap, Flatpak), serta memungkinkan pemuatan modul kernel yang tidak termasuk dalam pohon sumber.</string>
@@ -302,7 +283,6 @@
     <string name="mask_service">Layanan mask</string>
     <string name="no_masked_services">Tidak ada layanan masked</string>
     <string name="bind_mounts">Mount Bind</string>
-    <string name="welcome_tagline">Container Linux. Native. Tanpa overhead.</string>
     <string name="feat_containers_title">Container Linux nyata</string>
     <string name="feat_containers_desc">Teknologi namespace kernel Linux yang sama dengan LXC, Podman, dan Docker. Tanpa emulasi, tanpa chroot.</string>
     <string name="feat_overhead_title">Nol overhead</string>
@@ -324,7 +304,6 @@
     <string name="kernel_requirements_nongki">Persyaratan Kernel non-GKI (&lt;=4.19)</string>
     <string name="kernel_requirements_gki">Persyaratan Kernel GKI (&gt;=5.4)</string>
     <string name="guide">Panduan</string>
-    <string name="install">Pasang</string>
     <string name="gpu_option">GPU</string>
     <string name="selinux_permissive_option">SELinux Permisif</string>
     <string name="volatile_option">Volatile</string>
@@ -428,8 +407,7 @@
     <string name="network_mode_host_short">Host</string>
     <string name="network_mode_gateway">Gateway (Router Virtual)</string>
     <string name="network_mode_gateway_short">Gateway</string>
-    <string name="gateway_settings">Pengaturan Gateway</string>
-    <string name="gateway_settings_description">Rutekan container ini melalui container lain yang bertindak sebagai router (mis. OpenWRT). Gateway tersebut harus berjalan lebih dulu.</string>
+    <string name="gateway_settings_description">Rutekan container ini melalui container lain yang bertindak sebagai router (mis. OpenWRT).</string>
     <string name="gateway_container">Container Gateway</string>
     <string name="gateway_net">Nama LAN</string>
     <string name="gateway_net_hint">lan</string>
@@ -437,8 +415,6 @@
     <string name="gateway_iface_hint">eth1</string>
     <string name="gateway_bridge">Bridge Host</string>
     <string name="gateway_bridge_hint">ds-lan</string>
-    <string name="gateway_configure">Konfigurasikan Gateway</string>
-    <string name="gateway_configure_title">Konfigurasikan Gateway</string>
     <string name="gateway_configure_intro">Pengaturan ini mengontrol bagaimana container ini terhubung ke LAN virtual gateway. Nilai bawaan cocok untuk satu LAN di belakang satu gateway - ubah hanya saat menjalankan beberapa segmen LAN atau lebih dari satu gateway.</string>
     <string name="gateway_iface_explain">Nama antarmuka tempat koneksi ini muncul DI DALAM container gateway (mis. eth1 di OpenWRT). Harus cocok dengan antarmuka tempat gateway Anda melayani DHCP. Setiap segmen terpisah pada gateway yang sama memerlukan nama uniknya sendiri. Bawaan: eth1.</string>
     <string name="gateway_net_explain">Label untuk segmen LAN ini. Container yang memakai gateway dan nama LAN yang sama akan bergabung ke virtual switch yang sama dan dapat saling melihat. Gunakan nama berbeda untuk membuat segmen kedua yang terisolasi. Bawaan: lan.</string>
@@ -561,7 +537,6 @@
         <item quantity="other">%1$s inti</item>
     </plurals>
     <string name="env_placeholder">KEY=VALUE, satu per baris. Baris yang diawali dengan # akan diabaikan.</string>
-    <string name="env_lines_skipped">%1$d baris tidak dalam format KEY=VALUE</string>
     <string name="fetching_logs">Mengambil log...</string>
     <string name="journal_load_error_title">Tidak dapat memuat log</string>
     <string name="journal_load_error_message">Unit mungkin tidak memiliki jurnal, atau kontainer tidak dapat dijangkau.</string>
@@ -581,4 +556,109 @@
     <string name="updates_section">Pembaruan</string>
     <string name="check_app_updates">Periksa pembaruan aplikasi</string>
     <string name="check_app_updates_description">Cari rilis baru di GitHub saat aplikasi dibuka</string>
+    <string name="welcome_headline">Linux sesungguhnya di ponsel Anda</string>
+    <string name="welcome_body">Droidspaces menjalankan distribusi lengkap dalam container menggunakan kernel perangkat Anda sendiri. Tanpa emulator, tanpa mesin virtual.</string>
+    <string name="next">Berikutnya</string>
+    <string name="page_counter">%1$d dari %2$d</string>
+    <string name="root_access_title">Akses root</string>
+    <string name="root_access_body">Droidspaces memerlukan akses root untuk membuat container. Pengelola root Anda akan meminta izin untuk memberikan akses tersebut.</string>
+    <string name="limit_pids_error">Setidaknya %1$d</string>
+    <string name="limit_memory_requirement">CONFIG_MEMCG, dan tidak ada cgroup_disable=memory pada baris perintah kernel</string>
+    <string name="limit_cpu_requirement">CONFIG_CFS_BANDWIDTH, dan tidak ada cgroup_disable=cpu pada baris perintah kernel</string>
+    <string name="limit_pids_requirement">CONFIG_CGROUP_PIDS, dan tidak ada cgroup_disable=pids pada baris perintah kernel</string>
+    <string name="hardware_access_not_supported">Tidak tersedia. Kernel ini tidak memiliki devtmpfs (CONFIG_DEVTMPFS).</string>
+    <string name="volatile_mode_not_supported">Tidak tersedia. Kernel ini tidak memiliki OverlayFS (CONFIG_OVERLAY_FS).</string>
+    <string name="force_cgroupv1_not_supported">Tidak tersedia. Kernel ini hanya memiliki cgroup v1, sehingga tidak ada yang perlu dipaksakan.</string>
+    <string name="disable_ipv6_forced">Tetap aktif. Kernel ini tidak memiliki NAT IPv6 (CONFIG_IP6_NF_NAT), sehingga container NAT hanya menggunakan IPv4.</string>
+    <string name="memory_kb">%1$s KB</string>
+    <string name="memory_mb_decimal">%1$s MB</string>
+    <string name="rootfs_config_loading">Membaca pengaturan yang direkomendasikan…</string>
+    <string name="rootfs_config_loaded_title">Pengaturan telah diisi untuk Anda</string>
+    <string name="rootfs_config_loaded">Arsip ini menyertakan pengaturan container sendiri dan semuanya telah diterapkan, termasuk akses perangkat keras dan mode istimewa. rootfs dari pihak lain dapat meminta akses lebih luas daripada yang ingin Anda berikan. Baca halaman berikutnya dengan saksama sebelum memasang.</string>
+    <string name="rootfs_config_review">Tinjau konfigurasi</string>
+    <string name="rootfs_config_invalid">Tidak dapat memuat pengaturan yang direkomendasikan. Konfigurasikan container ini secara manual. %1$s</string>
+    <string name="installing_backend_message">Menyiapkan backend. Proses ini memerlukan waktu sejenak.</string>
+    <string name="backend_installed_unsupported_kernel">Backend Droidspaces berhasil dipasang, tetapi kernel ini tidak mendukung Droidspaces.</string>
+    <string name="ram_used_label">%1$s (%2$.1f%%)</string>
+    <string name="ram_used_of_limit_label">%1$s / %2$s (%3$.0f%%)</string>
+    <string name="kernel_unsupported">Kernel tidak didukung</string>
+    <string name="kernel_unsupported_description">Halaman ini dinonaktifkan karena kernel ini tidak memiliki fitur yang diperlukan Droidspaces</string>
+    <string name="kernel_unsupported_message">Ketuk untuk mempelajari cara mengonfigurasi kernel Anda untuk Droidspaces.</string>
+    <string name="export_container_title">Ekspor %1$s</string>
+    <string name="export_action">Ekspor</string>
+    <plurals name="export_env_body">
+        <item quantity="other">Container ini memiliki %1$d variabel lingkungan. Variabel tersebut sering menyimpan kata sandi dan token API, dan siapa pun yang memperoleh arsip ini dapat membacanya.</item>
+    </plurals>
+    <string name="export_env_include">Sertakan variabel lingkungan</string>
+    <string name="export_env_include_desc">Biarkan opsi ini nonaktif untuk arsip yang Anda bagikan. Aktifkan untuk cadangan Anda sendiri.</string>
+    <string name="add_container">Tambahkan container</string>
+    <string name="install_from_file">Pasang dari berkas</string>
+    <string name="fab_menu_expanded">Diperluas</string>
+    <string name="fab_menu_collapsed">Diciutkan</string>
+    <string name="close_menu">Tutup menu</string>
+    <string name="termux_not_installed">Tidak tersedia. Termux belum terpasang.</string>
+    <string name="termux_x11_not_installed">Tidak tersedia. Aplikasi Termux dan Termux:X11 harus terpasang.</string>
+    <string name="network_mode_macvlan">Macvlan (LAN Berkabel)</string>
+    <string name="network_mode_macvlan_short">Macvlan</string>
+    <string name="macvlan_parent">Antarmuka Host</string>
+    <string name="macvlan_parent_choose">Pilih Antarmuka Host</string>
+    <string name="macvlan_parent_hint">Antarmuka berkabel yang menjadi tempat eth0 kontainer terhubung, biasanya adaptor Ethernet USB. Pilih satu antarmuka berdasarkan nama persisnya.</string>
+    <string name="error_macvlan_parent_required">Pilih antarmuka host</string>
+    <string name="warning_macvlan_passthru_shared">%1$s juga digunakan oleh \'%2$s\'. Dalam mode passthru, hanya salah satunya yang dapat berjalan pada satu waktu.</string>
+    <string name="macvlan_mode">Mode Macvlan</string>
+    <string name="macvlan_mode_bridge_desc">Kontainer pada antarmuka ini dapat terhubung langsung satu sama lain.</string>
+    <string name="macvlan_mode_private_desc">Kontainer pada antarmuka ini tidak dapat terhubung satu sama lain, hanya ke LAN.</string>
+    <string name="macvlan_mode_vepa_desc">Lalu lintas antar-kontainer melewati switch LAN dan kembali lagi, sehingga memerlukan switch yang mendukung hairpin.</string>
+    <string name="macvlan_mode_passthru_desc">Seluruh antarmuka dialihkan ke kontainer ini, sehingga ponsel kehilangan koneksi jaringan melalui antarmuka tersebut.</string>
+    <string name="macvlan_mode_bridge">Bridge (Default)</string>
+    <string name="macvlan_mode_private">Private</string>
+    <string name="macvlan_mode_vepa">VEPA</string>
+    <string name="macvlan_mode_passthru">Passthru</string>
+    <string name="config_general">Umum</string>
+    <string name="network_mode_nat_desc">Jaringan privat di balik ponsel</string>
+    <string name="network_mode_gateway_desc">Melalui kontainer lain yang berfungsi sebagai router</string>
+    <string name="network_mode_macvlan_desc">Terhubung langsung ke LAN berkabel</string>
+    <string name="network_mode_host_desc">Menggunakan jaringan ponsel</string>
+    <string name="network_mode_none_desc">Tanpa jaringan, hanya loopback</string>
+    <plurals name="upstream_count">
+        <item quantity="other">%1$d upstream</item>
+    </plurals>
+    <plurals name="port_rule_count">
+        <item quantity="other">%1$d aturan port</item>
+    </plurals>
+    <plurals name="bind_mount_count">
+        <item quantity="other">%1$d mount</item>
+    </plurals>
+    <string name="network_summary_gateway">Melalui %1$s</string>
+    <string name="network_summary_macvlan">Pada %1$s</string>
+    <string name="add_interfaces_lead">Ketuk sesuai urutan yang ingin dicoba.</string>
+    <string name="add_interfaces_manual_hint">Wildcard dapat digunakan. Nama yang diketik akan ditempatkan terakhir, dan urutannya dapat diubah setelah ditambahkan.</string>
+    <string name="or_type_a_name">Atau ketik nama</string>
+    <string name="or_type_exact_name">Atau ketik nama persisnya</string>
+    <string name="no_interfaces_found">Tidak ada antarmuka yang ditemukan saat ini.</string>
+    <string name="port_forwarding_intro">Port pada ponsel yang mengarah ke kontainer ini.</string>
+    <string name="port_forward_same_port">%1$s, port yang sama di dalam kontainer</string>
+    <string name="host_port">Port host</string>
+    <string name="container_port">Port kontainer</string>
+    <string name="same_as_host">Sama dengan host</string>
+    <string name="optional">Opsional</string>
+    <string name="gateway_lan">LAN Gateway</string>
+    <string name="delete_item">Hapus %1$s</string>
+    <string name="reorder">Seret untuk mengubah urutan</string>
+    <string name="env_not_key_value">Baris yang tidak mengikuti format KEY=VALUE akan digarisbawahi. Perbaiki atau hapus baris tersebut agar dapat disimpan.</string>
+    <string name="bind_mounts_intro">Folder di ponsel yang akan muncul di dalam kontainer.</string>
+    <string name="bind_dest_taken">Mount lain sudah menggunakan jalur ini</string>
+    <string name="folder_on_phone">Folder di ponsel</string>
+    <string name="choose_folder">Pilih folder</string>
+    <string name="path_in_container">Jalur di dalam kontainer</string>
+    <string name="path_in_container_hint">Folder di dalam kontainer, misalnya /mnt/music. Jangan gunakan / itu sendiri, atau , maupun :</string>
+    <string name="read_only_description">Kontainer dapat membaca, tetapi tidak dapat mengubah file-file ini</string>
+    <string name="mount_from">dari %1$s</string>
+    <string name="discard_edits_title">Buang perubahan?</string>
+    <string name="discard_edits_body">Perubahan di halaman ini belum diterapkan.</string>
+    <string name="discard_invalid_body">Beberapa setelan di halaman ini tidak valid. Perbaiki agar perubahan tersimpan, atau buang perubahan tersebut.</string>
+    <string name="discard">Buang</string>
+    <string name="upstream_max">Maksimal %1$d antarmuka. Hapus centang salah satunya untuk menambahkan antarmuka lain.</string>
+    <string name="bind_path_separator">Jalur tidak boleh berisi , atau :</string>
+    <string name="keep_editing">Lanjutkan mengedit</string>
 </resources>

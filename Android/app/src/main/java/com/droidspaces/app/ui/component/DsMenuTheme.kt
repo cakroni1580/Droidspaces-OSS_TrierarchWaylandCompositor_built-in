@@ -3,11 +3,12 @@ package com.droidspaces.app.ui.component
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import com.droidspaces.app.ui.theme.isDark
 
 /**
  * Dropdown menus render on a translucent tinted surface by default, which turns
@@ -21,8 +22,7 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun DsMenuTheme(content: @Composable () -> Unit) {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val menuColor = if (isDark) {
+    val menuColor = if (MaterialTheme.colorScheme.isDark) {
         MaterialTheme.colorScheme.surfaceContainerHigh
     } else {
         MaterialTheme.colorScheme.surfaceContainer
@@ -34,6 +34,9 @@ fun DsMenuTheme(content: @Composable () -> Unit) {
             surfaceTint = Color.Transparent
         ),
         shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(20.dp)),
+        // The app theme is Expressive for the installer's shape morphs, and menus inherit
+        // its spring and overshoot on open. Menus keep the standard motion.
+        motionScheme = MotionScheme.standard(),
         content = content
     )
 }

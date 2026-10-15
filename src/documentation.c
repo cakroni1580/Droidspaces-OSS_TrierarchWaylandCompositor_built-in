@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -294,7 +294,9 @@ static void print_page(int page, const char *bin) {
     p_printf("  --net=host     Shared with host\n");
     p_printf("  --net=none     No network access (air-gapped)\n");
     p_printf("  --net=gateway  LAN delegated to another container "
-             "(e.g. OpenWRT)\n\n");
+             "(e.g. OpenWRT)\n");
+    p_printf("  --net=macvlan  Straight onto a wired LAN through a host NIC "
+             "(USB Ethernet)\n\n");
 
     p_printf("%sNAT Mode Configuration:%s\n", bold, reset);
     p_printf("  %s --name=mycontainer --rootfs=/path/to/rootfs --net=nat "
@@ -337,6 +339,21 @@ static void print_page(int page, const char *bin) {
              "(default: eth1)\n");
     p_printf("  --gateway-bridge=BR    Override host bridge name "
              "(default: ds-NAME)\n\n");
+
+    p_printf("%sMacvlan Mode Configuration:%s\n", bold, reset);
+    p_printf("  The container gets its own MAC on the host NIC's LAN and its "
+             "address from\n");
+    p_printf("  that LAN's DHCP server, with no NAT. Needs CONFIG_MACVLAN and "
+             "a wired NIC:\n");
+    p_printf("  Wi-Fi access points drop frames for extra MACs, and mobile "
+             "data has no MACs.\n");
+    p_printf("  The phone itself cannot reach the container over that NIC.\n");
+    p_printf("  %s --name=ubuntu --rootfs=/path/to/ubuntu --net=macvlan "
+             "--macvlan-parent=eth0 start\n",
+             bin);
+    p_printf("  --macvlan-parent=IF    Host NIC to attach to (required)\n");
+    p_printf("  --macvlan-mode=MODE    bridge (default), private, vepa, "
+             "passthru\n\n");
 
     p_printf("%sPort Forwarding (NAT only):%s\n", bold, reset);
     p_printf("  --port=8080:80          Single port\n");

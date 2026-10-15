@@ -1,53 +1,22 @@
 package com.droidspaces.app.ui.screen
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.ripple.rememberRipple
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.droidspaces.app.R
+import com.droidspaces.app.ui.component.ContainerConfigHost
 import com.droidspaces.app.ui.component.PrimaryActionBottomBar
-import com.droidspaces.app.ui.component.ContainerConfigForm
-import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
+import com.droidspaces.app.ui.component.screenGutter
 import com.droidspaces.app.util.ResourceLimits
 import com.droidspaces.app.util.ContainerConfigState
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ValidationUtils
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContainerConfigScreen(
     initialState: ContainerConfigState = ContainerConfigState(),
@@ -58,6 +27,15 @@ fun ContainerConfigScreen(
 ) {
     val context = LocalContext.current
     var state by remember { mutableStateOf(initialState) }
+
+    val macvlanErrors = ValidationUtils.validateMacvlanConfig(
+        selfName = containerName,
+        netMode = state.netMode,
+        parent = state.macvlanParent,
+        mode = state.macvlanMode,
+        installed = installedContainers,
+        context = context
+    )
 
     val gatewayErrors = ValidationUtils.validateGatewayConfig(
         selfName = containerName,
@@ -74,51 +52,28 @@ fun ContainerConfigScreen(
         else installedContainers.find { it.name != containerName && it.staticNatIp == state.staticNatIp }
     }
 
-    val canProceed = (state.netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null &&
+    val canProceed = (state.netMode != "gateway" || gatewayErrors.isValid) &&
+        macvlanErrors.isValid && collisionContainer == null &&
         ResourceLimits.isValidPidsLimit(state.pidsLimit)
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(context.getString(R.string.configuration_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = context.getString(R.string.back))
-                    }
-                }
-            )
-        },
+    ContainerConfigHost(
+        title = context.getString(R.string.configuration_title),
+        onBack = onBack,
         bottomBar = {
             PrimaryActionBottomBar(
                 label = context.getString(R.string.next_storage),
                 icon = Icons.AutoMirrored.Filled.ArrowForward,
                 onClick = { onNext(state) },
-                enabled = canProceed
+                enabled = canProceed,
+                horizontalPadding = screenGutter()
             )
-        }
-    ) { innerPadding ->
-        ClearFocusOnClickOutside(
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
-                .imePadding()
-        ) {
-            ContainerConfigForm(
-                state = state,
-                onStateChange = { state = it },
-                installedContainers = installedContainers,
-                selfName = containerName,
-                gatewayErrors = gatewayErrors,
-                collisionContainer = collisionContainer,
-                modifier = Modifier.fillMaxSize(),
-                leadingContent = {
-                    Text(
-                        text = context.getString(R.string.container_options),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            )
-        }
-    }
+        },
+        state = state,
+        onStateChange = { state = it },
+        installedContainers = installedContainers,
+        selfName = containerName,
+        gatewayErrors = gatewayErrors,
+        macvlanErrors = macvlanErrors,
+        collisionContainer = collisionContainer
+    )
 }

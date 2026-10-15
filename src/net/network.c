@@ -1,12 +1,13 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Network configuration: DNS, host-side setup, rootfs-side setup,
  * veth pair management, and network cleanup.
  *
  * All link/addr/route management uses the pure-C RTNETLINK API
- * (ds_netlink.c). All iptables management uses the raw socket API
- * (ds_iptables.c). No external binary dependencies for core networking.
+ * (netlink.c). iptables rules go through the raw socket API (iptables.c),
+ * which falls back to the iptables binary only where the kernel refuses it
+ * and for port forwards.
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -113,6 +114,19 @@ static void ds_derive_mac(const char *key, const char *salt_prefix,
   mac[5] = (uint8_t)(h2);
 }
 
+/* A bridge with no address of its own borrows the lowest MAC among its ports,
+ * so it changes whenever that port's container stops. Every other container on
+ * the bridge then holds a stale ARP entry for the gateway and loses IPv4 until
+ * the kernel re-probes, up to a minute later. A MAC set from userspace is
+ * exempt from that election, so pin one derived from the bridge name. */
+static void pin_bridge_mac(ds_nl_ctx_t *ctx, const char *bridge) {
+  uint8_t mac[6];
+  ds_derive_mac(bridge, "ds-brmac:", mac);
+  int err = ds_nl_set_mac(ctx, bridge, mac);
+  if (err < 0)
+    ds_warn("[NET] Failed to pin MAC on bridge %s: %d", bridge, err);
+}
+
 static void gateway_hash_key(struct ds_config *cfg, char *buf, size_t sz) {
   const char *gw =
       (cfg && cfg->gateway_container[0]) ? cfg->gateway_container : "gateway";
@@ -120,13 +134,13 @@ static void gateway_hash_key(struct ds_config *cfg, char *buf, size_t sz) {
   snprintf(buf, sz, "%s:%s", gw, net);
 }
 
-static void gateway_veth_names(struct ds_config *cfg, char *host, size_t hsz,
-                               char *peer, size_t psz) {
+/* The host end of the gateway's LAN cable. Its peer is born inside the
+ * gateway under the LAN interface name, so it never needs a host-side name. */
+static void gateway_veth_host_name(struct ds_config *cfg, char *host,
+                                   size_t hsz) {
   char key[384];
   gateway_hash_key(cfg, key, sizeof(key));
-  uint32_t h = ds_net_hash_string(key);
-  snprintf(host, hsz, "ds-g%08x", h);
-  snprintf(peer, psz, "ds-h%08x", h);
+  snprintf(host, hsz, "ds-g%08x", ds_net_hash_string(key));
 }
 
 static int gateway_ifname_component_ok(const char *s) {
@@ -164,13 +178,38 @@ static const char *gateway_lan_ifname(struct ds_config *cfg) {
   return "eth1";
 }
 
-static int ds_netns_rename_up(const char *netns_path, const char *old_name,
-                              const char *new_name) {
+/* Open a container's network namespace for the host side to plug cables
+ * into or act in. Fails closed when the namespace turns out to be our own: a
+ * pid that was recycled, or an init that died before its monitor noticed,
+ * would otherwise have the host create an "eth0" in the host's own namespace,
+ * or wire and query itself. */
+static int open_container_netns(const char *netns_path) {
+  int fd = open(netns_path, O_RDONLY | O_CLOEXEC);
+  if (fd < 0)
+    return -1;
+  struct stat target, self;
+  if (fstat(fd, &target) == 0 && stat("/proc/self/ns/net", &self) == 0 &&
+      target.st_ino == self.st_ino && target.st_dev == self.st_dev) {
+    ds_warn("[NET] %s is the host's own network namespace - refusing to use it",
+            netns_path);
+    close(fd);
+    errno = EPERM;
+    return -1;
+  }
+  return fd;
+}
+
+/* Bring a link up inside a container's network namespace, from the host.
+ * With `from` set, the link is first renamed from that name to ifname, and
+ * deleted if the rename or the bring-up fails, so a half-made one is never
+ * left behind. Returns 0 or a negative errno. */
+static int ds_netns_link_up(const char *netns_path, const char *from,
+                            const char *ifname) {
   int self_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
   if (self_fd < 0)
     return -errno;
 
-  int target_fd = open(netns_path, O_RDONLY | O_CLOEXEC);
+  int target_fd = open_container_netns(netns_path);
   if (target_fd < 0) {
     int e = -errno;
     close(self_fd);
@@ -188,24 +227,10 @@ static int ds_netns_rename_up(const char *netns_path, const char *old_name,
     ret = -errno;
     goto out_restore;
   }
-
-  if (new_name && new_name[0] && ds_nl_link_exists(ctx, new_name)) {
-    /* Already present under its final name inside the gateway - the common,
-     * healthy case: the atomic move+rename created it, or this is an idempotent
-     * re-entry.  Just make sure it is up; the caller logs "uplink ready". */
-    ds_nl_link_up(ctx, new_name);
-  } else if (old_name && old_name[0] && new_name && new_name[0] &&
-             strcmp(old_name, new_name) != 0) {
-    if (ds_nl_rename(ctx, old_name, new_name) < 0) {
-      ds_warn("[NET] Gateway: failed to rename %s to %s", old_name, new_name);
-      ret = -1;
-    } else {
-      ds_nl_link_up(ctx, new_name);
-    }
-  } else if (old_name && old_name[0]) {
-    ds_nl_link_up(ctx, old_name);
-  }
-
+  if (from && (ret = ds_nl_rename(ctx, from, ifname)) < 0)
+    ds_nl_del_link(ctx, from);
+  else if ((ret = ds_nl_link_up(ctx, ifname)) < 0 && from)
+    ds_nl_del_link(ctx, ifname);
   ds_nl_close(ctx);
 
 out_restore:
@@ -229,7 +254,7 @@ static int netns_has_link(const char *netns_path, const char *ifname) {
   int self_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
   if (self_fd < 0)
     return 0;
-  int target_fd = open(netns_path, O_RDONLY | O_CLOEXEC);
+  int target_fd = open_container_netns(netns_path);
   if (target_fd < 0) {
     close(self_fd);
     return 0;
@@ -259,6 +284,9 @@ static int g_current_gw6_table = 0; /* same, for the uplink's IPv6 routes */
 static pthread_mutex_t g_gw_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int g_route_monitor_sock = -1;
 static volatile sig_atomic_t g_stop_monitor = 0;
+/* Helpers lock, held for exactly as long as the route monitor thread lives so
+ * a stop command can wait for it. See ds_container_lock_helpers(). */
+static int g_helpers_fd = -1;
 static pthread_t g_route_monitor_tid;
 static int g_route_monitor_started = 0; /* loop active; guarded by g_gw_mutex */
 static int g_route_monitor_needs_join = 0; /* thread created, not yet joined;
@@ -1011,10 +1039,10 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
     return -1;
   }
 
-  /* Clean up stale interfaces from previous runs */
-  ds_log("[DEBUG] Cleaning up any stale interfaces: %s, %s", veth_host,
-         veth_peer);
-  ds_nl_del_link(ctx, veth_host);
+  /* A leftover with our name only exists if the kernel recycled the PID of
+   * an instance whose netns is still draining. */
+  if (ds_nl_del_link(ctx, veth_host) > 0)
+    ds_log("[NET] Removed stale %s", veth_host);
 
   /* The previous boot cycle's veth. The kernel only removes it once the old
    * network namespace is freed, and a guest that was killed with TCP
@@ -1038,9 +1066,10 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
         ds_warn("[DEBUG] Failed to create bridge %s", DS_NAT_BRIDGE);
     }
 
-    /* Always assert bridge IP/UP/Hardening even if it already exists.
+    /* Always assert bridge MAC/IP/UP/Hardening even if it already exists.
      * This ensures everything is correct after host-side networking changes or
      * crashes. */
+    pin_bridge_mac(ctx, DS_NAT_BRIDGE);
     int err = ds_nl_add_addr4(ctx, DS_NAT_BRIDGE, inet_addr(DS_NAT_GW_IP),
                               DS_NAT_PREFIX);
     if (err < 0 && err != -EEXIST && err != -ENETDOWN) {
@@ -1077,9 +1106,24 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
    * netd flushes the tables out from under us. */
   install_netfilter_rules();
 
-  /* 3. Create veth pair */
-  ds_log("[DEBUG] Creating veth pair %s <-> %s...", veth_host, veth_peer);
-  if (ds_nl_create_veth(ctx, veth_host, veth_peer) < 0) {
+  /* 3. Create the veth pair with the peer born inside the container's netns.
+   * Creating it here and moving it afterwards cost a second netdev
+   * unregister and register, about 50 ms of RCU waits, inside init's wait
+   * for DONE. init has already signalled readiness, so its netns exists. */
+  char netns_path[PATH_MAX];
+  snprintf(netns_path, sizeof(netns_path), "/proc/%d/ns/net", child_pid);
+  int netns_fd = open_container_netns(netns_path);
+  if (netns_fd < 0) {
+    ds_warn("[NET] Failed to open container netns %s: %s", netns_path,
+            strerror(errno));
+    ds_nl_close(ctx);
+    return -1;
+  }
+  ds_log("[DEBUG] Creating veth pair %s <-> %s (peer in netns of PID %d)...",
+         veth_host, veth_peer, (int)child_pid);
+  int created = ds_nl_create_veth_in(ctx, veth_host, veth_peer, netns_fd, NULL);
+  close(netns_fd);
+  if (created < 0) {
     ds_warn("[NET] Failed to create veth pair (%s, %s)", veth_host, veth_peer);
     ds_nl_close(ctx);
     return -1;
@@ -1100,6 +1144,14 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
     /* Interface must be UP before routes can be added on some kernels */
     if (ds_nl_link_up(ctx, veth_host) < 0)
       ds_warn("[NET] Failed to bring up %s", veth_host);
+
+    /* The guest holds a /16 and ARPs for its siblings as if they were on
+     * its link. Nothing shares that link, so without proxy ARP the host
+     * never answers and containers cannot reach each other. */
+    char proxy_arp[128];
+    snprintf(proxy_arp, sizeof(proxy_arp),
+             "/proc/sys/net/ipv4/conf/%s/proxy_arp", veth_host);
+    write_file(proxy_arp, "1");
 
     /* Add host route for the container's static IP to this veth.
      * cfg->static_nat_ip is already resolved and persisted before fork. */
@@ -1133,32 +1185,6 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
   struct in6_addr ra_prefix;
   int nat6 = setup_nat6_host(ctx, cfg, &ra_prefix);
 
-  /* 6. Move peer veth into container's network namespace */
-  char netns_path[PATH_MAX];
-  snprintf(netns_path, sizeof(netns_path), "/proc/%d/ns/net", child_pid);
-
-  /* No retry loop needed; init has already signaled readiness */
-  int netns_fd = open(netns_path, O_RDONLY | O_CLOEXEC);
-  if (netns_fd < 0) {
-    ds_warn("[NET] Failed to open container netns %s: %s", netns_path,
-            strerror(errno));
-    ds_nl_close(ctx);
-    return -1;
-  }
-
-  ds_log("[DEBUG] Moving %s into netns of PID %d using FD %d...", veth_peer,
-         (int)child_pid, netns_fd);
-  int r = ds_nl_move_to_netns(ctx, veth_peer, netns_fd);
-  close(netns_fd);
-
-  if (r < 0) {
-    ds_warn("[NET] Failed to move %s into container netns (ret=%d)", veth_peer,
-            r);
-    ds_nl_close(ctx);
-    return -1;
-  }
-  ds_log("[DEBUG] Successfully moved %s to PID %d", veth_peer, (int)child_pid);
-
   /* Cache the user-pinned upstream list (if any) into the globals that the
    * routing setup and the route monitor read.  Empty list = auto-detect.  This
    * runs before ds_net_setup_android_routing() and
@@ -1180,13 +1206,10 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
    * means every reboot the container gets the same address - no PREROUTING
    * rule churn, no "wrong IP" on the first DHCP renew.
    *
-   * Binding interface depends on topology:
-   *   Bridge mode    - bind to ds-br0.  veth_host is a bridge slave; the
-   *                    kernel delivers frames from the container upward to
-   *                    the bridge interface, not the slave.  A socket bound
-   *                    to the slave would never see the DHCP DISCOVERs.
-   *   Bridgeless mode - bind to veth_host directly (point-to-point veth,
-   *                    no bridge in the path). */
+   * The server binds to veth_host in both topologies. A packet socket on a
+   * bridge port still sees the container's frames, because packet taps run
+   * before the bridge takes the frame, and only this container's port is
+   * this container's. */
   {
     struct in_addr offer_in;
     uint32_t offer_ip = 0;
@@ -1198,9 +1221,9 @@ int setup_veth_host_side(struct ds_config *cfg, pid_t child_pid) {
               cfg->static_nat_ip);
     }
 
-    /* Bind to veth_host. In bridge mode the kernel also floods L2 broadcasts
-     * to sibling veth ports; isolation is enforced by peer_mac filter in
-     * the DHCP server loop, not by the socket bind alone. */
+    /* In bridge mode the kernel also floods sibling containers' broadcasts
+     * out of this port. The DHCP loop drops those by ingress ifindex and
+     * packet type, see dhcp.c. */
     const char *dhcp_iface = veth_host;
     ds_dhcp_server_start(cfg, dhcp_iface, offer_ip, inet_addr(DS_NAT_GW_IP),
                          nat6 ? &ra_prefix : NULL);
@@ -1295,9 +1318,9 @@ static int gateway_ensure_lan_uplink_locked(struct ds_config *cfg,
     return -1;
   }
 
-  char bridge[IFNAMSIZ], gw_host[IFNAMSIZ], gw_peer[IFNAMSIZ];
+  char bridge[IFNAMSIZ], gw_host[IFNAMSIZ];
   gateway_bridge_name(cfg, bridge, sizeof(bridge));
-  gateway_veth_names(cfg, gw_host, sizeof(gw_host), gw_peer, sizeof(gw_peer));
+  gateway_veth_host_name(cfg, gw_host, sizeof(gw_host));
 
   ds_nl_ctx_t *ctx = ds_nl_open();
   if (!ctx) {
@@ -1325,6 +1348,7 @@ static int gateway_ensure_lan_uplink_locked(struct ds_config *cfg,
       return -1;
     }
   }
+  pin_bridge_mac(ctx, bridge);
   /* IP-less has to hold for IPv6 too. Android leaves accept_ra at 2, so the
    * host would otherwise take an address and a default route from the
    * gateway's own router advertisements and sit on the LAN it only switches. */
@@ -1364,23 +1388,40 @@ static int gateway_ensure_lan_uplink_locked(struct ds_config *cfg,
     ds_nl_del_link(ctx, gw_host);
   }
 
-  ds_log("[NET] Gateway: creating gateway veth %s <-> %s", gw_host, gw_peer);
-  if (ds_nl_create_veth(ctx, gw_host, gw_peer) < 0) {
-    ds_warn("[NET] Gateway: failed to create gateway veth pair");
+  /* The peer is born inside the gateway under its final name, in the one
+   * RTM_NEWLINK that creates the pair. Moving a host-side peer in and renaming
+   * it there is a race netifd loses: the kernel announces the new name before
+   * the device can be looked up by it (a grace period sits in between), and
+   * netifd's claim of the hot-plugged eth1 fails for good on a kernel with
+   * slow RCU. With a stable, segment-derived MAC pinned at creation, netifd
+   * sees one persistent device across every re-plug. */
+  if (netns_has_link(gw_netns, gw_if)) {
+    ds_warn("[NET] Gateway: '%s' already has an interface named %s that is "
+            "not this segment's cable - cannot wire %s",
+            cfg->gateway_container, gw_if, bridge);
     ds_nl_close(ctx);
     return -1;
   }
+  int gw_netns_fd = open_container_netns(gw_netns);
+  if (gw_netns_fd < 0) {
+    ds_warn("[NET] Gateway: failed to open %s: %s", gw_netns, strerror(errno));
+    ds_nl_close(ctx);
+    return -1;
+  }
+  char key[384];
+  uint8_t mac[6];
+  gateway_hash_key(cfg, key, sizeof(key));
+  ds_derive_mac(key, "ds-gwmac:", mac);
 
-  /* Pin a stable, segment-derived MAC on the gateway-facing peer (becomes gw_if
-   * inside the gateway) so netifd sees one persistent device across every
-   * re-plug.  Set while down, before the move. */
-  {
-    char key[384];
-    uint8_t mac[6];
-    gateway_hash_key(cfg, key, sizeof(key));
-    ds_derive_mac(key, "ds-gwmac:", mac);
-    if (ds_nl_set_mac(ctx, gw_peer, mac) < 0)
-      ds_warn("[NET] Gateway: failed to pin MAC on %s", gw_peer);
+  ds_log("[NET] Gateway: creating gateway veth %s -> %s inside the gateway",
+         gw_host, gw_if);
+  int created = ds_nl_create_veth_in(ctx, gw_host, gw_if, gw_netns_fd, mac);
+  close(gw_netns_fd);
+  if (created < 0) {
+    ds_warn("[NET] Gateway: failed to create gateway veth pair (%s -> %s): %s",
+            gw_host, gw_if, strerror(-created));
+    ds_nl_close(ctx);
+    return -1;
   }
 
   ds_net_disable_tx_checksum(gw_host);
@@ -1388,37 +1429,10 @@ static int gateway_ensure_lan_uplink_locked(struct ds_config *cfg,
     ds_warn("[NET] Gateway: failed to attach %s to %s", gw_host, bridge);
   if (ds_nl_link_up(ctx, gw_host) < 0)
     ds_warn("[NET] Gateway: failed to bring up %s", gw_host);
-
-  int gw_netns_fd = open(gw_netns, O_RDONLY | O_CLOEXEC);
-  if (gw_netns_fd < 0) {
-    ds_warn("[NET] Gateway: failed to open %s: %s", gw_netns, strerror(errno));
-    ds_nl_del_link(ctx, gw_host); /* drop the half-built pair */
-    ds_nl_close(ctx);
-    return -1;
-  }
-
-  /* Atomic move+rename: the peer appears inside the gateway already named
-   * gw_if, so there is no transient raw-name device for netifd to race against
-   * ("device initialization failed").  Fall back to a plain move on failure. */
-  if (ds_nl_move_to_netns_named(ctx, gw_peer, gw_netns_fd, gw_if) != 0) {
-    ds_warn("[NET] Gateway: atomic move+rename of %s failed - falling back",
-            gw_peer);
-    if (ds_nl_move_to_netns(ctx, gw_peer, gw_netns_fd) < 0) {
-      ds_warn("[NET] Gateway: fallback move of %s into gateway netns failed",
-              gw_peer);
-      close(gw_netns_fd);
-      ds_nl_close(ctx);
-      return -1;
-    }
-  }
-  close(gw_netns_fd);
   ds_nl_close(ctx);
 
-  /* Bring it up inside the gateway under its final name (the atomic path
-   * already renamed it; the fallback path renames here). */
-  if (ds_netns_rename_up(gw_netns, gw_peer, gw_if) < 0)
-    ds_warn("[NET] Gateway: moved %s but could not bring it up as %s", gw_peer,
-            gw_if);
+  if (ds_netns_link_up(gw_netns, NULL, gw_if) < 0)
+    ds_warn("[NET] Gateway: created %s but could not bring it up", gw_if);
 
   ds_log("[NET] Gateway: LAN uplink ready on %s -> %s (%s)", bridge,
          cfg->gateway_container, gw_if);
@@ -1491,7 +1505,7 @@ static int gateway_wire_client(struct ds_config *cfg, pid_t client_pid,
 
   ds_nl_del_link(ctx, app_host); /* drop any stale half from a prior wiring */
 
-  int netns_fd = open(netns, O_RDONLY | O_CLOEXEC);
+  int netns_fd = open_container_netns(netns);
   if (netns_fd < 0) {
     ds_warn("[NET] Gateway: failed to open client netns %s: %s", netns,
             strerror(errno));
@@ -1522,7 +1536,7 @@ static int gateway_wire_client(struct ds_config *cfg, pid_t client_pid,
     ds_warn("[NET] Gateway: failed to bring up %s", app_host);
   ds_nl_close(ctx);
 
-  if (ds_netns_rename_up(netns, "eth0", "eth0") < 0)
+  if (ds_netns_link_up(netns, NULL, "eth0") < 0)
     ds_warn("[NET] Gateway: wired '%s' but could not bring up its eth0",
             cfg->container_name);
 
@@ -1587,10 +1601,15 @@ int ds_net_gateway_reconcile(struct ds_config *cfg, pid_t client_pid) {
   if (!cfg || client_pid <= 0)
     return 0;
 
-  char app_host[IFNAMSIZ];
+  /* The host end alone proves nothing: it is named after the container, so a
+   * cable left over from an earlier boot whose namespace something kept alive
+   * looks the same. Only an eth0 in our current namespace means wired. */
+  char app_host[IFNAMSIZ], netns[PATH_MAX];
   veth_host_name(cfg, client_pid, app_host, sizeof(app_host));
+  snprintf(netns, sizeof(netns), "/proc/%d/ns/net", (int)client_pid);
   ds_nl_ctx_t *ctx = ds_nl_open();
-  int wired = ctx && ds_nl_link_exists(ctx, app_host);
+  int wired =
+      ctx && ds_nl_link_exists(ctx, app_host) && netns_has_link(netns, "eth0");
   if (ctx)
     ds_nl_close(ctx);
   if (wired)
@@ -1672,8 +1691,11 @@ void ds_net_gateway_teardown(const char *gateway_name) {
   if (!d)
     return;
 
-  /* De-dupe segments: many clients can share one --gateway-net (one bridge). */
-  char seen[32][IFNAMSIZ];
+  /* De-dupe segments: many clients share one. The key is the cable and the
+   * bridge together, because --gateway-bridge can pull them apart: two
+   * segments forced onto one bridge still have a cable each, and one segment
+   * whose clients name different bridges still has every bridge to reap. */
+  char seen[32][2][IFNAMSIZ];
   int seen_count = 0;
 
   struct dirent *ent;
@@ -1691,13 +1713,13 @@ void ds_net_gateway_teardown(const char *gateway_name) {
       continue;
     }
 
-    char bridge[IFNAMSIZ], gw_host[IFNAMSIZ], gw_peer[IFNAMSIZ];
+    char bridge[IFNAMSIZ], gw_host[IFNAMSIZ];
     gateway_bridge_name(&c, bridge, sizeof(bridge));
-    gateway_veth_names(&c, gw_host, sizeof(gw_host), gw_peer, sizeof(gw_peer));
+    gateway_veth_host_name(&c, gw_host, sizeof(gw_host));
 
     int dup = 0;
     for (int i = 0; i < seen_count; i++)
-      if (strcmp(seen[i], bridge) == 0) {
+      if (strcmp(seen[i][0], gw_host) == 0 && strcmp(seen[i][1], bridge) == 0) {
         dup = 1;
         break;
       }
@@ -1705,8 +1727,10 @@ void ds_net_gateway_teardown(const char *gateway_name) {
       ds_config_free(&c);
       continue;
     }
-    if (seen_count < (int)(sizeof(seen) / sizeof(seen[0])))
-      safe_strncpy(seen[seen_count++], bridge, IFNAMSIZ);
+    if (seen_count < (int)(sizeof(seen) / sizeof(seen[0]))) {
+      safe_strncpy(seen[seen_count][0], gw_host, IFNAMSIZ);
+      safe_strncpy(seen[seen_count++][1], bridge, IFNAMSIZ);
+    }
 
     ds_nl_ctx_t *ctx = ds_nl_open();
     if (!ctx) {
@@ -1718,9 +1742,9 @@ void ds_net_gateway_teardown(const char *gateway_name) {
      * client start/wire or the gateway's own rewire on the segment. */
     int lock = gateway_segment_lock(bridge);
 
-    ds_nl_del_link(ctx, gw_host);
-    ds_log("[NET] Gateway teardown: removed gateway veth %s (segment %s)",
-           gw_host, bridge);
+    if (ds_nl_del_link(ctx, gw_host) > 0)
+      ds_log("[NET] Gateway teardown: removed gateway veth %s (segment %s)",
+             gw_host, bridge);
 
     int clients = ds_nl_count_bridge_members_with_prefix(
         ctx, bridge, app_veth_host_prefix(&c));
@@ -1729,9 +1753,9 @@ void ds_net_gateway_teardown(const char *gateway_name) {
              "bridge",
              clients, bridge);
     } else {
-      ds_nl_del_link(ctx, bridge);
-      ds_log("[NET] Gateway teardown: reaped idle delegated LAN bridge %s",
-             bridge);
+      if (ds_nl_del_link(ctx, bridge) > 0)
+        ds_log("[NET] Gateway teardown: reaped idle delegated LAN bridge %s",
+               bridge);
     }
 
     gateway_segment_unlock(lock);
@@ -1739,6 +1763,168 @@ void ds_net_gateway_teardown(const char *gateway_name) {
     ds_config_free(&c);
   }
   closedir(d);
+}
+
+/* Macvlan mode
+ *
+ * The container's eth0 is a macvlan on a host NIC: its own MAC on that NIC's
+ * LAN, its address from the LAN's DHCP server, no NAT, and nothing on the host
+ * to install or keep in sync. It is born inside the container as ds-m<pid> and
+ * renamed to eth0 there (see ds_nl_create_macvlan for why it cannot be born
+ * as eth0). At start that happens before the guest's init runs, so the guest
+ * only ever sees eth0.
+ *
+ * Unplugging the parent makes the kernel delete every macvlan on it, and the
+ * container cannot bring its eth0 back by itself. So the monitor calls this on
+ * every heartbeat as well as at start, and a replugged NIC gets its eth0 back
+ * within a couple of seconds. eth0 already being there is the common case and
+ * the cheap one. */
+
+/* Create eth0 in the container once. 1 when it is in place, 0 while the
+ * parent is absent, or a negative errno. */
+static int macvlan_create(struct ds_config *cfg, const char *netns,
+                          pid_t init_pid) {
+  if (netns_has_link(netns, "eth0"))
+    return 1;
+  int parent = (int)if_nametoindex(cfg->macvlan_parent);
+  if (parent <= 0)
+    return 0;
+
+  uint8_t mac[6];
+  char tmp[IFNAMSIZ];
+  ds_derive_mac(cfg->container_name, "ds-mac:", mac);
+  snprintf(tmp, sizeof(tmp), "ds-m%d", (int)init_pid);
+
+  int fd = open_container_netns(netns);
+  ds_nl_ctx_t *ctx = fd >= 0 ? ds_nl_open() : NULL;
+  int ret = ctx ? ds_nl_create_macvlan(ctx, tmp, parent, fd,
+                                       cfg->macvlan_mode ? cfg->macvlan_mode
+                                                         : MACVLAN_MODE_BRIDGE,
+                                       mac)
+                : -errno;
+  if (ctx)
+    ds_nl_close(ctx);
+  if (fd >= 0)
+    close(fd);
+  if (ret == 0)
+    ret = ds_netns_link_up(netns, tmp, "eth0");
+  return ret == 0 ? 1 : ret;
+}
+
+/* The running container, other than cfg's own, that holds cfg's parent in a
+ * way the kernel will not share: passthru takes the whole NIC, so it cannot
+ * sit next to any other macvlan. Fills `who` and returns 1, or returns 0. */
+static int macvlan_parent_taken(const struct ds_config *cfg, char *who,
+                                size_t sz) {
+  char dir[PATH_MAX];
+  snprintf(dir, sizeof(dir), "%s/Containers", get_workspace_dir());
+  DIR *d = opendir(dir);
+  if (!d)
+    return 0;
+
+  int taken = 0;
+  struct dirent *ent;
+  while (!taken && (ent = readdir(d)) != NULL) {
+    if (ent->d_name[0] == '.')
+      continue;
+    struct ds_config c = {0};
+    if (ds_config_load_by_name(ent->d_name, &c) != 0)
+      continue;
+    pid_t p = 0;
+    if (c.net_mode == DS_NET_MACVLAN &&
+        strcmp(c.container_name, cfg->container_name) != 0 &&
+        strcmp(c.macvlan_parent, cfg->macvlan_parent) == 0 &&
+        (c.macvlan_mode == MACVLAN_MODE_PASSTHRU ||
+         cfg->macvlan_mode == MACVLAN_MODE_PASSTHRU) &&
+        is_container_running(&c, &p) && p > 0) {
+      safe_strncpy(who, c.container_name, sz);
+      taken = 1;
+    }
+    ds_config_free(&c);
+  }
+  closedir(d);
+  return taken;
+}
+
+/* Everything that would leave a macvlan container without a network for good,
+ * checked before it starts so the user gets a reason instead of a container
+ * with no eth0. Start and restart both come through here, after a restart has
+ * reloaded the config it will actually boot with. A parent that is merely
+ * unplugged is fine: eth0 follows when it is plugged in. Returns 0 or -1. */
+int ds_net_macvlan_check(const struct ds_config *cfg) {
+  if (!cfg->macvlan_parent[0]) {
+    ds_error("--net=macvlan requires --macvlan-parent=<interface>.");
+    return -1;
+  }
+  if (!ds_nl_probe_macvlan()) {
+    ds_error("--net=macvlan is not supported by this kernel (CONFIG_MACVLAN).");
+    return -1;
+  }
+
+  char path[PATH_MAX], type[8] = "";
+  snprintf(path, sizeof(path), "/sys/class/net/%s/type", cfg->macvlan_parent);
+  if (read_file(path, type, sizeof(type)) > 0 &&
+      (atoi(type) != 1 || strcmp(cfg->macvlan_parent, "lo") == 0)) {
+    ds_error("%s is not an Ethernet interface, so it cannot carry a macvlan.",
+             cfg->macvlan_parent);
+    return -1;
+  }
+
+  char who[256];
+  if (macvlan_parent_taken(cfg, who, sizeof(who))) {
+    ds_error("%s is in use by the running container '%s': in passthru mode a "
+             "network interface takes one container only.",
+             cfg->macvlan_parent, who);
+    return -1;
+  }
+  return 0;
+}
+
+/* at_start: the guest's init is still waiting for us. A restart can get here
+ * while the previous instance's namespace is still being torn down, which the
+ * kernel does in the background, and its eth0 still holds the parent: passthru
+ * allows one macvlan per NIC (EINVAL), and the stable MAC can only be on it
+ * once (EADDRINUSE). Waiting it out here, rather than leaving it to the
+ * heartbeat, keeps eth0 from turning up under a guest that is already running.
+ * The other ways a macvlan cannot be made were refused before the start, see
+ * ds_net_macvlan_check().
+ *
+ * Logs only when the result changes, since it is called every 2 s. The memory
+ * starts over with each boot, so a guest reboot logs its eth0 again. */
+int ds_net_macvlan_wire(struct ds_config *cfg, pid_t init_pid, int at_start) {
+  static int last = 2; /* none of the results below */
+  char netns[PATH_MAX];
+
+  if (at_start)
+    last = 2;
+  snprintf(netns, sizeof(netns), "/proc/%d/ns/net", (int)init_pid);
+  /* A heartbeat between init exiting and the monitor noticing finds no
+   * namespace. That is a shutdown, not a failure worth a warning. */
+  if (init_pid <= 0 || access(netns, F_OK) != 0)
+    return -ESRCH;
+
+  int ret = macvlan_create(cfg, netns, init_pid);
+  for (int i = 0; at_start && (ret == -EINVAL || ret == -EADDRINUSE) && i < 50;
+       i++) {
+    usleep(100000);
+    ret = macvlan_create(cfg, netns, init_pid);
+  }
+
+  if (ret != last) {
+    if (ret == 1)
+      ds_log("[NET] Macvlan: eth0 on %s (%s mode)", cfg->macvlan_parent,
+             ds_macvlan_mode_name(cfg->macvlan_mode));
+    else if (ret == 0)
+      ds_warn("[NET] Macvlan: %s is not present - eth0 comes up once it is",
+              cfg->macvlan_parent);
+    else
+      ds_warn("[NET] Macvlan: could not create eth0 on %s: %s%s",
+              cfg->macvlan_parent, strerror(-ret),
+              ret == -EINVAL ? " (another container may hold it in passthru "
+                               "mode)"
+                             : "");
+  }
+  return last = ret;
 }
 
 /* setup_veth_child_side_named
@@ -1828,11 +2014,12 @@ int setup_veth_child_side_named(struct ds_config *cfg, const char *peer_name,
 static void setup_resolv_conf(struct ds_config *cfg) {
   const char *target;
 
-  /* Gateway mode with no explicit --dns: DNS belongs to the gateway (OpenWrt
-   * dnsmasq), advertised in the DHCP lease.  Droidspaces must NOT write a
-   * static resolv.conf or it would bypass the gateway's DNS filtering/caching.
-   */
-  if (cfg->net_mode == DS_NET_GATEWAY && !cfg->dns_servers[0]) {
+  /* Gateway or macvlan mode with no explicit --dns: DNS belongs to whoever
+   * serves the LAN (OpenWrt's dnsmasq, a home router), advertised in the DHCP
+   * lease.  Droidspaces must NOT write a static resolv.conf or it would bypass
+   * that DNS and its filtering/caching. */
+  if ((cfg->net_mode == DS_NET_GATEWAY || cfg->net_mode == DS_NET_MACVLAN) &&
+      !cfg->dns_servers[0]) {
     if (is_systemd_rootfs("/")) {
       /* systemd-resolved consumes the lease and publishes the real resolver. */
       target = "/run/systemd/resolve/resolv.conf";
@@ -1841,8 +2028,8 @@ static void setup_resolv_conf(struct ds_config *cfg) {
        * which writes the gateway-supplied nameserver from the lease.  Writing a
        * hardcoded 1.1.1.1/8.8.8.8 here would silently defeat the gateway's DNS
        * (adblock, split-horizon, etc.).  Pass --dns to override. */
-      ds_log("[NET] Gateway: leaving /etc/resolv.conf to the container's DHCP "
-             "client (gateway owns DNS)");
+      ds_log("[NET] Leaving /etc/resolv.conf to the container's DHCP client "
+             "(the LAN owns DNS)");
       return;
     }
   } else {
@@ -1908,10 +2095,11 @@ int fix_networking_rootfs(struct ds_config *cfg) {
     }
     write_file("/proc/sys/net/ipv6/conf/all/disable_ipv6", "1");
     write_file("/proc/sys/net/ipv6/conf/default/disable_ipv6", "1");
-  } else if (cfg->net_mode == DS_NET_NAT) {
+  } else if (cfg->net_mode == DS_NET_NAT || cfg->net_mode == DS_NET_MACVLAN) {
     /* Docker and friends turn on forwarding inside the container, and the
-     * kernel then ignores our RAs unless accept_ra is 2. Without this the
-     * IPv6 default route quietly expires half an hour after dockerd starts. */
+     * kernel then ignores RAs (ours, or the LAN router's) unless accept_ra is
+     * 2. Without this the IPv6 default route quietly expires half an hour
+     * after dockerd starts. */
     write_file("/proc/sys/net/ipv6/conf/default/accept_ra", "2");
     write_file("/proc/sys/net/ipv6/conf/eth0/accept_ra", "2");
   }
@@ -1937,6 +2125,9 @@ int fix_networking_rootfs(struct ds_config *cfg) {
  *   RTM_NEWROUTE / RTM_DELROUTE - default route moved between tables
  *   RTM_NEWLINK / RTM_DELLINK   - interface state change (UP/RUNNING/DOWN)
  *   RTM_NEWADDR / RTM_DELADDR   - IPv4 address assigned or removed
+ *
+ * With NAT66 on, IPv6 rule and route changes are watched too: on a carrier
+ * with no IPv4 the uplink comes and goes with an IPv6 default route.
  *
  * A 1.5s heartbeat covers devices with broken netlink notifications and
  * re-asserts ip_forward, which Android periodically resets. */
@@ -2174,8 +2365,8 @@ static void do_uplink_reprobe(void) {
   install_policy_rules(ctx);
 
   /* The netfilter set is gated behind a fork-free probe of every rule in it:
-   * ds_ipt_ensure_mss_clamp() and the port-forward helpers shell out to the
-   * iptables binary, so they must not run every cycle.  Only 0 means
+   * the port-forward helpers shell out to the iptables binary, so they must
+   * not run every cycle.  Only 0 means
    * "something is definitely missing"; -1 is "tables unreadable", where a
    * blind reinstall through those binary fallbacks would stack duplicates. */
   const char *iface = host_filter_iface();
@@ -2296,6 +2487,8 @@ static void *route_monitor_loop(void *arg) {
    *                      groups; the bit is 1 << (RTNLGRP_IPV4_RULE - 1). */
   sa.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV4_ROUTE |
                  (1u << (RTNLGRP_IPV4_RULE - 1));
+  if (g_host_nat6)
+    sa.nl_groups |= RTMGRP_IPV6_ROUTE | (1u << (RTNLGRP_IPV6_RULE - 1));
 
   if (bind(sock, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
     ds_warn("[NET] Route monitor: failed to bind netlink socket: %s",
@@ -2314,8 +2507,7 @@ static void *route_monitor_loop(void *arg) {
   while (!g_stop_monitor) {
     /* Enforce IPv4 forwarding in real-time. If ip_forward ever flips to 0
      * the NAT'd container loses all WAN traffic, so re-assert it on every
-     * cycle regardless of platform - Android's netd is the usual culprit,
-     * but a desktop firewall/sysctl reload or another tool can clear it too.
+     * cycle. Android's netd is the culprit, and this thread only runs there.
      * The kernel does not broadcast POLLERR/inotify events for /proc/sys/
      * memory variables, so we must poll; reading a 1-byte procfs flag takes
      * < 1 microsecond, costing 0% CPU. */
@@ -2364,6 +2556,10 @@ static void *route_monitor_loop(void *arg) {
     }
 
     if (pr == 0) {
+      /* A stop that landed during the sleep must not get one more reprobe:
+       * it would put back rules a stop command is about to remove. */
+      if (g_stop_monitor)
+        break;
       do_uplink_reprobe();
       continue;
     }
@@ -2429,9 +2625,12 @@ static void *route_monitor_loop(void *arg) {
       } else if (h->nlmsg_type == RTM_NEWROUTE ||
                  h->nlmsg_type == RTM_DELROUTE) {
         /* Default route added/removed in some table.  Filter our own
-         * subnet/bridge routes by output interface. */
+         * subnet/bridge routes by output interface.  IPv6 also announces
+         * every /64, neighbour and cached clone; only a route as short as
+         * the ones uplink detection accepts can change the uplink. */
         struct rtmsg *rtm = NLMSG_DATA(h);
-        if (rtm->rtm_family == AF_INET) {
+        if (rtm->rtm_family == AF_INET ||
+            (rtm->rtm_family == AF_INET6 && rtm->rtm_dst_len < 8)) {
           int oif = 0;
           struct rtattr *rta = RTM_RTA(rtm);
           int rlen = (int)RTM_PAYLOAD(h);
@@ -2504,11 +2703,14 @@ void ds_net_stop_route_monitor(void) {
     g_route_monitor_started = 0;
     pthread_mutex_unlock(&g_gw_mutex);
   }
+  /* Joined, so nothing in this process can re-add host rules now. */
+  ds_container_unlock(g_helpers_fd);
+  g_helpers_fd = -1;
 }
 
 void ds_net_mark_local_forward_active(void) { g_local_forward_active = 1; }
 
-void ds_net_start_route_monitor(void) {
+void ds_net_start_route_monitor(const char *container_name) {
   if (!is_android())
     return;
 
@@ -2537,8 +2739,12 @@ void ds_net_start_route_monitor(void) {
 
   pthread_mutex_lock(&g_gw_mutex);
   g_stop_monitor = 0;
+  if (g_helpers_fd < 0)
+    g_helpers_fd = ds_container_lock_helpers(container_name);
   if (ds_thread_create(&g_route_monitor_tid, route_monitor_loop, NULL) != 0) {
     ds_warn("[NET] Failed to start route monitor thread: %s", strerror(errno));
+    ds_container_unlock(g_helpers_fd);
+    g_helpers_fd = -1;
   } else {
     g_route_monitor_started = 1;
     g_route_monitor_needs_join = 1;
@@ -2574,8 +2780,8 @@ void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid) {
        * attaching its veth) cannot slip in between our count and our reap. */
       int lock = gateway_segment_lock(bridge);
 
-      ds_nl_del_link(ctx, veth_host);
-      ds_log("[NET] Gateway cleanup: removed %s", veth_host);
+      if (ds_nl_del_link(ctx, veth_host) > 0)
+        ds_log("[NET] Gateway cleanup: removed %s", veth_host);
 
       int clients = ds_nl_count_bridge_members_with_prefix(
           ctx, bridge, app_veth_host_prefix(cfg));
@@ -2597,9 +2803,9 @@ void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid) {
          * ran ds_net_gateway_teardown(), which explicitly deleted the gateway
          * veth (the kernel does not auto-reap it), so the bridge is now idle
          * and safe to reap. */
-        ds_nl_del_link(ctx, bridge);
-        ds_log("[NET] Gateway cleanup: reaped idle delegated LAN bridge %s",
-               bridge);
+        if (ds_nl_del_link(ctx, bridge) > 0)
+          ds_log("[NET] Gateway cleanup: reaped idle delegated LAN bridge %s",
+                 bridge);
       }
 
       gateway_segment_unlock(lock);

@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -10,6 +10,7 @@
 #include <ftw.h>
 #include <grp.h>
 #include <pwd.h>
+#include <sys/auxv.h>
 #include <sys/random.h>
 #include <sys/socket.h>
 #include <sys/xattr.h>
@@ -720,124 +721,6 @@ int read_and_validate_pid(const char *pidfile, pid_t *pid_out) {
   return 0;
 }
 
-/* Mount sidecar files (.mount) */
-
-/* Convert a pidfile path to a sibling sidecar path with the given extension:
- * foo.pid -> foo<ext> (replacing a trailing .pid, else appending). */
-static void pidfile_to_sidecar(const char *pidfile, const char *ext, char *buf,
-                               size_t size) {
-  safe_strncpy(buf, pidfile, size);
-  char *dot = strrchr(buf, '.');
-  if (dot && strcmp(dot, DS_EXT_PID) == 0)
-    snprintf(dot, size - (size_t)(dot - buf), "%s", ext);
-  else
-    strncat(buf, ext, size - strlen(buf) - 1);
-}
-
-/* foo.pid -> foo.mount */
-static void pidfile_to_mountfile(const char *pidfile, char *buf, size_t size) {
-  pidfile_to_sidecar(pidfile, DS_EXT_MOUNT, buf, size);
-}
-
-/* Save mount path alongside a pidfile: foo.pid -> foo.mount */
-int save_mount_path(const char *pidfile, const char *mount_path) {
-  char mpath[PATH_MAX];
-  pidfile_to_mountfile(pidfile, mpath, sizeof(mpath));
-  return write_file(mpath, mount_path);
-}
-
-int read_mount_path(const char *pidfile, char *buf, size_t size) {
-  char mpath[PATH_MAX];
-  pidfile_to_mountfile(pidfile, mpath, sizeof(mpath));
-  return read_file(mpath, buf, size);
-}
-
-int remove_mount_path(const char *pidfile) {
-  char mpath[PATH_MAX];
-  pidfile_to_mountfile(pidfile, mpath, sizeof(mpath));
-  return unlink(mpath);
-}
-
-/* Init-type sidecar files (.init) */
-
-/* foo.pid -> foo.init */
-static void pidfile_to_initfile(const char *pidfile, char *buf, size_t size) {
-  pidfile_to_sidecar(pidfile, DS_EXT_INIT, buf, size);
-}
-
-static const char *init_type_to_string(ds_init_type_t type) {
-  switch (type) {
-  case DS_INIT_SYSTEMD:
-    return "systemd";
-  case DS_INIT_PROCD:
-    return "procd";
-  case DS_INIT_OPENRC:
-    return "openrc";
-  case DS_INIT_RUNIT:
-    return "runit";
-  case DS_INIT_S6:
-    return "s6";
-  case DS_INIT_BUSYBOX:
-    return "busybox";
-  case DS_INIT_SYSVINIT:
-    return "sysvinit";
-  case DS_INIT_UNKNOWN:
-  default:
-    return "unknown";
-  }
-}
-
-static ds_init_type_t init_type_from_string(const char *s) {
-  if (!s || s[0] == '\0')
-    return DS_INIT_UNKNOWN;
-
-  if (strcmp(s, "systemd") == 0)
-    return DS_INIT_SYSTEMD;
-  if (strcmp(s, "procd") == 0)
-    return DS_INIT_PROCD;
-  if (strcmp(s, "openrc") == 0)
-    return DS_INIT_OPENRC;
-  if (strcmp(s, "runit") == 0)
-    return DS_INIT_RUNIT;
-  if (strcmp(s, "s6") == 0)
-    return DS_INIT_S6;
-  if (strcmp(s, "busybox") == 0)
-    return DS_INIT_BUSYBOX;
-  if (strcmp(s, "sysvinit") == 0)
-    return DS_INIT_SYSVINIT;
-
-  return DS_INIT_UNKNOWN;
-}
-
-int save_init_type(const char *pidfile, ds_init_type_t init_type) {
-  char ipath[PATH_MAX];
-  pidfile_to_initfile(pidfile, ipath, sizeof(ipath));
-  return write_file(ipath, init_type_to_string(init_type));
-}
-
-int read_init_type(const char *pidfile, ds_init_type_t *init_type_out) {
-  if (!init_type_out)
-    return -1;
-
-  char ipath[PATH_MAX];
-  char buf[64];
-
-  pidfile_to_initfile(pidfile, ipath, sizeof(ipath));
-
-  if (read_file(ipath, buf, sizeof(buf)) < 0)
-    return -1;
-
-  buf[strcspn(buf, "\r\n")] = '\0';
-  *init_type_out = init_type_from_string(buf);
-  return 0;
-}
-
-int remove_init_type(const char *pidfile) {
-  char ipath[PATH_MAX];
-  pidfile_to_initfile(pidfile, ipath, sizeof(ipath));
-  return unlink(ipath);
-}
-
 /* Kernel firmware search path management
  *
  * Android kernels patch firmware_class.c to support a comma-separated list
@@ -1048,50 +931,83 @@ int run_command_log(char *const argv[]) {
 
 /* FD Passing (SCM_RIGHTS) */
 
-int ds_send_fd(int sock, int fd) {
+int ds_send_fds(int sock, const void *data, size_t len, const int *fds,
+                int count) {
+  if (count < 1 || count > DS_MAX_PASSED_FDS)
+    return -1;
   struct msghdr msg = {0};
-  char buf[CMSG_SPACE(sizeof(int))];
+  char buf[CMSG_SPACE(sizeof(int) * DS_MAX_PASSED_FDS)];
   memset(buf, 0, sizeof(buf));
 
-  struct iovec io = {.iov_base = "FD", .iov_len = 2};
+  struct iovec io = {.iov_base = (void *)(uintptr_t)data, .iov_len = len};
+  msg.msg_iov = &io;
+  msg.msg_iovlen = 1;
+  msg.msg_control = buf;
+  msg.msg_controllen = CMSG_SPACE(sizeof(int) * (size_t)count);
 
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  cmsg->cmsg_len = CMSG_LEN(sizeof(int) * (size_t)count);
+  memcpy(CMSG_DATA(cmsg), fds, sizeof(int) * (size_t)count);
+
+  ssize_t n = sendmsg(sock, &msg, MSG_NOSIGNAL);
+  return n == (ssize_t)len ? 0 : -1;
+}
+
+/* Receives up to max fds with the message. fds the sender attached beyond max
+ * are closed, since the kernel has already installed them in this process.
+ * Returns the number of data bytes read, -1 on error or when the control
+ * message was truncated. */
+ssize_t ds_recv_fds(int sock, void *data, size_t len, int *fds, int max,
+                    int *count) {
+  struct msghdr msg = {0};
+  char buf[CMSG_SPACE(sizeof(int) * DS_MAX_PASSED_FDS)];
+  memset(buf, 0, sizeof(buf));
+
+  struct iovec io = {.iov_base = data, .iov_len = len};
   msg.msg_iov = &io;
   msg.msg_iovlen = 1;
   msg.msg_control = buf;
   msg.msg_controllen = sizeof(buf);
 
-  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-  cmsg->cmsg_level = SOL_SOCKET;
-  cmsg->cmsg_type = SCM_RIGHTS;
-  cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-
-  *((int *)CMSG_DATA(cmsg)) = fd;
-
-  if (sendmsg(sock, &msg, 0) < 0)
+  *count = 0;
+  ssize_t n = recvmsg(sock, &msg, MSG_CMSG_CLOEXEC);
+  if (n < 0)
     return -1;
 
-  return 0;
+  for (struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg); cmsg;
+       cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+    if (cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
+      continue;
+    int got = (int)((cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+    const int *src = (const int *)CMSG_DATA(cmsg);
+    for (int i = 0; i < got; i++) {
+      int fd;
+      memcpy(&fd, src + i, sizeof(fd));
+      if (*count < max)
+        fds[(*count)++] = fd;
+      else
+        close(fd);
+    }
+  }
+  if (msg.msg_flags & MSG_CTRUNC) {
+    for (int i = 0; i < *count; i++)
+      close(fds[i]);
+    *count = 0;
+    return -1;
+  }
+  return n;
 }
 
+int ds_send_fd(int sock, int fd) { return ds_send_fds(sock, "FD", 2, &fd, 1); }
+
 int ds_recv_fd(int sock) {
-  struct msghdr msg = {0};
-  char ctrl_buf[CMSG_SPACE(sizeof(int))];
-  char data_buf[2];
-  struct iovec io = {.iov_base = data_buf, .iov_len = sizeof(data_buf)};
-
-  msg.msg_iov = &io;
-  msg.msg_iovlen = 1;
-  msg.msg_control = ctrl_buf;
-  msg.msg_controllen = sizeof(ctrl_buf);
-
-  if (recvmsg(sock, &msg, 0) < 0)
+  char data[2];
+  int fd, count;
+  if (ds_recv_fds(sock, data, sizeof(data), &fd, 1, &count) < 0 || count != 1)
     return -1;
-
-  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
-  if (!cmsg || cmsg->cmsg_type != SCM_RIGHTS)
-    return -1;
-
-  return *((int *)CMSG_DATA(cmsg));
+  return fd;
 }
 
 /* System helpers */
@@ -1205,7 +1121,7 @@ void ds_log_internal(const char *prefix, const char *color, int is_err,
   if (ds_log_silent && !is_err)
     return;
 
-  /* Filter out [DEBUG] and [IPT] prefixes from terminal output */
+  /* Filter out these prefixes from terminal output */
   if (!is_err) {
     if (strncmp(raw_msg, "[DEBUG]", 7) == 0 ||
         strncmp(raw_msg, "[CGROUP]", 8) == 0 ||
@@ -1217,7 +1133,8 @@ void ds_log_internal(const char *prefix, const char *color, int is_err,
         strncmp(raw_msg, "[DHCP]", 6) == 0 ||
         strncmp(raw_msg, "[VirGL]", 7) == 0 ||
         strncmp(raw_msg, "[PulseAudio]", 12) == 0 ||
-        strncmp(raw_msg, "[X11]", 5) == 0) {
+        strncmp(raw_msg, "[X11]", 5) == 0 ||
+        strncmp(raw_msg, "[Anland]", 8) == 0) {
       return;
     }
   }
@@ -1584,13 +1501,21 @@ int copy_file(const char *src, const char *dst) {
   return 0;
 }
 
+/* USER_HZ as the kernel announces it in the auxv. musl hardcodes
+ * sysconf(_SC_CLK_TCK) to 100 and never looks, and a vendor kernel built
+ * with USER_HZ=250 then puts every /proc tick count off by 2.5x. */
+long ds_clk_tck(void) {
+  long hz = (long)getauxval(AT_CLKTCK);
+  return hz > 0 ? hz : 100;
+}
+
 /* Seconds since container init started: field 22 (starttime) of
  * /proc/<pid>/stat subtracted from /proc/uptime. */
 long ds_get_container_uptime(pid_t pid) {
   if (pid <= 0)
     return -1;
 
-  long clk_tck = sysconf(_SC_CLK_TCK);
+  long clk_tck = ds_clk_tck();
   if (clk_tck <= 0)
     clk_tck = 100;
 
@@ -1706,6 +1631,9 @@ int validate_bind_destination(const char *dest) {
   if (strlen(dest) >= PATH_MAX)
     return 0;
 
+  /* "//" and "///" have no segment at all and land on the rootfs itself,
+   * the same as "/", so a destination needs one real component. */
+  int segments = 0;
   const char *p = dest;
   while (*p) {
     while (*p == '/')
@@ -1716,6 +1644,7 @@ int validate_bind_destination(const char *dest) {
     size_t len = (size_t)(p - start);
     if (len == 0)
       continue;
+    segments++;
     if ((len == 1 && start[0] == '.') ||
         (len == 2 && start[0] == '.' && start[1] == '.'))
       return 0;
@@ -1725,7 +1654,7 @@ int validate_bind_destination(const char *dest) {
     }
   }
 
-  return 1;
+  return segments > 0;
 }
 
 /* Parse human-readable size: "512M", "1G", "2048" (bytes). Returns -1 on error.
@@ -2031,10 +1960,14 @@ int ds_multi_stop(const char *raw_names) {
     struct ds_config c;
     init_iter_cfg(&c, NULL);
     safe_strncpy(c.container_name, tok, sizeof(c.container_name));
+    /* ds_log() keys the log file by this global, not by the config it is
+     * handed, so point it at the container being stopped. */
+    safe_strncpy(ds_log_container_name, tok, sizeof(ds_log_container_name));
     if (stop_rootfs(&c, 0) != 0)
       ret = 1;
     tok = strtok_r(NULL, ",", &sp);
   }
+  ds_log_container_name[0] = '\0';
   return ret;
 }
 

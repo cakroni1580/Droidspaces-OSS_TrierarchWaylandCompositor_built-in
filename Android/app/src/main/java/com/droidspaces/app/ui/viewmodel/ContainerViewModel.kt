@@ -41,8 +41,13 @@ class ContainerViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val prefsManager = PreferencesManager.getInstance(application)
 
-    // Container list state - properly scoped to ViewModel instance
-    private var _containers by mutableStateOf<List<ContainerInfo>>(emptyList())
+    // Seeded from the cache so a restart shows the last list at once, then replaced by
+    // the first fetch. An empty list here really means no containers.
+    private var _containers by mutableStateOf(prefsManager.cachedContainers)
+
+    // Cached configs all read as stopped, so until the first fetch lands the running
+    // count comes from the number saved with them.
+    private var loaded by mutableStateOf(false)
 
     // Refresh state
     var isRefreshing by mutableStateOf(false)
@@ -51,18 +56,13 @@ class ContainerViewModel(application: Application) : AndroidViewModel(applicatio
     // Current refresh job for cancellation
     private var refreshJob: Job? = null
 
-    // Public container list - uses cached fallback for instant display on restart
     val containerList: List<ContainerInfo>
-        get() = if (_containers.isEmpty()) prefsManager.cachedContainers else _containers
+        get() = _containers
 
-    // Derived counts with cached fallback for instant display on restart
-    // Uses derivedStateOf for efficient recomposition
-    val containerCount by derivedStateOf {
-        if (_containers.isEmpty()) prefsManager.cachedContainerCount else _containers.size
-    }
+    val containerCount by derivedStateOf { _containers.size }
 
     val runningCount by derivedStateOf {
-        if (_containers.isEmpty()) prefsManager.cachedRunningCount else _containers.count { it.isRunning }
+        if (loaded) _containers.count { it.isRunning } else prefsManager.cachedRunningCount
     }
 
     /**
@@ -84,31 +84,7 @@ class ContainerViewModel(application: Application) : AndroidViewModel(applicatio
                     ContainerManager.listContainers()
                 }
 
-                // Update state (already on Main dispatcher)
-                _containers = result
-
-                // Cache full list for instant display on next app start
-                prefsManager.saveCachedContainers(result)
-                prefsManager.cachedContainerCount = result.size
-                prefsManager.cachedRunningCount = result.count { it.isRunning }
-
-                // Prefetch distro icons for running containers (updates persistent cache)
-                result.filter { it.isRunning }.forEach { container ->
-                    launch(Dispatchers.IO) {
-                        ContainerOSInfoManager.prefetchDistroIcon(container.name, getApplication())
-                    }
-                }
-
-                // Proactive user fetch
-                result.filter { it.isRunning }.forEach { container ->
-                    launch(Dispatchers.IO) {
-                        try {
-                            com.droidspaces.app.util.ContainerUsersManager.getUsers(container.name)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "Failed to prime user cache for ${container.name}")
-                        }
-                    }
-                }
+                updateState(result)
 
                 Log.i(TAG, "Container list refreshed: ${result.size} containers, ${result.count { it.isRunning }} running")
 
@@ -139,8 +115,8 @@ class ContainerViewModel(application: Application) : AndroidViewModel(applicatio
      */
     fun updateState(result: List<ContainerInfo>) {
         _containers = result
+        loaded = true
         prefsManager.saveCachedContainers(result)
-        prefsManager.cachedContainerCount = result.size
         prefsManager.cachedRunningCount = result.count { it.isRunning }
 
         // Prefetch distro icons for running containers (updates persistent cache)
@@ -203,31 +179,6 @@ class ContainerViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Silent scan failed", e)
-            }
-        }
-    }
-
-    /**
-     * Silent background refresh - no UI indicators.
-     * Perfect for post-operation refreshes where we don't want spinner.
-     */
-    fun silentRefresh() {
-        viewModelScope.launch {
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    ContainerManager.listContainers()
-                }
-
-                _containers = result
-
-                // Cache counts
-                prefsManager.cachedContainerCount = result.size
-                prefsManager.cachedRunningCount = result.count { it.isRunning }
-
-                Log.i(TAG, "Silent refresh completed: ${result.size} containers")
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Silent refresh failed", e)
             }
         }
     }

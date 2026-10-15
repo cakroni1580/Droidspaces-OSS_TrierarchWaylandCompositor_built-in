@@ -5,14 +5,10 @@
     <!-- Welcome Screen -->
     <string name="get_started">Loslegen</string>
     <!-- Root Check Screen -->
-    <string name="root_check_title">Root-Zugangsprüfung</string>
     <string name="checking_root">Überprüfe Root-Zugriff…</string>
-    <string name="root_granted">Root-Zugriff gewährt</string>
     <string name="root_denied">Root-Zugriff verweigert</string>
     <string name="root_required_message">Root-Zugriff wird benötigt, um Container zu verwalten.</string>
     <string name="check_root_access">Root-Zugriff prüfen</string>
-    <string name="check_root_access_click">Unten klicken, um Root-Zugriff zu prüfen</string>
-    <string name="root_available_message">Droidspaces kann jetzt verwendet werden</string>
     <string name="skip">Überspringen</string>
     <string name="continue_button">Weiter</string>
     <!-- Navigation -->
@@ -137,7 +133,6 @@
     <string name="next_configuration">Weiter: Konfiguration</string>
     <!-- Container Config Screen -->
     <string name="configuration_title">Konfiguration</string>
-    <string name="container_options">Container-Optionen</string>
     <string name="next_storage">Weiter: Speicher</string>
     <!-- Installation Screen -->
     <string name="installation_complete">Installation abgeschlossen</string>
@@ -239,7 +234,6 @@
     <string name="requirements_check_completed_with_errors">Anforderungsprüfung mit Fehlern abgeschlossen</string>
     <string name="kernel_requirements_copied">Kernel-Anforderungen in die Zwischenablage kopiert</string>
     <string name="feat_containers_title">Echte Linux-Container</string>
-    <string name="welcome_tagline">Linux-Container. Nativ. Kein Overhead.</string>
     <string name="feat_containers_desc">Dieselbe Kernel-Namespace-Technologie wie bei LXC, Podman und Docker. Keine Emulation, kein chroot.</string>
     <string name="feat_overhead_title">Kein Overhead</string>
     <string name="feat_overhead_desc">Kommuniziert direkt mit dem Host Linux-Kernel. Kein Hypervisor, keine Virtualisierungsschicht.</string>
@@ -268,7 +262,6 @@
     <string name="generate_bug_report">Fehlerbericht erstellen</string>
     <string name="generate_bug_report_description">Systeminformationen und Protokolle zur Fehlerbehebung erfassen</string>
     <string name="bug_report_title">Fehlerbericht</string>
-    <string name="install">Installieren</string>
     <string name="gpu_option">GPU</string>
     <string name="x11_option">X11</string>
     <string name="selinux_permissive_option">SELinux Permissive</string>
@@ -302,20 +295,11 @@
     <string name="network_mode_host_short">Host</string>
     <string name="network_mode_nat_short">NAT</string>
     <string name="network_mode_none_short">Ohne</string>
-    <string name="nat_settings">NAT Einstellungen</string>
     <string name="upstream_interface_title">Upstream-Schnittstelle (optional)</string>
     <string name="upstream_interface_hint">Internetzugang an bestimmte Schnittstelle(n) binden. Leer lassen, um den aktiven Uplink automatisch zu erkennen.</string>
     <string name="add_upstream_interface">Upstream-Schnittstelle hinzufügen</string>
-    <string name="available_system_interfaces">Verfügbare Systemschnittstellen:</string>
-    <string name="enter_manually">Oder manuell eingeben (Platzhalter werden ebenfalls unterstützt):</string>
-    <string name="interface_name_hint">Schnittstellenname (z.B. wlan0, v4-rmnet_data*)</string>
     <string name="port_forwarding">Portweiterleitung</string>
     <string name="add_port_forward">Portweiterleitung hinzufügen</string>
-    <string name="host_port_hint">Host-Port (1–65535 oder Bereich 100–200)</string>
-    <string name="container_port_hint">Container Port (1-65535 oder Bereich)</string>
-    <string name="protocol">Protokoll</string>
-    <string name="optional_symmetric_hint">Optional (z.B. 8080 or 1000-2000)</string>
-    <string name="leave_blank_for_symmetric">Für symmetrische Zuordnung leer lassen</string>
     <string name="error_invalid_range_format">Ungültiges Bereichsformat (ANFANG-ENDE)</string>
     <string name="error_ports_must_be_numbers">Ports müssen Zahlen sein</string>
     <string name="error_port_out_of_range">Ports müssen zwischen 1 und 65535 liegen</string>
@@ -323,7 +307,6 @@
     <string name="error_port_must_be_number">Port muss eine Zahl sein</string>
     <string name="error_port_width_mismatch">Host/Container-Bereichsbreite stimmt nicht überein</string>
     <string name="error_port_overlap">Überschneidung mit einer bestehenden Portweiterleitungsregel</string>
-    <string name="symmetric_label">(Symmetrisch)</string>
     <string name="port_forward_examples">Beispiele: 8080 (Einzelwert), 8000–8010 (Bereich). Für eine symmetrische Zuordnung das Zielfeld leer lassen.</string>
     <string name="static_ip_address">Statische IP-Adresse</string>
     <string name="static_ip_description">Festlegen einer statischen IPv4-Adresse für diesen Container im Subnetz 172.28.x.x. Feld leer lassen, damit die Adresse beim ersten Start automatisch zugewiesen wird.</string>
@@ -335,10 +318,7 @@
     <string name="bind_mounts">Bind Mounts</string>
     <string name="add">Hinzufügen</string>
     <string name="add_bind_mount">Bind Mount hinzufügen</string>
-    <string name="enter_container_path">Containerpfad eingeben</string>
     <string name="container_path_placeholder">z.B. /mnt/sdcard</string>
-    <string name="host_path">Host-Pfad: %1$s</string>
-    <string name="container_path">Containerpfad: %1$s</string>
     <string name="dns_servers_label">DNS Server</string>
     <string name="dns_servers_placeholder">z.B. 1.1.1.1,8.8.8.8 (Optional)</string>
     <string name="dns_servers_hint">nur Zahlen, Punkte und Kommas</string>
@@ -400,7 +380,6 @@
     <string name="help_card_message">Hier tippen, um zu erfahren, wie Sie Ihren ersten Linux-Container einrichten!</string>
     <string name="help_card_url" translatable="false">https://github.com/ravindu644/Droidspaces-OSS/blob/main/Documentation/Installation-Android.md</string>
     <string name="privileged_mode">Privilegierter Modus</string>
-    <string name="privileged_mode_description">Konfigurieren von detaillierten Sicherheitslockerungen für verschachtelte Virtualisierung oder erweiterten Hardwarezugriff.</string>
     <string name="privileged_nomask_desc">Jail-Masken deaktivieren, um Schreibzugriff auf /proc und /sys zu ermöglichen. Hinweis: /sys bleibt schreibgeschützt, sofern nicht auch der Hardwarezugriff aktiviert ist.</string>
     <string name="privileged_nocaps_desc">Auf keinerlei Linux-Funktionen verzichten (vollständige Root-Rechte).</string>
     <string name="privileged_noseccomp_desc">Seccomp-Syscall-Filterung deaktivieren. Dadurch werden erweiterte Kernel-Funktionen wie nicht privilegierte Benutzernamensräume aktiviert, die für verschachtelte Sandboxing-Umgebungen (Bubblewrap, Flatpak) zwingend erforderlich sind, und es wird das Laden von Kernel-Modulen außerhalb des Kernel-Baums ermöglicht.</string>
@@ -461,8 +440,7 @@
     <string name="reorder_handle">Ziehen zum Neuanordnen</string>
     <string name="network_mode_gateway">Gateway (Virtueller Router)</string>
     <string name="network_mode_gateway_short">Gateway</string>
-    <string name="gateway_settings">Gateway Einstellungen</string>
-    <string name="gateway_settings_description">Diesen Container über einen anderen Container weiterleiten, der als Router fungiert (z. B. OpenWRT). Das Gateway muss bereits laufen.</string>
+    <string name="gateway_settings_description">Diesen Container über einen anderen Container weiterleiten, der als Router fungiert (z. B. OpenWRT).</string>
     <string name="gateway_container">Gateway Container</string>
     <string name="gateway_net">LAN Name</string>
     <string name="gateway_net_hint">lan</string>
@@ -470,8 +448,6 @@
     <string name="gateway_iface_hint">eth1</string>
     <string name="gateway_bridge">Host-Brücke</string>
     <string name="gateway_bridge_hint">ds-lan</string>
-    <string name="gateway_configure">Gateway konfigurieren</string>
-    <string name="gateway_configure_title">Gateway konfigurieren</string>
     <string name="gateway_configure_intro">Diese Einstellungen legen fest, wie dieser Container in das virtuelle LAN des Gateways eingebunden wird. Die Standardeinstellungen gelten für ein einzelnes LAN hinter einem Gateway – nur ändern, wenn mehrere LAN-Segmente oder mehr als ein Gateway betrieben wird.</string>
     <string name="gateway_iface_explain">Der Name der Schnittstelle, unter dem diese Verbindung innerhalb des Gateway-Containers angezeigt wird (z. B. eth1 in OpenWRT). Er muss mit der Schnittstelle übereinstimmen, auf der das Gateway DHCP bereitstellt. Jedes einzelne Segment desselben Gateways benötigt einen eigenen, eindeutigen Namen. Standard: eth1.</string>
     <string name="gateway_net_explain">Eine Bezeichnung für dieses LAN-Segment. Container, die denselben Gateway- und LAN-Namen verwenden, werden demselben virtuellen Switch zugeordnet und können sich gegenseitig sehen. Mit einem anderen Namen lässt sich ein isoliertes zweites Segment einrichten. Standard: lan.</string>

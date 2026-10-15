@@ -6,6 +6,9 @@ desc: 编译支持 Droidspaces 的自定义 Android 内核完整指南，包括�
 keywords: 内核, 配置, droidspaces, android, 编译, gki, 非gki, 补丁, 兼容性
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Kernel-Configuration.md)。
+
 # 内核配置指南
 
 本指南介绍如何为 Android 设备编译支持 Droidspaces 的 Linux 内核。

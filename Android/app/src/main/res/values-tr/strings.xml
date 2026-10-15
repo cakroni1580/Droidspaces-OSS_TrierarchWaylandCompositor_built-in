@@ -2,14 +2,10 @@
 <resources>
     <string name="app_name" translatable="false">Droidspaces</string>
     <string name="get_started">Başla</string>
-    <string name="root_check_title">Root Erişimi Kontrolü</string>
     <string name="checking_root">Root erişimi kontrol ediliyor...</string>
-    <string name="root_granted">Root Erişimi Verilmiş</string>
     <string name="root_denied">Root Erişimi Reddedilmiş</string>
     <string name="root_required_message">Konteynerleri yönetmek için root erişimi gerekir.</string>
     <string name="check_root_access">Root Erişimini Kontrol Et</string>
-    <string name="check_root_access_click">Root erişimini kontrol etmek için aşağıya tıkla</string>
-    <string name="root_available_message">Artık Droidspaces kullanabilirsin</string>
     <string name="skip">Atla</string>
     <string name="continue_button">Devam et</string>
     <string name="home_title">Ana menü</string>
@@ -141,20 +137,11 @@
     <string name="network_mode_host">Host</string>
     <string name="network_mode_nat">NAT (Izole)</string>
     <string name="network_mode_none">Yok</string>
-    <string name="nat_settings">NAT Ayarları</string>
     <string name="upstream_interface_title">Upstream Arayüzü (İsteğe bağlı)</string>
     <string name="upstream_interface_hint">İnternet erişimini belirli arayüze sabitler. Etkin bağlantıyı otomatik algılamak için boş bırakın.</string>
     <string name="add_upstream_interface">Upstream Arayuzu Ekle</string>
-    <string name="available_system_interfaces">Kullanılabilir Sistem Arayüzleri:</string>
-    <string name="enter_manually">Ya da manuel olarak girin (joker karakterler de desteklenmektedir):</string>
-    <string name="interface_name_hint">Arayuz Adı (örn. wlan0, v4-rmnet_data*)</string>
     <string name="port_forwarding">Port Yönlendirme</string>
     <string name="add_port_forward">Port Yonlendirme Ekle</string>
-    <string name="host_port_hint">Host Bağlantı Noktası (1-65535 veya 100-200 aralığı)</string>
-    <string name="container_port_hint">Konteyner Portu (1-65535 araligi)</string>
-    <string name="protocol">Protokol</string>
-    <string name="optional_symmetric_hint">İsteğe bağlı (ör. 8080 veya 1000-2000)</string>
-    <string name="leave_blank_for_symmetric">Simetrik eşleme için boş bırakın</string>
     <string name="error_invalid_range_format">Geçersiz aralık biçimi (BAŞLANGIÇ-BİTİŞ)</string>
     <string name="error_ports_must_be_numbers">Portlar sayı olmalıdır</string>
     <string name="error_port_out_of_range">Portlar 1 ile 65535 arasında olmalıdır</string>
@@ -162,7 +149,6 @@
     <string name="error_port_must_be_number">Port bir sayı olmalıdır</string>
     <string name="error_port_width_mismatch">Host/konteyner aralığı genişlik uyuşmazlığı</string>
     <string name="error_port_overlap">Mevcut bir port yönlendirme kuralıyla çakışıyor</string>
-    <string name="symmetric_label">(Simetrik)</string>
     <string name="port_forward_examples">Örnekler: 8080 (tek), 8000-8010 (aralık). Simetrik eşleme için boş bırakın.</string>
     <string name="saved">Kaydedildi</string>
     <string name="saving">Kaydediliyor...</string>
@@ -178,10 +164,7 @@
     <string name="bind_mounts">Bağlama</string>
     <string name="add">Ekle</string>
     <string name="add_bind_mount">Dizin Eşleme Ekle</string>
-    <string name="enter_container_path">Konteyner yolunu girin</string>
     <string name="container_path_placeholder">ör. /mnt/sdcard</string>
-    <string name="host_path">Host yolu: %1$s</string>
-    <string name="container_path">Konteyner yolu: %1$s</string>
     <string name="dns_servers_label">DNS Sunucuları</string>
     <string name="dns_servers_placeholder">Örneğin: 1.1.1.1,8.8.8.8 (İsteğe bağlı)</string>
     <string name="dns_servers_hint">Sadece rakam, nokta ve iki nokta</string>
@@ -197,7 +180,6 @@
     <string name="container_name_exists">Bu isimde bir konteyner zaten mevcut</string>
     <string name="next_configuration">Sonraki: Yapılandırma</string>
     <string name="configuration_title">Yapılandırma</string>
-    <string name="container_options">Konteyner Seçenekleri</string>
     <string name="next_storage">Sonraki: Depolama</string>
     <string name="installation_complete">Kurulum Tamamlandı</string>
     <string name="installation_failed">Kurulum Başarısız</string>

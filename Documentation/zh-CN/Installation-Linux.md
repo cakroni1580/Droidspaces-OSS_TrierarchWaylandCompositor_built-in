@@ -6,6 +6,9 @@ desc: 在 Linux 桌面或服务器上安装 Droidspaces。下载 tarball，解�
 keywords: install, droidspaces, linux, container, runtime, rootfs, tarball, ext, image, namespaces
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Installation-Linux.md)。
+
 # Linux 安装指南
 
 本指南介绍如何在 Linux 桌面或服务器上安装 Droidspaces。

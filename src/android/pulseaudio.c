@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - PulseAudio Server and Socket Manager
+ * Droidspaces v7 - PulseAudio Server and Socket Manager
  *
  * Manages the PulseAudio daemon lifecycle on Android (spawning, logging, and
  * stopping) and host-to-container socket bridging.

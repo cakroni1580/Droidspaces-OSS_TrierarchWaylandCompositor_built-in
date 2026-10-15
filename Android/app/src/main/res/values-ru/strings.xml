@@ -3,14 +3,10 @@
     <!-- Welcome Screen -->
     <string name="get_started">Начать</string>
     <!-- Root Check Screen -->
-    <string name="root_check_title">Проверка Root-доступа</string>
     <string name="checking_root">Проверка Root-доступа…</string>
-    <string name="root_granted">Root-доступ предоставлен</string>
     <string name="root_denied">Root-доступ отклонён</string>
     <string name="root_required_message">Root-доступ необходим для управления контейнерами.</string>
     <string name="check_root_access">Проверить Root-доступ</string>
-    <string name="check_root_access_click">Нажмите ниже, чтобы проверить Root-доступ</string>
-    <string name="root_available_message">Теперь вы можете использовать Droidspaces</string>
     <string name="skip">Пропустить</string>
     <string name="continue_button">Продолжить</string>
     <!-- Navigation -->
@@ -135,7 +131,6 @@
     <string name="next_configuration">Далее: Конфигурация</string>
     <!-- Container Config Screen -->
     <string name="configuration_title">Конфигурация</string>
-    <string name="container_options">Опции контейнера</string>
     <string name="next_storage">Далее: Хранилище</string>
     <!-- Installation Screen -->
     <string name="installation_complete">Установка завершена</string>

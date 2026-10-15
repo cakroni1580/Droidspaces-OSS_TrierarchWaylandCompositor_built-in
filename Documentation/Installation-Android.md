@@ -3,78 +3,89 @@ title: Android installation
 section: Basics
 order: 1
 desc: Install Droidspaces on a rooted Android device: install the APK, let the app set up the backend, and create a Linux container without typing a terminal command.
-keywords: install, droidspaces, android, rooted, container, apk, atomic, backend, sparse, image, linux
+keywords: install, droidspaces, android, rooted, container, apk, backend, sparse, image, linux, kernelsu, magisk, apatch
 -->
 
-# Android installation guide
+# Android installation
 
-On Android, Droidspaces needs no terminal. Everything from the first install to running a full Linux distribution is done in the app.
+Everything on Android happens in the app, from installing the backend to opening a shell in a running container. This page takes you from a rooted phone to that shell.
 
-## Prerequisites
+## Before you start
 
-1. **A rooted device**, using one of the [supported rooting solutions](../README.md#rooting-requirements).
-2. **A compatible kernel** with Droidspaces support enabled. See the [Kernel Configuration Guide](Kernel-Configuration.md).
+You need two things.
+
+**Root.** KernelSU is the recommended root method. Magisk and APatch work as well. Their root shells carry a seccomp filter that blocks what a container runtime needs, which is why the backend runs as a daemon started at boot rather than from the shell. That is the default, and the reboot the app asks for after installing is all it takes.
+
+**A kernel with container support.** Most stock kernels are missing options that Droidspaces needs, especially PID and IPC namespaces. The [kernel configuration guide](Kernel-Configuration.md) lists them and explains how to build a kernel with them. If you would rather not build one, the [community-supported devices](community-supported-devices.md) page links to kernels other users have built. The app tells you on first launch whether your kernel is supported.
+
+> [!CAUTION]
+>
+> GrapheneOS is not supported. It blocks system calls that container isolation depends on, root or not.
+>
+> SuSFS is not supported. If you use it anyway, turn off "Hide sus mounts for all processes" in its settings or containers will not boot, and do not report bugs seen with it enabled.
 
 ## Step 1: Install the app
 
-1. Download the **Droidspaces APK** from the [latest release](https://github.com/ravindu644/Droidspaces-OSS/releases/latest).
-2. Install the APK on your device.
-3. **Grant root access** and open the app.
+1. Download the APK from the [latest release](https://github.com/ravindu644/Droidspaces-OSS/releases/latest) and install it.
+2. On KernelSU and APatch, allow root for the Droidspaces app in your root manager first. Magisk asks when the app requests it.
+3. Open the app and tap **Get Started**.
+4. Tap **Check Root Access** and, on Magisk, allow the request.
+5. The app installs the backend on its own: the `droidspaces` binary and a static BusyBox go to `/data/local/Droidspaces/bin`, and a small boot module goes to your root manager so the daemon and your containers can start at boot. This takes a few seconds.
+6. Read the result. "Droidspaces backend installed successfully" means your kernel passed the probe. If it says the kernel has no Droidspaces support, go to the [kernel configuration guide](Kernel-Configuration.md) before continuing.
+7. Reboot when the app asks. The reboot applies the SELinux rules the backend needs and starts the daemon.
 
-## Step 2: Automatic backend setup
+After the reboot, on a supported kernel, the **Home** tab shows "Backend: Installed" with a "DAEMON" chip, and your kernel version, SELinux status and architecture underneath.
 
-On first launch, Droidspaces does an **atomic installation** of the backend:
+## Step 2: Install a container
 
-- It detects the device architecture (`aarch64`, `armhf`, etc.).
-- It extracts the `droidspaces` and `busybox` binaries to `/data/local/Droidspaces/bin`.
-- It moves them into place atomically, so the install succeeds even while an older version is running.
-- It verifies checksums, so a corrupted binary is not installed.
+Open the **Containers** tab and tap **+**. You get two choices.
 
-## Step 3: Setting up your first container
+### From the repository
 
-You don't extract rootfs files by hand. The app does it.
+**Repository** opens a list of distributions built for Droidspaces, filtered to your device's architecture. Ubuntu, Debian, Fedora, Arch, Alpine, OpenWrt and others are there, and some come with a desktop environment already wired up.
 
-### Option A: Install from the Rootfs Repository (recommended)
+1. Pick a distribution and tap **Download**. The file goes to your Downloads folder, and a notification tells you when it is done.
+2. Tap **Install** on the same card.
 
-This is the shortest path. The app can browse, download and install distros itself, with no manual download.
+For more distributions, tap **Manage Repositories** in the same sheet and subscribe to the Linux Containers mirror:
 
-1. **Open the Containers tab**: tap the middle icon in the bottom navigation bar.
-2. **Open the repository**: tap the **cloud icon** (above the "+" button). This opens the Rootfs Repository sheet, which fetches every distro built for Android from our [official repository](https://github.com/Droidspaces/Droidspaces-rootfs-builder).
-3. **Pick a distro**: browse or search the list. Each card shows the distro name, size, architecture and build date.
-4. **Download**: tap **Download** on the distro you want. A progress bar appears on the card. The file is saved to your Downloads folder.
-5. **Install**: when the download finishes, the button changes to **Install**. Tap it to start the container setup wizard.
-6. **Configuration wizard**:
-   - **Name**: a name for the container.
-   - **Features**: toggle Hardware Access, IPv6, Network Isolation, Android storage integration and the rest as you need them.
-   - **Container type**: we recommend **Sparse Image**. It performs better and is more stable on Android's f2fs storage, and it avoids odd SELinux and keyring issues.
-7. **Done**: the app extracts the tarball and applies the **post-extraction fixes** (DNS, masking useless or dangerous services, and Safe Udev).
+```
+https://raw.githubusercontent.com/Droidspaces/linuxcontainers-mirror/refs/heads/main/rootfs.json
+```
 
-> [!TIP]
->
-> The official repository contains distros preconfigured for Android. For a wider selection, add the LXC images mirror as a custom repository. See the [Rootfs Repository](Usage-Android-App.md#rootfs-repository) section of the usage guide.
+Those images are stock upstream builds. The installer applies the same Android fixes to them, but they come without the extras of the official builds, such as a preconfigured desktop.
 
-### Option B: Install from a local tarball
+### From a file
 
-If you already have a `.tar.xz` or `.tar.gz` rootfs file on the device:
+**Install from file** takes a rootfs archive you already have on the phone. It must be a `.tar.xz` or `.tar.gz`. A container exported from another phone with **Export container as tarball** works here too, and its settings are filled in for you.
 
-1. **Open the Containers tab** and tap the **"+"** button.
-2. **Select your tarball** from storage.
-3. Follow the same **configuration wizard** steps as above.
+### The setup wizard
 
-> [!NOTE]
->
-> Both methods end in the same wizard. The only difference is where the tarball comes from.
+Both paths end in the same wizard.
 
-## Verification & settings
+1. **Container Setup**: give the container a name. The hostname defaults to the name.
+2. **Container configuration**: the defaults are right for a first container. NAT networking gives it internet with no setup. Every toggle on this page is explained in [container settings](Features.md), and you can change any of them later from the container's menu.
+3. **Storage**: leave **Use Sparse Image** on. The rootfs then lives in a single ext4 image file, which is more reliable on Android's storage than a directory. The size you pick is the maximum; the file only grows as the container uses space. **Choose a folder** puts the image on an SD card or USB drive instead of internal storage.
+4. **Installation Summary**: check it and tap install.
 
-You can check the system status at any time:
+The app validates the archive, extracts it and applies a set of fixes that every container needs on Android, such as the network groups Android requires for socket access and a journald configuration that does not fill the phone with kernel logs. Installing takes one to a few minutes depending on the distribution.
 
-1. Go to **Settings** (gear icon) -> **Requirements**.
-2. Tap **Check Requirements**. This runs the full `droidspaces check` suite internally.
-3. **Kernel config**: for kernel developers, the same screen has a copyable `droidspaces.config` defconfig fragment, like the one on [this page](./Kernel-Configuration.md#step-1-mandatory-configuration), to check that your kernel is compatible with Droidspaces.
+## Step 3: Start it and get a shell
 
-## Next steps
+1. On the **Containers** tab, tap **Start** on the new container. A log window opens and shows the boot as it happens. Close it once the boot is done, and the card shows "RUNNING" and the container's PID.
+2. Open the **Panel** tab. Running containers appear here with their uptime, IP address, CPU and RAM.
+3. Tap **Terminal** on the card, pick a user, and you are in.
 
-- [Android App Usage Guide](Usage-Android-App.md) for managing containers.
-- [Display, Audio & Desktop Guide](Graphics-and-Audio.md) to enable GPU acceleration, sound, and desktop environment auto-boot.
-- [Linux CLI Guide](Linux-CLI.md) for command-line access.
+The terminal keeps running in the background when you leave the screen, so you can come back to the same session later.
+
+If you prefer Termux or another terminal app, tap the container's card on the **Panel** tab to open its details, pick a user under **Available Users** and tap **Copy login**. Paste the command into a root shell.
+
+## Checking requirements later
+
+**Settings** has a **Requirements** page. **Check Requirements** runs every probe the backend has and tells you which kernel options are missing, which is the first thing to look at when a feature is greyed out in a container's settings.
+
+---
+
+Next: [Linux installation](Installation-Linux.md)
+
+On Android you can skip ahead. Read these next: [Android app guide](Usage-Android-App.md), [Container settings](Features.md) and [Display, audio and desktop](Graphics-and-Audio.md).

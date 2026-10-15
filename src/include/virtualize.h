@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - Resource Visibility Virtualization
+ * Droidspaces v7 - Resource Visibility Virtualization
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later

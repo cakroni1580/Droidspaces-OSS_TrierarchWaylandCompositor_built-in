@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Empeza</string>
-    <string name="root_check_title">Chequeo de Acceso Root</string>
     <string name="checking_root">Ta chequea el acceso root…</string>
-    <string name="root_granted">Ya Dale Acceso Root</string>
     <string name="root_denied">Ya Nega el Acceso Root</string>
     <string name="root_required_message">Necesita acceso root para maneja el maga container.</string>
     <string name="check_root_access">Chequea el Acceso Root</string>
-    <string name="check_root_access_click">Hace click abajo para chequea el acceso root</string>
-    <string name="root_available_message">Puede ya tu usa el Droidspaces</string>
     <string name="skip">Salta</string>
     <string name="continue_button">Continua</string>
     <string name="home_title">Home</string>
@@ -123,7 +119,6 @@
     <string name="container_name_exists">Tiene ya container con este nombre</string>
     <string name="next_configuration">Siguiente: Configuracion</string>
     <string name="configuration_title">Configuracion</string>
-    <string name="container_options">Maga Opcion del Container</string>
     <string name="next_storage">Siguiente: Storage</string>
     <string name="installation_complete">Completo el Instalacion</string>
     <string name="installation_failed">Fallo el Instalacion</string>

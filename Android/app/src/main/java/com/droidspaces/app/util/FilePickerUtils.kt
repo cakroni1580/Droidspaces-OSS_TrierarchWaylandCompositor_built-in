@@ -4,7 +4,9 @@ import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.system.Os
 import android.util.Log
+import com.topjohnwu.superuser.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -87,6 +89,28 @@ object FilePickerUtils {
             Log.e(TAG, "Error getting filename from URI: $uri", e)
             null
         }
+    }
+
+    /**
+     * The file a provider actually opened for [uri], as a path the root shell can read
+     * or write in place, so a multi-GB tarball never has to be staged in cacheDir.
+     * Parsing document IDs is a guess per provider, the kernel already knows the answer.
+     *
+     * Null when the provider hands out a pipe (Drive and other cloud providers) or root
+     * sees a different file at that path. Callers keep their copy for those.
+     */
+    suspend fun realPath(context: Context, uri: Uri, mode: String = "r"): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openFileDescriptor(uri, mode)?.use { pfd ->
+                val path = Os.readlink("/proc/self/fd/${pfd.fd}")
+                val st = Os.fstat(pfd.fileDescriptor)
+                // Checked from root's side, root is the one that opens it later.
+                val seen = Shell.cmd(
+                    "${Constants.BUSYBOX_BINARY_PATH} stat -c '%d %i' ${ContainerCommandBuilder.quote(path)}"
+                ).exec().out.singleOrNull()
+                path.takeIf { it.startsWith("/") && seen == "${st.st_dev} ${st.st_ino}" }
+            }
+        }.onFailure { Log.w(TAG, "No direct path for $uri", it) }.getOrNull()
     }
 
     /**

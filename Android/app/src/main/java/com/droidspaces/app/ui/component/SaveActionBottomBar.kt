@@ -11,7 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import com.droidspaces.app.ui.util.LoadingIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 
 /**
  * The save bar used by the edit and auto boot screens: one button that reads
@@ -21,6 +22,7 @@ import com.droidspaces.app.ui.util.LoadingIndicator
  * [canSave] gates the click. The saved and saving states are not clickable
  * either, so the caller only has to say which state it is in.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SaveActionBottomBar(
     isSaved: Boolean,

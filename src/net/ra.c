@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * IPv6 Router Advertisements for NAT containers (RFC 4861).
  *

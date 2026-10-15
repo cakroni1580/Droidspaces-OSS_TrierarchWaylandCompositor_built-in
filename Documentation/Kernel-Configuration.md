@@ -1,51 +1,26 @@
 <!--
 title: Kernel configuration
 section: Guides
-order: 3
-desc: How to compile an Android kernel with Droidspaces support: the config options and patches for non-GKI and GKI kernels.
-keywords: kernel, configuration, droidspaces, android, compile, gki, nongki, patches, compatibility
+order: 6
+desc: How to build an Android kernel with Droidspaces support: the config options and patches for non-GKI and GKI kernels, and how to check the result.
+keywords: kernel, configuration, droidspaces, android, compile, gki, nongki, patches, compatibility, kabi
 -->
 
-# Kernel configuration guide
+# Kernel configuration
 
-This guide explains how to compile a Linux kernel with Droidspaces support for an Android device.
+Droidspaces needs kernel features that most stock Android kernels leave out: PID and IPC namespaces, a few networking pieces and devtmpfs. This page is the list of options and patches for building a kernel that has them. The oldest supported kernel is 3.10.
 
-> [!TIP]
->
-> **New to kernel compilation?** Start with the tutorial at:
-> https://github.com/ravindu644/Android-Kernel-Tutorials
+If you have never built an Android kernel, start with the [Android kernel tutorials](https://github.com/ravindu644/Android-Kernel-Tutorials), and check the [community-supported devices](community-supported-devices.md) page first: someone may have built a kernel for your phone already.
 
----
+The steps differ between non-GKI kernels, 4.19 and older, and GKI kernels, 5.4 and newer.
 
-### Quick navigation
+## Non-GKI kernels (3.18 to 4.19)
 
-- [Overview](#overview)
-- [Configuring non-GKI kernels](#non-gki)
-- [Configuring GKI kernels](#gki)
-- [Testing your kernel](#testing)
-- [Recommended kernel versions](#versions)
-- [Nested containers](#nested)
-- [Additional resources](#resources)
+These kernels take the options as they are, with no ABI to protect. Four steps.
 
----
+### Step 1: The required options
 
-<a id="overview"></a>
-## Overview
-
-Droidspaces needs specific kernel options to run isolated containers. They enable Linux namespaces, cgroups, seccomp filtering, networking and device filesystem support.
-
----
-
-<a id="non-gki"></a>
-## Configuring non-GKI kernels (legacy kernels)
-
-**Applies to:** kernel 3.18, 4.4, 4.9, 4.14, 4.19
-
-Non-GKI kernels are the easiest to configure. There are four steps.
-
-### Step 1: Mandatory configuration
-
-Put these options in your device defconfig, or use them as a configuration fragment.
+Add these to your device's defconfig, or keep them as a fragment and merge it at build time:
 
 ```makefile
 # Kernel configurations for full DroidSpaces support
@@ -137,6 +112,10 @@ CONFIG_IP6_NF_TARGET_MASQUERADE=y
 CONFIG_NF_CONNTRACK_IPV6=y
 CONFIG_NF_NAT_IPV6=y
 
+# Macvlan mode (--net=macvlan): a container straight on a wired LAN.
+# Optional: without it, macvlan mode is unavailable
+CONFIG_MACVLAN=y
+
 # Disable this on older kernels to make internet work
 CONFIG_ANDROID_PARANOID_NETWORK=n
 
@@ -144,13 +123,9 @@ CONFIG_ANDROID_PARANOID_NETWORK=n
 CONFIG_USER_NS=y
 ```
 
-### Step 2: Firewall support (UFW/Fail2ban) - optional
+### Step 2: Firewall support, optional
 
-> [!TIP]
->
-> You only need these options to run UFW or Fail2ban inside the container.
->
-> **Use NAT mode** when you run them, so they do not conflict with the host's networking.
+Only needed to run UFW or Fail2Ban inside a container, as in the [home server recipe](Cool-things-you-can-do.md#a-phone-as-a-home-server-reachable-from-anywhere):
 
 ```makefile
 # UFW & FAIL2BAN CORE
@@ -179,74 +154,43 @@ CONFIG_NETFILTER_NETLINK_LOG=y
 CONFIG_NETFILTER_XT_TARGET_NFLOG=y
 ```
 
-### Step 3: Apply patches
+### Step 3: Patches
 
-Apply every patch in the [Documentation/resources/kernel-patches/non-GKI](./resources/kernel-patches/non-GKI/) directory with:
+Apply every patch under [Documentation/resources/kernel-patches/non-GKI](./resources/kernel-patches/non-GKI/):
 
 ```bash
-patch -p1 < /path/to/extracted/patchfile.patch
+patch -p1 < /path/to/patchfile.patch
 ```
 
-### Step 4: Build, flash and test
+### Step 4: Build, flash, check
 
-1. Save the configuration blocks above as `.config` fragments, or merge them into your defconfig.
-2. Compile the kernel and flash it to your device.
-3. Verify it in the Droidspaces app under **Settings -> Requirements -> Check Requirements**.
+Build and flash as usual for your device, then open the Droidspaces app and run **Settings**, **Requirements**, **Check Requirements**. Everything under "must have" and "recommended" should pass.
 
----
+## GKI kernels (5.4 and newer)
 
-<a id="gki"></a>
-## Configuring GKI kernels
+Google's Generic Kernel Image keeps a fixed kernel ABI so that vendor modules built against the stock kernel keep loading. Several options Droidspaces needs, `CONFIG_SYSVIPC`, `CONFIG_IPC_NS` and `CONFIG_POSIX_MQUEUE`, add fields to core structures and shift the ABI. Turned on as they are, the phone bootloops when the vendor's modules refuse to load. The patches below move those fields into padding the ABI already reserves, so the options can go on without changing any offset.
 
-**Applies to:** kernel 5.4, 5.10, 5.15, 6.1, 6.6, 6.12+
-
-Google's Generic Kernel Image (GKI) enforces strict **kABI (Kernel Application Binary Interface)** compliance. Options Droidspaces needs, such as `CONFIG_SYSVIPC` or `CONFIG_IPC_NS`, would normally shift memory offsets in the core `task_struct`. Pre-compiled vendor modules (GPU, camera and so on) then crash, or the device bootloops.
-
-Droidspaces provides **kABI-friendly patches** that let you enable these options without shifting any offsets.
-
-### Step 1: Apply the mandatory kABI patches
+### Step 1: The kABI patches
 
 > [!IMPORTANT]
 >
-> **These patches are not optional.** You **must** apply the kABI fix patches that match your kernel version. Without them, the device bootloops as soon as you enable `CONFIG_SYSVIPC`, `CONFIG_IPC_NS` or `CONFIG_POSIX_MQUEUE`.
+> These are not optional. Without the patch for your kernel version, enabling the IPC options bootloops the device.
 
-**For all kernels below 6.12 (5.4, 5.10, 5.15, 6.1, 6.6):**
-
-- Apply the `SYSVIPC` kABI fix from [Documentation/resources/kernel-patches/GKI/below-kernel-6.12/](./resources/kernel-patches/GKI/below-kernel-6.12/).
-
-> [!TIP]
->
-> Start with [`001.GKI-below-6.12-fix_sysvipc_kABI_6_7_8.patch`](./resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch).
->
-> If it bootloops, try the alternative patches in the same folder (for example `1_2_3` or `3_4_5`).
-
-**For kernels 5.10 and below only:**
-
-- You **must also** apply the `POSIX_MQUEUE` kABI fix:
-  [Documentation/resources/kernel-patches/GKI/below-kernel-6.12/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch](./resources/kernel-patches/GKI/below-kernel-6.12/002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch)
-
-**For kernels 6.12 and above:**
-
-- Apply [Documentation/resources/kernel-patches/GKI/kernel-6.12/001.GKI-6.12-or-above-fix_sysvipc_kabi.patch](./resources/kernel-patches/GKI/kernel-6.12/001.GKI-6.12-or-above-fix_sysvipc_kabi.patch).
-
-**To apply the patches:**
+- **5.4 to 6.6:** apply the SYSVIPC patch from [kernel-patches/GKI/below-kernel-6.12](./resources/kernel-patches/GKI/below-kernel-6.12/). Start with `001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch`; if the device bootloops, try the alternatives in the same folder, which use different padding slots.
+- **5.10 and older:** also apply `002.5.10_or_lower_use_android_abi_padding_for_posix_mqueue.patch` from the same folder.
+- **6.12 and newer:** apply the patch in [kernel-patches/GKI/kernel-6.12](./resources/kernel-patches/GKI/kernel-6.12/).
 
 ```bash
-# Apply each required patch for your kernel version
-patch -p1 < /path/to/extracted/patchfile.patch
+patch -p1 < /path/to/patchfile.patch
 ```
 
-### Step 2: Edit `gki_defconfig`
+### Step 2: Edit the GKI defconfig
 
-Do not use separate fragment files here. Edit `arch/arm64/configs/gki_defconfig` directly and apply this **GKI-only configuration**.
-
-These options are tested on all GKI kernels and do not break the ABI.
+Edit `arch/arm64/configs/gki_defconfig` in place rather than adding a fragment. For each option below, find it in the file: change `# CONFIG_X is not set` to `CONFIG_X=y`, leave it alone if it is already on, and add it at the end if it is absent.
 
 > [!WARNING]
 >
-> **Do not** enable anything beyond the GKI configuration below. These specific options are kABI-safe only in combination with the Step 1 patch.
->
-> The **Resource limits** group at the end is the exception: `CONFIG_CFS_BANDWIDTH` and `CONFIG_CGROUP_PIDS` **break the kABI**, and no patch here covers them. See [CPU and process limits on GKI](#gki-resource-limits) before you touch them. Memory limits need nothing extra, `CONFIG_MEMCG` is already on in GKI.
+> These options are ABI-safe together with the Step 1 patches. Do not turn on anything beyond them. The two resource limit options at the end are commented out on purpose; see [CPU and process limits on GKI](#cpu-and-process-limits-on-gki) before touching them.
 
 ```makefile
 # Kernel configurations for full DroidSpaces support for GKI
@@ -275,6 +219,10 @@ CONFIG_USER_NS=y
 CONFIG_IP6_NF_NAT=y
 CONFIG_IP6_NF_TARGET_MASQUERADE=y
 
+# Macvlan mode (--net=macvlan). kABI-safe: on a 5.15 GKI tree it changed none
+# of the 8423 exported symbols, and the driver is self-contained
+CONFIG_MACVLAN=y
+
 # UFW support
 CONFIG_NETFILTER_XT_TARGET_REJECT=y
 CONFIG_NETFILTER_XT_TARGET_LOG=y
@@ -302,134 +250,53 @@ CONFIG_TMPFS_XATTR=y
 # CONFIG_CGROUP_PIDS=y
 ```
 
-**How to edit the file:**
+### Step 3: Build, flash, check
 
-- **Do not** paste this as a block at the end of the file.
-- Search for each option on its own.
-- If an option appears as `# CONFIG_NAME is not set`, change it to `CONFIG_NAME=y`.
-- If an option is already `CONFIG_NAME=y`, leave it alone.
-- If an option does not exist, add it at the end.
+Build with Bazel, the AOSP build scripts or plain `make`, whichever your tree uses, and flash the result. Your stock vendor modules keep working because the ABI did not move. Then open the Droidspaces app and run **Settings**, **Requirements**, **Check Requirements**.
 
-### Step 3: Compile
-
-Use whichever build method you prefer: Bazel, the official AOSP `build.sh`/`prepare_vendor.sh` scripts, or traditional `Kbuild` with `make`.
-
-### Step 4: Flash and test
-
-Flash the compiled `boot.img` or `Image` with Odin, fastboot, Heimdall, Anykernel3 or whatever your device uses. The patches are kABI-safe, so your stock vendor modules keep working.
-
-After booting, open the Droidspaces app and go to **Settings** (gear icon) -> **Requirements** -> **Check Requirements** to verify the setup.
-
-<a id="gki-resource-limits"></a>
 ### CPU and process limits on GKI
 
-`CONFIG_CFS_BANDWIDTH` (for `--cpus`) and `CONFIG_CGROUP_PIDS` (for `--pids-limit`) are commented out in the configuration above on purpose.
+`CONFIG_CFS_BANDWIDTH`, which `--cpus` needs, and `CONFIG_CGROUP_PIDS`, which `--pids-limit` needs, change the size of scheduler and cgroup structures that almost every exported kernel function refers to. On a 5.15 GKI tree they changed the checksum of about four thousand exported symbols, and no padding trick covers that. Stock vendor modules then refuse to load and the device bootloops.
 
-Both change the size of scheduler and cgroup structures that almost every exported kernel function refers to. Measured on a 5.15 GKI tree, enabling the two changed the CRC of 4101 exported symbols. Stock vendor modules were built against the old CRCs, so they refuse to load ("disagrees about version of symbol"), and without its display, storage and Wi-Fi drivers the device bootloops. Unlike `CONFIG_SYSVIPC`, the new fields do not fit in the reserved kABI padding, so there is no patch for this.
+Turn them on only if you can rebuild every kernel module on the device from the same source tree and configuration, and flash them in `vendor_boot`, `vendor_dlkm` and `system_dlkm` together with the new `boot.img`, all at once. If any module is a prebuilt with no source, you cannot. Do not disable `CONFIG_MODVERSIONS` or force-load modules to get past the check; the structures really did change.
 
-> [!CAUTION]
->
-> Only enable these two options if you can do **all** of the following:
->
-> 1. Rebuild **every** kernel module from the same source tree and configuration as the kernel.
-> 2. Flash the rebuilt modules in `vendor_boot`, `vendor_dlkm` and `system_dlkm` **together with** the new kernel in `boot.img`, all at once. One stale partition is enough for a bootloop.
->
-> If any module on your device is prebuilt and has no source, you cannot enable them.
->
-> Do not turn off `CONFIG_MODVERSIONS` or force-load modules to get past the check. The structures really did change, and a stock module would read the wrong offsets.
+Without these two options everything else works. `--cpus` and `--pids-limit` are skipped with a warning and the app greys out the two toggles. Memory limits need only `CONFIG_MEMCG`, which GKI already has.
 
-Without these options Droidspaces still works: `--cpus` and `--pids-limit` are skipped with a warning, and the app greys out the two toggles.
+## What the check looks for
 
----
+`droidspaces check`, and the app's Requirements screen, probe the running kernel rather than its config. What each probe needs, and what you lose without it:
 
-<a id="testing"></a>
-## Testing your kernel
+| Probe | Option | Without it |
+|-------|--------|------------|
+| PID, mount, UTS and IPC namespaces | `CONFIG_NAMESPACES`, `CONFIG_PID_NS`, `CONFIG_UTS_NS`, `CONFIG_IPC_NS` | Containers cannot start. |
+| pivot_root, procfs, sysfs | always present | Containers cannot start. |
+| Seccomp | `CONFIG_SECCOMP`, `CONFIG_SECCOMP_FILTER` | Containers cannot start. |
+| devtmpfs | `CONFIG_DEVTMPFS` | Hardware access is unavailable. |
+| Cgroup namespace, cgroup v2 | `CONFIG_CGROUPS`, cgroup v2 | systemd containers misbehave. |
+| Loop device, ext4 | `CONFIG_BLK_DEV_LOOP`, `CONFIG_EXT4_FS` | Sparse image containers cannot mount. |
+| PTY, devpts, epoll, signalfd | always present on Android | Interactive sessions fail. |
+| Network namespace, veth, bridge | `CONFIG_NET_NS`, `CONFIG_VETH`, `CONFIG_BRIDGE` | Only host mode works. Without the bridge alone, NAT uses a direct veth. |
+| IPv6 NAT | `CONFIG_IP6_NF_NAT`, `CONFIG_IP6_NF_TARGET_MASQUERADE` | NAT containers are IPv4 only. |
+| Macvlan | `CONFIG_MACVLAN` | Macvlan mode is unavailable. |
+| OverlayFS | `CONFIG_OVERLAY_FS` | Volatile mode is unavailable. |
+| FUSE, TUN | `CONFIG_FUSE_FS`, `CONFIG_TUN` | FUSE filesystems and VPNs inside the container do not work. |
+| User namespaces | `CONFIG_USER_NS` | Allow Sandboxing is unavailable. |
+| Memory, CPU and process limits | `CONFIG_MEMCG`, `CONFIG_CFS_BANDWIDTH`, `CONFIG_CGROUP_PIDS`, and no `cgroup_disable=` for them on the kernel command line | That limit is skipped. |
+| CPU usage accounting | `CONFIG_CGROUP_CPUACCT` on kernels before 4.15 | `info` shows no CPU usage. |
 
-### 1. Run the requirements check
+## Which kernel version to aim for
 
-- **In the app**: go to **Settings** (gear icon) -> **Requirements** -> **Check Requirements**.
-- **In a terminal**: run:
+| Version | What to expect |
+|---------|----------------|
+| 3.10 to 3.18 | The floor. Namespaces work, but systemd distributions might be unstable. Alpine, Artix or Gentoo with OpenRC is the safe choice. |
+| 4.4 to 4.19 | Solid. Any distribution whose systemd is older than 258, and Docker inside containers. |
+| 5.4 to 5.10 | Everything, including cgroup v2 and current distributions. |
+| 5.15 and newer | Everything, with the best performance. |
 
-```bash
-su -c droidspaces check
-```
+## Where to ask
 
-It checks for:
-
-- Root access
-- Kernel version (minimum 3.18)
-- PID, MNT, UTS, IPC namespaces
-- Network namespace (optional, required for NAT/None modes)
-- Cgroup namespace (optional, for modern cgroup isolation)
-- devtmpfs support
-- OverlayFS support (optional, for volatile mode)
-- VETH and Bridge support (optional, for NAT mode)
-- IPv6 NAT support (optional, for IPv6 in NAT mode)
-- Memory, CPU and process limit support (optional, for `--memory`, `--cpus` and `--pids-limit`)
-- PTY/devpts support
-- Loop device support
-- ext4 support
-
-### 2. Understanding the results
-
-| Result | Meaning |
-|--------|---------|
-| Green checkmark | Feature is available |
-| Yellow warning | Feature is optional and not available (e.g., OverlayFS) |
-| Red cross | Required feature is missing; containers may not work |
-
-### 3. What to do if something is missing
-
-| Missing Feature | Required Config | Impact if Missing |
-|----------------|----------------|-------------------|
-| PID namespace | `CONFIG_PID_NS=y` | **Fatal.** Containers cannot start. |
-| MNT namespace | `CONFIG_NAMESPACES=y` | **Fatal.** Containers cannot start. |
-| UTS namespace | `CONFIG_UTS_NS=y` | **Fatal.** Containers cannot start. |
-| IPC namespace | `CONFIG_IPC_NS=y` | **Fatal.** Containers cannot start. |
-| Cgroup device | `CONFIG_CGROUP_DEVICE=y` | **Fatal.** Containers cannot start. |
-| devtmpfs | `CONFIG_DEVTMPFS=y` | **Fatal.** Droidspaces cannot set up `/dev`. |
-| OverlayFS | `CONFIG_OVERLAY_FS` | Volatile mode unavailable. |
-| Network namespace | `CONFIG_NET_NS=y` | NAT and None modes unavailable. |
-| VETH / Bridge | `CONFIG_VETH` / `CONFIG_BRIDGE` | NAT mode unavailable. |
-| IPv6 NAT | `CONFIG_IP6_NF_NAT` / `CONFIG_IP6_NF_TARGET_MASQUERADE` | NAT containers are IPv4 only. |
-| Seccomp | `CONFIG_SECCOMP=y` | Seccomp shield disabled. Security risk. |
-| Memory limit | `CONFIG_MEMCG=y`, and no `cgroup_disable=memory` on the kernel command line | `--memory` is skipped. |
-| CPU limit | `CONFIG_CFS_BANDWIDTH=y`, and no `cgroup_disable=cpu` on the kernel command line | `--cpus` is skipped. |
-| Process limit | `CONFIG_CGROUP_PIDS=y`, and no `cgroup_disable=pids` on the kernel command line | `--pids-limit` is skipped. |
-| CPU usage accounting | `CONFIG_CGROUP_CPUACCT=y` (kernels before 4.15) | `info` shows no CPU usage, and a CPU-limited container sees the host's figures in `/proc/stat`. |
+Kernel questions get answered in the [Telegram channel](https://t.me/Droidspaces). The kernel's own option reference is the [kernel documentation](https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html).
 
 ---
 
-<a id="versions"></a>
-## Recommended kernel versions
-
-| Version | Support | Notes |
-|---------|---------|-------|
-| 3.18 | Legacy | Minimum supported version. Basic namespace support only. Modern distros are unstable or may not boot at all. |
-| 4.4 - 4.19 | Stable | Full support. Nested containers (Docker/Podman) work natively. |
-| 5.4 - 5.10 | Recommended | Full feature support including nested containers and modern cgroup v2. |
-| 5.15+ | Ideal | All features, best performance, and the widest compatibility. |
-
----
-
-<a id="nested"></a>
-## Nested containers (Docker, Podman, LXC)
-
-Docker, Podman and LXC run inside a Droidspaces container without extra setup on every supported kernel version.
-
-### Legacy kernel considerations (4.19 and below)
-
-Modern nested container tools can run into two problems on legacy kernels:
-
-- **Networking incompatibilities**: modern Docker, LXC and Podman rely on `nftables`, and legacy kernels often lack full `nftables` support. Work around it by running Droidspaces in NAT mode and switching the container's iptables alternatives to `iptables-legacy` and `ip6tables-legacy`.
-
-- **BPF conflicts**: modern Docker and runc use `BPF_CGROUP_DEVICE` for device management. Legacy kernels do not support the BPF attach types it needs, which shows up as `Invalid argument` errors. Work around it by configuring Docker to use the `cgroupfs` driver and the `vfs` storage driver.
-
----
-
-<a id="resources"></a>
-## Additional resources
-
-- [Android Kernel Tutorials](https://github.com/ravindu644/Android-Kernel-Tutorials) by ravindu644
-- [Kernel Configuration Reference](https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html)
-- [Droidspaces Telegram Channel](https://t.me/Droidspaces) for kernel-specific support
+Previous: [Anland](Anland.md) | Next: [Recipes](Cool-things-you-can-do.md)

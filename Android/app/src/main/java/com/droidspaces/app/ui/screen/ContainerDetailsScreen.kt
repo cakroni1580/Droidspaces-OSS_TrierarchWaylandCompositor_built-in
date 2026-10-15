@@ -25,10 +25,10 @@ import com.droidspaces.app.ui.component.ContainerUsersCard
 import com.droidspaces.app.ui.component.DsSnackbarHost
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ContainerOSInfoManager
-import com.droidspaces.app.util.ContainerSystemdManager
-import com.droidspaces.app.util.ContainerProcdManager
-import com.droidspaces.app.util.ContainerOpenRCManager
 import com.droidspaces.app.util.ContainerDiskUsageManager
+import com.droidspaces.app.util.ContainerUsersManager
+import com.droidspaces.app.util.AnlandUtils
+import com.droidspaces.app.ui.util.showError
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.droidspaces.app.util.AnimationUtils
@@ -38,7 +38,7 @@ import com.droidspaces.app.ui.util.LoadingSize
 import androidx.compose.ui.platform.LocalContext
 import com.droidspaces.app.R
 import com.droidspaces.app.service.TerminalSessionService
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -65,7 +65,7 @@ fun ContainerDetailsScreen(
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var refreshTrigger by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
 
     // Pre-load cached OS info for instant display - zero delay
     // Uses persistent cache that survives app restarts
@@ -84,16 +84,17 @@ fun ContainerDetailsScreen(
         )
     }
 
+    // Seeded from the cache; null keeps the users card on its loader until the probe answers
+    var users by remember { mutableStateOf(ContainerUsersManager.getCachedUsers(container.name)) }
+
     LaunchedEffect(container.name) {
-        initSystemState = when {
-            ContainerSystemdManager.isSystemdAvailable(container.name) ->
-                InitSystemCardState.Available(InitSystem.SYSTEMD)
-            ContainerProcdManager.isProcdAvailable(container.name) ->
-                InitSystemCardState.Available(InitSystem.PROCD)
-            ContainerOpenRCManager.isOpenRCAvailable(container.name) ->
-                InitSystemCardState.Available(InitSystem.OPENRC)
-            else ->
-                InitSystemCardState.NotAvailable
+        val probe = ContainerUsersManager.probe(container.name)
+        users = probe?.second ?: users ?: emptyList()
+        initSystemState = when (probe?.first) {
+            "systemd" -> InitSystemCardState.Available(InitSystem.SYSTEMD)
+            "procd" -> InitSystemCardState.Available(InitSystem.PROCD)
+            "openrc" -> InitSystemCardState.Available(InitSystem.OPENRC)
+            else -> InitSystemCardState.NotAvailable
         }
     }
 
@@ -124,9 +125,6 @@ fun ContainerDetailsScreen(
                     if (currentInfo == null || hasOSInfoChanged(currentInfo, newOSInfo)) {
                         osInfo = newOSInfo
                     }
-
-                    // Refresh users on the first run, then leave it to manual/specific refreshes
-                    if (refreshTrigger == 0) refreshTrigger++
                 } catch (e: Exception) {
                     // Silently ignore refresh errors to keep the UI smooth
                 }
@@ -241,11 +239,11 @@ fun ContainerDetailsScreen(
                 }
             }
 
-            // Users Card - Stable key (don't include refreshTrigger to prevent recreation)
             item(key = "users_${container.name}") {
                 ContainerUsersCard(
                     containerName = container.name,
-                    refreshTrigger = refreshTrigger,
+                    users = users,
+                    onRefresh = { users = ContainerUsersManager.getUsers(container.name, useCache = false) },
                     snackbarHostState = snackbarHostState
                 )
             }
@@ -255,6 +253,17 @@ fun ContainerDetailsScreen(
                     containerName = container.name,
                     onOpenTerminal = onNavigateToTerminal
                 )
+            }
+
+            osInfo?.anlandSocket?.let { socketPath ->
+                item(key = "anland_${container.name}") {
+                    AnlandCard(
+                        onLaunch = {
+                            if (!AnlandUtils.launchWindow(context, container.name, socketPath))
+                                scope.showError(snackbarHostState, context.getString(R.string.anland_not_installed))
+                        }
+                    )
+                }
             }
 
             item(key = "systemd_${container.name}") {
@@ -293,6 +302,7 @@ private fun hasOSInfoChanged(old: ContainerOSInfoManager.OSInfo, new: ContainerO
            old.id != new.id ||
            old.hostname != new.hostname ||
            old.ipAddress != new.ipAddress ||
+           old.anlandSocket != new.anlandSocket ||
            old.uptime != new.uptime ||
            old.cpuUsage != new.cpuUsage ||
            old.ramUsedKb != new.ramUsedKb ||
@@ -401,10 +411,12 @@ private fun TerminalCard(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
     ) {
+      Column(
+          modifier = Modifier.fillMaxWidth().padding(20.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+      ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -461,6 +473,7 @@ private fun TerminalCard(
                 )
             }
         }
+      }
     }
 }
 
@@ -699,6 +712,85 @@ private fun PremiumInitSystemCard(
     }
 }
 
+
+/**
+ * Opens the container's Wayland desktop in the Anland app. Listed once the
+ * heartbeat reports the broker's socket, which only a container booted with
+ * Anland Display has. The saved config is not consulted: editing it while
+ * the container runs changes nothing until a restart.
+ */
+@Composable
+private fun AnlandCard(
+    onLaunch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = AnimationUtils.cardFadeSpec(),
+        label = "anland_card_fade"
+    )
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 88.dp)
+            .alpha(alpha)
+            .graphicsLayer { this.alpha = alpha },
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DesktopWindows,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Column {
+                    Text(
+                        text = context.getString(R.string.anland_option),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = context.getString(R.string.enable_anland_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+            }
+
+            Button(
+                onClick = onLaunch,
+                modifier = Modifier.widthIn(min = 140.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(context.getString(R.string.launch_anland_window), fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
 
 /**
  * Dynamic Height Synced Grid - measures all items and applies max height to all.

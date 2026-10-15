@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - private socketd backend wire protocol
+ * Droidspaces v7 - private socketd backend wire protocol
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * This header is deliberately C/C++ compatible.  The existing Droidspaces

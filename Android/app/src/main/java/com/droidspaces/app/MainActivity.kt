@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +19,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import com.droidspaces.app.ui.util.rememberClearFocus
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import com.droidspaces.app.ui.navigation.DroidspacesNavigation
@@ -72,8 +75,16 @@ class MainActivity : AppCompatActivity() {
                     )
                     LaunchedEffect(Unit) { requestNotifications {} }
                 }
+                // A tap that no screen content consumes drops the focused text field
+                // and the keyboard with it, on every screen, so no screen has to wrap
+                // itself. Dialogs and sheets are their own windows and do the same
+                // themselves. A gesture detector rather than clickable keeps TalkBack
+                // from announcing the whole app as a button.
+                val clearFocus = rememberClearFocus()
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) { detectTapGestures { clearFocus() } },
                     color = MaterialTheme.colorScheme.background
                 ) {
                     DroidspacesNavigation(

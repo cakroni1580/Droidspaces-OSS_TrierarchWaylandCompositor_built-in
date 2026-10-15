@@ -115,7 +115,7 @@ fun OverrideEditorScreen(
                             Icon(Icons.Default.Save, context.getString(R.string.save_override))
                         }
                     },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
             },
             snackbarHost = { DsSnackbarHost(snackbarHostState) },

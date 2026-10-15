@@ -26,11 +26,16 @@ data class HostCapabilities(
 
     private val natSupported get() = has("net_ns") && has("veth")
 
-    /** NAT needs a network namespace and veth, gateway additionally a bridge. */
+    /**
+     * NAT needs a network namespace and veth, gateway additionally a bridge.
+     * Macvlan must be reported outright: a backend too old to know the key
+     * would read net_mode=macvlan as unknown and fall back to NAT.
+     */
     fun supportedNetModes(): List<String> = ALL_NET_MODES.filter {
         when (it) {
             "nat" -> natSupported
             "gateway" -> natSupported && has("bridge")
+            "macvlan" -> has("net_ns") && flags["macvlan"] == true
             else -> true
         }
     }
@@ -42,19 +47,26 @@ data class HostCapabilities(
      */
     fun coerce(s: ContainerConfigState): ContainerConfigState {
         val mode = if (s.netMode in supportedNetModes()) s.netMode else "host"
+        val hwAccess = s.enableHwAccess && has("devtmpfs")
+        // Anland needs the GPU nodes and takes the display path Termux:X11 would use.
+        val anland = s.enableAnland && has("anland") && (hwAccess || s.enableGpuMode)
         return s.copy(
             netMode = mode,
-            enableHwAccess = s.enableHwAccess && has("devtmpfs"),
+            enableHwAccess = hwAccess,
             volatileMode = s.volatileMode && has("overlayfs"),
             allowSandboxing = s.allowSandboxing && has("user_ns"),
             forceCgroupv1 = s.forceCgroupv1 && has("cgroup2"),
+            enableAnland = anland,
+            enableTermuxX11 = s.enableTermuxX11 && !anland && has("termux") && has("termux_x11"),
+            enableVirgl = s.enableVirgl && has("termux"),
+            enablePulseaudio = s.enablePulseaudio && has("termux"),
             disableIPv6 = s.disableIPv6 || (mode == "nat" && !has("ipv6_nat"))
         )
     }
 
     companion object {
         private const val TAG = "HostCapabilities"
-        val ALL_NET_MODES = listOf("nat", "host", "none", "gateway")
+        val ALL_NET_MODES = listOf("nat", "host", "none", "gateway", "macvlan")
 
         private val _state = MutableStateFlow<HostCapabilities?>(null)
 
@@ -74,10 +86,30 @@ data class HostCapabilities(
         /** The app read is free; the root shell is the fallback for a policy that denies it. */
         private fun bootId(): String = appBootId().ifEmpty { rootBootId() }
 
-        private fun parse(json: String): HostCapabilities? = try {
+        /**
+         * The backend never knows about these two apps, so the app folds them into the
+         * same flag map and the form, [coerce] and the installer gate on them like any
+         * kernel feature. Never cached: a store install must show up on the next look.
+         */
+        private fun appFlags(context: Context) = mapOf(
+            "termux" to installed(context, "com.termux"),
+            "termux_x11" to installed(context, "com.termux.x11"),
+            "anland" to installed(context, "com.anland.consumer")
+        )
+
+        private fun installed(context: Context, pkg: String) =
+            try { context.packageManager.getPackageInfo(pkg, 0); true } catch (e: Exception) { false }
+
+        /** Re-reads only the app flags. For a screen that resumes after the user visited the store. */
+        fun refreshApps(context: Context) {
+            _state.value = _state.value?.let { it.copy(flags = it.flags + appFlags(context)) }
+        }
+
+        private fun parse(context: Context, json: String): HostCapabilities? = try {
             val obj = JSONObject(json)
             val flags = buildMap {
                 for (key in obj.keys()) (obj.opt(key) as? Number)?.let { put(key, it.toInt() != 0) }
+                putAll(appFlags(context))
             }
             HostCapabilities(flags, obj.optInt("requirements_met", 1) != 0, obj.optString("version"))
         } catch (e: Exception) {
@@ -94,7 +126,7 @@ data class HostCapabilities(
             val prefs = PreferencesManager.getInstance(context)
             val boot = appBootId()
             if (boot.isEmpty() || prefs.cachedHostCapabilitiesBootId != boot) return
-            prefs.cachedHostCapabilities?.let(::parse)?.let { _state.value = it }
+            prefs.cachedHostCapabilities?.let { parse(context, it) }?.let { _state.value = it }
         }
 
         /**
@@ -106,7 +138,7 @@ data class HostCapabilities(
             val prefs = PreferencesManager.getInstance(context)
             val boot = bootId()
             val sameBoot = boot.isNotEmpty() && boot == prefs.cachedHostCapabilitiesBootId
-            val cached = if (sameBoot) prefs.cachedHostCapabilities?.let(::parse) else null
+            val cached = if (sameBoot) prefs.cachedHostCapabilities?.let { parse(context, it) } else null
             val installed = SystemInfoManager.getCachedDroidspacesVersion(context)?.removePrefix("v")
             if (cached != null && (installed == null || installed == cached.backendVersion)) {
                 if (_state.value == null) _state.value = cached
@@ -121,7 +153,7 @@ data class HostCapabilities(
                 val result = Shell.cmd(ContainerCommandBuilder.buildCheckCommand()).exec()
                 if (!result.isSuccess) return@withContext
                 val json = result.out.joinToString("")
-                val caps = parse(json) ?: return@withContext
+                val caps = parse(context, json) ?: return@withContext
                 _state.value = caps
                 PreferencesManager.getInstance(context).apply {
                     cachedHostCapabilities = json

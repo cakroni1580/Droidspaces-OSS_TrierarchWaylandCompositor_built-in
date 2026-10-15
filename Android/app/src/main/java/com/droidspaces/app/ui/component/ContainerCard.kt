@@ -11,10 +11,10 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.draw.clip
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -91,7 +91,7 @@ fun ContainerCard(
                     if (container.isRunning) onEnter() else onToggleExpand()
                 },
                 onLongClick = onToggleExpand,
-                indication = rememberRipple(bounded = true),
+                indication = ripple(bounded = true),
                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             ),
         shape = cardShape,
@@ -139,7 +139,7 @@ fun ContainerCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     IconButton(onClick = onShowLogs) {
-                        Icon(Icons.Default.Terminal, context.getString(R.string.view_logs), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Icon(Icons.AutoMirrored.Filled.Article, context.getString(R.string.view_logs), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     }
 
                     val (statusText, statusColor) = when (container.status) {
@@ -167,7 +167,7 @@ fun ContainerCard(
             // Info Rows
             val displayHostname = container.hostname.takeIf { it.isNotEmpty() } ?: container.name
             val hasSparseImage = container.useSparseImage && container.sparseImageSizeGB != null
-            val netModeLabel = when (container.netMode) { "nat" -> context.getString(R.string.network_mode_nat_short); "none" -> context.getString(R.string.network_mode_none_short); "gateway" -> context.getString(R.string.network_mode_gateway_short); else -> context.getString(R.string.network_mode_host_short) }
+            val netModeLabel = when (container.netMode) { "nat" -> context.getString(R.string.network_mode_nat_short); "none" -> context.getString(R.string.network_mode_none_short); "gateway" -> context.getString(R.string.network_mode_gateway_short); "macvlan" -> context.getString(R.string.network_mode_macvlan_short); else -> context.getString(R.string.network_mode_host_short) }
             // Identity first, then what the container is given: disk, memory, CPU, processes.
             val info = buildList {
                 add(rememberVectorPainter(Icons.Default.Computer) to displayHostname)
@@ -203,6 +203,7 @@ fun ContainerCard(
                     if (container.enableHwAccess) add(context.getString(R.string.hw_option))
                     if (container.enableGpuMode || container.enableHwAccess) add(context.getString(R.string.gpu_option))
                     if (container.enableTermuxX11) add(context.getString(R.string.x11_option))
+                    if (container.enableAnland) add(context.getString(R.string.anland_option))
                     if (container.enableVirgl) add(context.getString(R.string.virgl_option))
                     if (container.enablePulseaudio) add(context.getString(R.string.pulseaudio_option))
                     if (container.enableWayland && Constants.isArm64) add(context.getString(R.string.wayland_option))

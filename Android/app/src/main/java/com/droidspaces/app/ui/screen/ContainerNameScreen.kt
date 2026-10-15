@@ -23,8 +23,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import com.droidspaces.app.util.ValidationUtils
 import com.droidspaces.app.util.ContainerManager
 import com.droidspaces.app.ui.util.FocusUtils
@@ -38,6 +36,7 @@ fun ContainerNameScreen(
     initialName: String = "",
     initialHostname: String = "",
     existingContainerNames: List<String> = emptyList(),
+    recommendationNotice: String? = null,
     onNext: (String, String) -> Unit,
     onClose: () -> Unit
 ) {
@@ -127,12 +126,6 @@ fun ContainerNameScreen(
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding)
                 .imePadding()
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) {
-                    clearFocus()
-                }
         ) {
             Column(
                 modifier = Modifier
@@ -147,6 +140,14 @@ fun ContainerNameScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
+
+            recommendationNotice?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
 
             // Container Name
             OutlinedTextField(
@@ -202,4 +203,3 @@ fun ContainerNameScreen(
         }
     }
 }
-

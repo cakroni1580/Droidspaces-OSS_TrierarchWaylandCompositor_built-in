@@ -5,6 +5,7 @@ import java.util.Locale
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // Load keystore properties from local.properties or gradle.properties
@@ -36,7 +37,16 @@ fun getDSVersion(): String {
     return foundVersion
 }
 
+// Every commit gets its own build number, so CI APKs between version bumps
+// still install over each other. Needs full history: a shallow clone counts 1,
+// and a tarball without .git counts 0. Both still sort above the old scheme.
+val gitCommitCount = runCatching {
+    providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+        .standardOutput.asText.get().trim().toInt()
+}.getOrDefault(0)
+
 val dsVersionName = getDSVersion()
+// ponytail: 10000 commits per release before the suffix spills into the next slot; still monotonic, just ugly
 val dsVersionCodeVal = dsVersionName.split(".").let { parts ->
     try {
         val major = parts.getOrNull(0)?.toInt() ?: 1
@@ -46,11 +56,11 @@ val dsVersionCodeVal = dsVersionName.split(".").let { parts ->
     } catch (e: Exception) {
         1
     }
-}
+} * 10000 + gitCommitCount
 
 android {
     namespace = "com.droidspaces.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.droidspaces.app"
@@ -197,10 +207,6 @@ android {
         compose = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -211,11 +217,11 @@ android {
 // ---------------------------------------------------------------------------
 // Auto-generate language list from res/values-* directories.
 //
-// This task runs before every build and writes two files:
-//   1. src/main/assets/supported_locales.txt  — read by LocaleHelper at
-//      runtime to build the in-app language picker dynamically.
-//   2. src/main/res/xml/locales_config.xml    — keeps the Android 13+
-//      per-app language system setting in sync automatically.
+// This task runs before every build and writes two files under build/:
+//   1. assets/supported_locales.txt  — read by LocaleHelper at runtime to
+//      build the in-app language picker dynamically.
+//   2. res/xml/locales_config.xml    — keeps the Android 13+ per-app
+//      language system setting in sync automatically.
 //
 // Detection rule: a values-XX directory is a translation if it contains a
 // strings.xml file (case-insensitive). This cleanly excludes non-language
@@ -225,17 +231,23 @@ android {
 // Adding a new language via Weblate: just merge the PR — the next build
 // picks it up with zero manual changes required.
 // ---------------------------------------------------------------------------
+// Build-generated assets and resources live here, registered as extra source
+// roots, so nothing the build rewrites ever shows up as a diff.
+val generatedDir = layout.buildDirectory.dir("generated/droidspaces").get()
+android.sourceSets["main"].assets.srcDir(generatedDir.dir("assets"))
+android.sourceSets["main"].res.srcDir(generatedDir.dir("res"))
+
 tasks.register("generateSupportedLocalesList") {
     val resDir = file("src/main/res")
-    val assetsDir = file("src/main/assets")
-    val localesAsset = file("src/main/assets/supported_locales.txt")
-    val localesConfig = file("src/main/res/xml/locales_config.xml")
+    val localesAsset = generatedDir.file("assets/supported_locales.txt").asFile
+    val localesConfig = generatedDir.file("res/xml/locales_config.xml").asFile
 
     inputs.dir(resDir)
     outputs.files(localesAsset, localesConfig)
 
     doLast {
-        assetsDir.mkdirs()
+        localesAsset.parentFile.mkdirs()
+        localesConfig.parentFile.mkdirs()
 
         // Scan values-XX dirs; include only those with a strings.xml (any case)
         val localeCodes = resDir.listFiles()
@@ -279,14 +291,20 @@ tasks.register("generateSupportedLocalesList") {
 // ---------------------------------------------------------------------------
 // Sync boot-module/module.prop version with DS_VERSION from droidspace.h.
 // ---------------------------------------------------------------------------
+// The template lives outside assets so the per-commit versionCode never
+// shows up as a diff.
+val modulePropTemplate = file("src/main/boot-module/module.prop")
+
 tasks.register("generateModuleProp") {
-    val moduleProp = file("src/main/assets/boot-module/module.prop")
+    val moduleProp = generatedDir.file("assets/boot-module/module.prop").asFile
+    inputs.file(modulePropTemplate)
     inputs.property("dsVersionName", dsVersionName)
     inputs.property("dsVersionCodeVal", dsVersionCodeVal)
     outputs.file(moduleProp)
 
     doLast {
-        val lines = moduleProp.readLines().map { line ->
+        moduleProp.parentFile.mkdirs()
+        val lines = modulePropTemplate.readLines().map { line ->
             when {
                 line.startsWith("version=")     -> "version=v$dsVersionName"
                 line.startsWith("versionCode=") -> "versionCode=$dsVersionCodeVal"
@@ -308,16 +326,16 @@ tasks.configureEach {
 
 dependencies {
     // Compose BOM
-    // 2024.02.00 shipped compose 1.6.1, whose M3 Slider drops out of drag after the
-    // first move events (JetBrains/compose-multiplatform#4366); 2024.06.00 is the
-    // last patch of the same 1.6.x line and carries the fix.
-    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+    // 2026.06.01 is the last BOM on the Compose 1.11 line; 1.12 wants compileSdk 37 and AGP 9.
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
+    // material3 1.4.0 stable stripped every Expressive API (wavy progress, LoadingIndicator,
+    // ButtonGroup). 1.5.0-alpha18 is the alpha that promoted the wavy indicator to stable
+    // and the last one built against Compose 1.11; alpha20 onward needs Compose 1.12.
+    implementation("androidx.compose.material3:material3:1.5.0-alpha18")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.graphics:graphics-shapes:1.0.1")
 
     // Core Android
     implementation("androidx.core:core-ktx:1.12.0")
@@ -336,8 +354,8 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // Drag-and-drop reordering for Compose lists (Auto boot priority screen)
-    // 2.1.x targets Compose 1.6.x, matching the BOM above.
-    implementation("sh.calvin.reorderable:reorderable:2.1.1")
+    // Every 2.x/3.x release pins Compose 1.7; the BOM above resolves it upward.
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
 
     // ViewModel
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")

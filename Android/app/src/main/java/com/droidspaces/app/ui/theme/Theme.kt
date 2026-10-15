@@ -34,6 +34,7 @@ private inline fun Color.blend(other: Color, ratio: Float): Color {
  * to mimic Android's Monet-style full-scheme generation.
  */
 private fun darkColorSchemeFor(palette: ThemePalette): ColorScheme {
+    palette.fixedDark?.let { return it }
     val p = palette.primaryDark
     val s = palette.secondaryDark
     val t = palette.tertiaryDark
@@ -41,17 +42,17 @@ private fun darkColorSchemeFor(palette: ThemePalette): ColorScheme {
 
     return darkColorScheme(
         primary = p,
-        onPrimary = Color(0xFF000000).blend(p, 0.08f),
+        onPrimary = p.blend(Color.Black, 0.70f),
         primaryContainer = p.blend(Color.Black, 0.40f),
         onPrimaryContainer = p.blend(Color.White, 0.75f),
 
         secondary = s,
-        onSecondary = Color(0xFF000000).blend(s, 0.08f),
+        onSecondary = s.blend(Color.Black, 0.70f),
         secondaryContainer = s.blend(Color.Black, 0.40f),
         onSecondaryContainer = s.blend(Color.White, 0.75f),
 
         tertiary = t,
-        onTertiary = Color(0xFF000000).blend(t, 0.08f),
+        onTertiary = t.blend(Color.Black, 0.70f),
         tertiaryContainer = t.blend(Color.Black, 0.40f),
         onTertiaryContainer = t.blend(Color.White, 0.75f),
 
@@ -82,6 +83,7 @@ private fun darkColorSchemeFor(palette: ThemePalette): ColorScheme {
  * to mimic Android's Monet-style full-scheme generation.
  */
 private fun lightColorSchemeFor(palette: ThemePalette): ColorScheme {
+    palette.fixedLight?.let { return it }
     val p = palette.primaryLight
     val s = palette.secondaryLight
     val t = palette.tertiaryLight
@@ -89,17 +91,17 @@ private fun lightColorSchemeFor(palette: ThemePalette): ColorScheme {
 
     return lightColorScheme(
         primary = p,
-        onPrimary = Color.White,
+        onPrimary = p.blend(Color.White, 0.85f),
         primaryContainer = p.blend(Color.White, 0.55f),
         onPrimaryContainer = p.blend(Color.Black, 0.55f),
 
         secondary = s,
-        onSecondary = Color.White,
+        onSecondary = s.blend(Color.White, 0.85f),
         secondaryContainer = s.blend(Color.White, 0.55f),
         onSecondaryContainer = s.blend(Color.Black, 0.55f),
 
         tertiary = t,
-        onTertiary = Color.White,
+        onTertiary = t.blend(Color.White, 0.85f),
         tertiaryContainer = t.blend(Color.White, 0.55f),
         onTertiaryContainer = t.blend(Color.Black, 0.55f),
 
@@ -159,7 +161,8 @@ private fun staticAmoledSchemeFor(palette: ThemePalette): ColorScheme {
         surfaceContainerHigh = AMOLED_BLACK,
         surfaceContainerHighest = AMOLED_BLACK,
         outlineVariant = p.copy(alpha = 0.25f), // Keep subtle outline for hierarchy
-        primaryContainer = p.copy(alpha = 0.2f),
+        // primaryContainer keeps the dark scheme's opaque blend: a translucent accent here
+        // let the list show through the FAB menu, and no other container role has alpha
         onPrimaryContainer = p.blend(Color.White, 0.85f)
     )
 }
@@ -170,7 +173,7 @@ fun DroidspacesTheme(
     // Dynamic color is available on Android 12+
     dynamicColor: Boolean = true,
     amoledMode: Boolean = false,
-    themePalette: ThemePalette = ThemePalette.CATPPUCCIN,
+    themePalette: ThemePalette = ThemePalette.BROCCOLI,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -203,6 +206,7 @@ fun DroidspacesTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
+        motionScheme = MotionScheme.expressive(),
         typography = Typography,
         content = content
     )

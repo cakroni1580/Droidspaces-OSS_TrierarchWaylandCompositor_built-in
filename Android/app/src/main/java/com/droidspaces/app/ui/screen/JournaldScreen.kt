@@ -97,7 +97,7 @@ fun JournaldScreen(
                             Icon(Icons.Default.Refresh, context.getString(R.string.refresh))
                         }
                     },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
             },
             containerColor = Color.Transparent
@@ -210,7 +210,6 @@ private fun LineCountSelector(
         val parsed = value.toIntOrNull()
         DsDialog(
             onDismiss = { showCustomDialog = false },
-            modifier = Modifier.imePadding(),
             footer = {
                 DialogFooterRow(
                     dismissLabel = context.getString(R.string.cancel),

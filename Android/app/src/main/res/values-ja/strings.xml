@@ -2,13 +2,10 @@
 <resources>
     <string name="app_name" translatable="false">Droidspaces</string>
     <string name="get_started">始める</string>
-    <string name="root_check_title">ルートアクセス権限の確認</string>
     <string name="checking_root">ルートアクセス権限を確認中…</string>
-    <string name="root_granted">ルートアクセス権限が付与されました</string>
     <string name="root_denied">ルートアクセス権限が拒否されました</string>
     <string name="root_required_message">コンテナを管理するにはルート権限が必要です。</string>
     <string name="check_root_access">ルートアクセス権限を確認</string>
-    <string name="root_available_message">ドロイドスペースが利用可能になりました</string>
     <string name="skip">後で</string>
     <string name="continue_button">続ける</string>
     <string name="home_title">ホーム</string>
@@ -29,7 +26,6 @@
     <string name="root_unavailable">ルートアクセス権限が利用できません。</string>
     <string name="grant_root_message">ドロイドスペースを探求し続けるにはルートアクセス権限を付与してください！</string>
     <string name="unknown">不明</string>
-    <string name="check_root_access_click">この下をクリックしてルートアクセス権限を確認</string>
     <string name="backend_section">バックエンド</string>
     <string name="reinstall_backend">バックエンドを再インストール</string>
     <string name="reinstall_backend_description">実行可能ファイルと起動モジュールを再インストール</string>
@@ -129,9 +125,6 @@
     <string name="network_mode_host">ホスト</string>
     <string name="port_forwarding">ポート転送</string>
     <string name="add_port_forward">ポート転送を追加</string>
-    <string name="host_port_hint">ホスト側ポート (1-65535 あるいは 100-200 の範囲)</string>
-    <string name="container_port_hint">コンテナ側ポート (1-65535 あるいは範囲)</string>
-    <string name="protocol">プロトコル</string>
     <string name="error_ports_must_be_numbers">ポートは数字でなければなりません</string>
     <string name="saved">保存済</string>
     <string name="saving">保存中…</string>
@@ -145,7 +138,6 @@
     <string name="container_name_label">コンテナ名 *</string>
     <string name="container_name_exists">このコンテナ名は既に使用されています</string>
     <string name="configuration_title">構成</string>
-    <string name="container_options">コンテナのオプション</string>
     <string name="installation_complete">インストール完了</string>
     <string name="installation_failed">インストール失敗</string>
     <string name="installing_droidspaces">ドロイドスペースのインストール中</string>
@@ -201,8 +193,6 @@
     <string name="disable_ipv6_description">このコンテナでIPv6を無効にします。IPv6を無効にするとホストで実行中のVPNアプリが壊れるかもしれません。</string>
     <string name="cat_networking">ネットワーク設定</string>
     <string name="network_mode_nat">ネットワークアドレス変換 (既定)</string>
-    <string name="nat_settings">ネットワークアドレス変換設定</string>
-    <string name="symmetric_label">(対称)</string>
     <string name="reboot_recommended">SELinuxのルールを適用し、起動時にデーモンを開始する為に再起動が推奨されます。</string>
     <string name="size_required">容量は必須です</string>
     <string name="invalid_number">不正な数値</string>
@@ -225,8 +215,6 @@
     <string name="selinux_permissive">SELinux 記録のみ</string>
     <string name="selinux_permissive_description">SELinuxを記録のみ(permissive)に設定する</string>
     <string name="force_cgroupv1_description">旧来のCgroup V1階層構造の利用を強制する</string>
-    <string name="enter_manually">あるいは手動で入力してください(ワイルドカードも利用できます):</string>
-    <string name="interface_name_hint">インタフェース名 (wlan0、 v4-rmnet_data*など)</string>
     <string name="about_description">Androidの為のLXC風コンテナマネージャ</string>
     <string name="file_picker_error">「%1$s」が選択されました。.tar.xz か .tar.gz 形式のファイルを選択してください。</string>
     <string name="file_picker_error_unknown">ファイル形式を検出できませんでした。.tar.xz か .tar.gz 形式のファイルを選択してください。</string>
@@ -235,8 +223,6 @@
     <string name="upstream_interface_title">上流インタフェース（任意）</string>
     <string name="upstream_interface_hint">インターネット接続を特定のインタフェースに固定します。空欄にすると、アクティブな上流回線を自動検出します。</string>
     <string name="add_upstream_interface">上流インタフェースの追加</string>
-    <string name="available_system_interfaces">利用可能なシステム・インタフェース:</string>
-    <string name="leave_blank_for_symmetric">対称割当の場合は空欄にしてください</string>
     <string name="error_invalid_range_format">不正な範囲形式です(開始-終了)</string>
     <string name="error_port_out_of_range">ポート番号は1から65535でなければなりません</string>
     <string name="error_port_must_be_number">ポート番号は数値でなければなりません</string>
@@ -250,15 +236,11 @@
     <string name="volatile_mode_description">RAM限定モード (変更は停止後に消失します)</string>
     <string name="bind_mounts">Bindマウント</string>
     <string name="add_bind_mount">Bindマウントを追加</string>
-    <string name="enter_container_path">コンテナ側のパスを入力</string>
-    <string name="host_path">ホスト側のパス: %1$s</string>
-    <string name="container_path">コンテナ側のパス: %1$s</string>
     <string name="dns_servers_placeholder">例: 1.1.1.1,8.8.8.8 (空欄可)</string>
     <string name="dns_servers_hint">数字、ドットとコロンのみ</string>
     <string name="environment_variables">環境変数</string>
     <string name="environment_variables_configured">%1$d 個の変数が設定済</string>
     <string name="network_mode_none">無し(遮断)</string>
-    <string name="optional_symmetric_hint">空欄可 (例: 8080 または 1000-2000)</string>
     <string name="port_forward_examples">例: 8080 (単一), 8000-8010 (範囲). 対称割当の場合には宛先を空欄にしてください。</string>
     <string name="container_name_placeholder" translatable="false">kontena-no-namae</string>
     <string name="hostname_placeholder">既定値で良ければ空欄</string>
@@ -304,14 +286,12 @@
     <string name="login_command_copied">「%1$s」というユーザの為のログイン・コマンドがコピーされました</string>
     <string name="copy_login">ログインをコピー</string>
     <string name="notification_permission_rationale">ドロイドスペースはターミナルのセッションをバックグラウンドで維持するため、永続通知の表示が必要です。これが無いと(特にサムスン電子製の機器では)Androidが予期せずターミナル・サービスを強制終了するかもしれません。</string>
-    <string name="welcome_tagline">Linuxコンテナ。ネイティブ。付加処理無し。</string>
     <string name="feat_containers_title">本物のLinuxコンテナ</string>
     <string name="feat_containers_desc">LXC、Podman、Docker同様のカーネル名前空間技術を採用しています。エミュレーションでもchrootでもありません。</string>
     <string name="feat_overhead_title">付加処理無し</string>
     <string name="feat_unkillable_title">勝手に強制終了されない設計</string>
     <string name="feat_init_title">systemd / OpenRC は PID 1 として作動します</string>
     <string name="feat_isolation_title">完璧な隔離環境</string>
-    <string name="install">インストール</string>
     <string name="gpu_option">画像処理装置</string>
     <string name="uptime_label">%1$s: %2$s</string>
     <string name="ip_address_label">%1$s: %2$s</string>

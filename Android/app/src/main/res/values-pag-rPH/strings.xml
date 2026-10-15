@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Gapoan</string>
-    <string name="root_check_title">Panang-chek na Root Access</string>
     <string name="checking_root">Tsek-tseken so root access…</string>
-    <string name="root_granted">Inabuloyan so Root Access</string>
     <string name="root_denied">Ag-inabuloyan so Root Access</string>
     <string name="root_required_message">Kaukolan so root access pian naasikaso iray container.</string>
     <string name="check_root_access">I-chek so Root Access</string>
-    <string name="check_root_access_click">I-klik ed leksab pian i-chek so root access</string>
-    <string name="root_available_message">Nayarian mon usaren so Droidspaces</string>
     <string name="skip">Laktawan</string>
     <string name="continue_button">Ituloy</string>
     <string name="home_title">Home</string>
@@ -123,7 +119,6 @@
     <string name="container_name_exists">Wala lay container ya uusaren to yan ngaran</string>
     <string name="next_configuration">Ontumbok: Configuration</string>
     <string name="configuration_title">Configuration</string>
-    <string name="container_options">Saray Opsyon na Container</string>
     <string name="next_storage">Ontumbok: Storage</string>
     <string name="installation_complete">Asumpal so Pan-install</string>
     <string name="installation_failed">Ag Agawa so Pan-install</string>

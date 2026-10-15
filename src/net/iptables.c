@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Surgical iptables and ip6tables rule management via the raw IP_TABLES and
  * IP6_TABLES socket APIs. One engine serves both families.
@@ -16,7 +16,7 @@
  *   • Uses getsockopt/setsockopt on an AF_INET or AF_INET6 SOCK_RAW socket
  *   • The raw socket is always tried first. The iptables(8) / ip6tables(8)
  *     binary is the fallback for whatever the kernel rejects, and the only
- *     path for the MSS clamp and port forwards.
+ *     path for port forwards.
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -27,6 +27,8 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter/nf_nat.h>
 #include <linux/netfilter/x_tables.h>
+#include <linux/netfilter/xt_TCPMSS.h>
+#include <linux/netfilter/xt_tcpudp.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
@@ -110,7 +112,8 @@ struct xt_ent_view {
   char *iniface, *outiface;
   unsigned char *in_mask, *out_mask;
   void *src, *smsk, *dst, *dmsk;
-  uint8_t *invflags;
+  uint16_t *proto;
+  uint8_t *flags, *invflags;
 };
 
 static void entry_view(const struct xt_family *f, void *e,
@@ -125,6 +128,8 @@ static void entry_view(const struct xt_family *f, void *e,
     v->smsk = &ip->smsk;
     v->dst = &ip->dst;
     v->dmsk = &ip->dmsk;
+    v->proto = &ip->proto;
+    v->flags = &ip->flags;
     v->invflags = &ip->invflags;
   } else {
     struct ipt_ip *ip = &((struct ipt_entry *)e)->ip;
@@ -136,6 +141,8 @@ static void entry_view(const struct xt_family *f, void *e,
     v->smsk = &ip->smsk;
     v->dst = &ip->dst;
     v->dmsk = &ip->dmsk;
+    v->proto = &ip->proto;
+    v->flags = &ip->flags;
     v->invflags = &ip->invflags;
   }
 }
@@ -198,7 +205,9 @@ static int fam_parse_cidr(const struct xt_family *f, const char *cidr,
  *
  * The kernel loads a table's module by itself the first time the table is
  * asked for, but only once ip_tables / ip6_tables has registered the sockopt,
- * and nothing autoloads those. Loading the table modules pulls them in. */
+ * and nothing autoloads those. Loading the table modules pulls them in.
+ * Called from get_table() when a table turns out to be missing, so a kernel
+ * that has everything built in never pays for the ten forks. */
 
 static int modules_probed = 0;
 
@@ -273,8 +282,14 @@ static int get_table(const struct xt_family *f, int fd, const char *table_name,
   safe_strncpy(info->name, table_name, sizeof(info->name));
   socklen_t info_len = sizeof(*info);
 
-  if (getsockopt(fd, f->level, IPT_SO_GET_INFO, info, &info_len) < 0) {
+  while (getsockopt(fd, f->level, IPT_SO_GET_INFO, info, &info_len) < 0) {
     int err = errno;
+    /* ENOPROTOOPT: ip_tables itself is not in. ENOENT: this table is not.
+     * Load the modules once and ask again. */
+    if ((err == ENOENT || err == ENOPROTOOPT) && !modules_probed) {
+      probe_iptables_modules();
+      continue;
+    }
     ds_log("[IPT] %s get_table('%s') GET_INFO failed: %s", f->bin, table_name,
            strerror(err));
     return -err;
@@ -306,6 +321,8 @@ static int get_table(const struct xt_family *f, int fd, const char *table_name,
 
 #define DS_IPT_MATCH_IN 0x01u
 #define DS_IPT_MATCH_OUT 0x02u
+#define DS_IPT_MATCH_CLAMP 0x04u /* our MSS clamp, see clamp_rule() */
+static int is_our_clamp(const struct xt_family *f, const unsigned char *e);
 
 static int hook_contains_offset(const struct ipt_getinfo *info,
                                 unsigned int hook_id, unsigned int offset) {
@@ -414,11 +431,10 @@ static int rule_exists_in_hook(const struct xt_family *f,
         match = 0;
       }
     }
-    if (match && iface_in && iface_in[0] &&
-        strncmp(v.iniface, iface_in, IFNAMSIZ) != 0)
+    /* NULL: any interface. "": the rule must not be bound to one. */
+    if (match && iface_in && strncmp(v.iniface, iface_in, IFNAMSIZ) != 0)
       match = 0;
-    if (match && iface_out && iface_out[0] &&
-        strncmp(v.outiface, iface_out, IFNAMSIZ) != 0)
+    if (match && iface_out && strncmp(v.outiface, iface_out, IFNAMSIZ) != 0)
       match = 0;
     if (match && src &&
         (memcmp(v.src, src, f->addr_len) != 0 ||
@@ -768,6 +784,10 @@ static int remove_matching_rules(const struct xt_family *f, int fd,
           (*v.invflags & IPT_INV_DSTIP))
         is_ours = 1;
 
+      /* Our MSS clamp, and only ours: a foreign TCPMSS rule stays. */
+      if (!is_ours && (iface_flags & DS_IPT_MATCH_CLAMP) && is_our_clamp(f, e))
+        is_ours = 1;
+
       /* ACCEPT on the exact interface/direction we inserted. */
       if (!is_ours && match_iface && match_iface[0] && target_is_accept(t)) {
         if ((iface_flags & DS_IPT_MATCH_IN) &&
@@ -943,7 +963,6 @@ static int remove_matching_rules(const struct xt_family *f, int fd,
 /* Internal: open a raw socket (shared across public APIs) */
 
 static int open_raw_socket(const struct xt_family *f) {
-  probe_iptables_modules();
   int fd = socket(f->af, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
   if (fd < 0)
     ds_log("[IPT] Failed to open %s raw socket: %s", f->bin, strerror(errno));
@@ -963,10 +982,82 @@ rule_begin(const struct xt_family *f, unsigned char *buf, size_t target_sz) {
   return (struct xt_entry_target *)(buf + hdr);
 }
 
+/* The MSS clamp is [entry][tcp match][TCPMSS target]: the one rule we build
+ * with a match extension. */
+#define DS_XT_CLAMP_MATCH_SZ                                                   \
+  XT_ALIGN(sizeof(struct xt_entry_match) + sizeof(struct xt_tcp))
+#define DS_XT_CLAMP_TARGET_SZ                                                  \
+  XT_ALIGN(sizeof(struct xt_entry_target) + sizeof(struct xt_tcpmss_info))
+#define DS_XT_NAT_TARGET_SZ                                                    \
+  XT_ALIGN(sizeof(struct xt_entry_target) + sizeof(struct nf_nat_range))
+
 /* Big enough for any rule we build, in either family. */
 #define DS_XT_RULE_MAX                                                         \
   (XT_ALIGN(sizeof(struct ip6t_entry)) +                                       \
-   XT_ALIGN(sizeof(struct xt_entry_target) + sizeof(struct nf_nat_range)))
+   (DS_XT_CLAMP_MATCH_SZ + DS_XT_CLAMP_TARGET_SZ > DS_XT_NAT_TARGET_SZ         \
+        ? DS_XT_CLAMP_MATCH_SZ + DS_XT_CLAMP_TARGET_SZ                         \
+        : DS_XT_NAT_TARGET_SZ))
+
+/* Build "-p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu" in
+ * buf, which must hold DS_XT_RULE_MAX bytes. Returns the rule's size. The
+ * kernel accepts a clamp only on a rule that matches TCP SYNs, which is what
+ * the tcp match says. */
+static unsigned int clamp_rule(const struct xt_family *f, unsigned char *buf) {
+  size_t hdr = XT_ALIGN(f->entry_sz);
+  uint16_t toff = (uint16_t)(hdr + DS_XT_CLAMP_MATCH_SZ);
+  uint16_t next = (uint16_t)(toff + DS_XT_CLAMP_TARGET_SZ);
+
+  memset(buf, 0, next);
+  memcpy(buf + f->off_target, &toff, sizeof(toff));
+  memcpy(buf + f->off_next, &next, sizeof(next));
+
+  struct xt_ent_view v;
+  entry_view(f, buf, &v);
+  *v.proto = IPPROTO_TCP;
+  if (f->af == AF_INET6)
+    *v.flags |= IP6T_F_PROTO; /* ip6t only looks at proto when told to */
+
+  struct xt_entry_match *m = (struct xt_entry_match *)(buf + hdr);
+  m->u.match_size = DS_XT_CLAMP_MATCH_SZ;
+  safe_strncpy(m->u.user.name, "tcp", sizeof(m->u.user.name));
+  struct xt_tcp *tcp = (struct xt_tcp *)m->data;
+  tcp->spts[1] = tcp->dpts[1] = 0xffff; /* any port */
+  tcp->flg_mask = 0x02 | 0x04;          /* SYN,RST */
+  tcp->flg_cmp = 0x02;                  /* SYN */
+
+  struct xt_entry_target *t = (struct xt_entry_target *)(buf + toff);
+  t->u.target_size = DS_XT_CLAMP_TARGET_SZ;
+  safe_strncpy(t->u.user.name, "TCPMSS", sizeof(t->u.user.name));
+  ((struct xt_tcpmss_info *)t->data)->mss = XT_TCPMSS_CLAMP_PMTU;
+  return next;
+}
+
+/* Is this entry the clamp clamp_rule() builds, byte for byte in the parts
+ * that matter? Used by the remover so that only our rule goes, never a VPN's
+ * TCPMSS rule that happens to share the chain. */
+static int is_our_clamp(const struct xt_family *f, const unsigned char *e) {
+  unsigned int toff = ent_target_off(f, e);
+  if (toff != XT_ALIGN(f->entry_sz) + DS_XT_CLAMP_MATCH_SZ)
+    return 0;
+  struct xt_ent_view v;
+  entry_view_ro(f, e, &v);
+  if (*v.proto != IPPROTO_TCP || !iface_empty(v.iniface, v.in_mask) ||
+      !iface_empty(v.outiface, v.out_mask))
+    return 0;
+
+  const struct xt_entry_match *m =
+      (const struct xt_entry_match *)(e + XT_ALIGN(f->entry_sz));
+  const struct xt_tcp *tcp = (const struct xt_tcp *)m->data;
+  if (m->u.match_size != DS_XT_CLAMP_MATCH_SZ ||
+      strcmp(m->u.user.name, "tcp") != 0 || tcp->flg_mask != (0x02 | 0x04) ||
+      tcp->flg_cmp != 0x02 || tcp->invflags != 0)
+    return 0;
+
+  const struct xt_entry_target *t = (const struct xt_entry_target *)(e + toff);
+  return t->u.target_size == DS_XT_CLAMP_TARGET_SZ &&
+         strcmp(t->u.user.name, "TCPMSS") == 0 &&
+         ((const struct xt_tcpmss_info *)t->data)->mss == XT_TCPMSS_CLAMP_PMTU;
+}
 
 /* Public API: ds_ipt_host_rules_present
  *
@@ -1047,14 +1138,15 @@ int ds_ipt_host_rules_present(int family, const char *iface,
     free(base);
   }
 
-  /* mangle: the MSS clamp.  An unreadable mangle table leaves the verdict
+  /* mangle: the MSS clamp, by the installer's own test: a TCPMSS target not
+   * bound to an interface. An unreadable mangle table leaves the verdict
    * untouched rather than failing the probe - see the header comment. */
   if (present) {
     base = NULL;
     if (get_table(f, fd, "mangle", &info, &base) == 0) {
       present = rule_exists_in_hook(f, &info, ENTRIES_BLOB(base),
-                                    NF_INET_POST_ROUTING, NULL, NULL, NULL,
-                                    NULL, "TCPMSS");
+                                    NF_INET_POST_ROUTING, "", "", NULL, NULL,
+                                    "TCPMSS");
       free(base);
     }
   }
@@ -1260,8 +1352,9 @@ static int ensure_iface_accept(const struct xt_family *f, int fd,
  *   -t filter -I FORWARD -i <iface> -j ACCEPT
  *   -t filter -I FORWARD -o <iface> -j ACCEPT
  *
- * Called with DS_NAT_BRIDGE ("ds-br0") when bridge-nf-call-iptables=1 so
- * the FORWARD hook sees the bridge interface name as the ingress/egress. */
+ * Called with DS_NAT_BRIDGE ("ds-br0"), or with the veth in bridgeless mode.
+ * Routed traffic enters and leaves through the bridge device, so that is the
+ * name FORWARD sees; bridge netfilter is off and never shows it the ports. */
 
 int ds_ipt_ensure_forward_accept(int family, const char *iface) {
   const struct xt_family *f = xt_family_of(family);
@@ -1296,14 +1389,44 @@ int ds_ipt_ensure_input_accept(int family, const char *iface) {
  * bridge + veth path. It matters most on IPv6, where routers never fragment
  * and a mobile uplink is often well under the veth's 1500.
  *
- * The raw socket API for this rule is disproportionately complex because it
- * requires two match extension payloads (xt_tcp + xt_TCPMSS with pmtu flag).
- * We use the binary exclusively. On a host without it the clamp is simply
- * absent and path MTU discovery has to do the job. */
+ * Raw socket first, like every other rule: a TCPMSS target in mangle
+ * POSTROUTING that is not bound to an interface counts as present, a VPN's
+ * fixed --set-mss included, since it clamps our SYNs just as well; one scoped
+ * to its own tunnel does not. Otherwise clamp_rule() goes in. The binary is
+ * the fallback for kernels without the raw API. */
 
 int ds_ipt_ensure_mss_clamp(int family) {
   const struct xt_family *f = xt_family_of(family);
   ds_log("[IPT] ensure_mss_clamp: %s", f->bin);
+
+  int ret = -ENOTSUP;
+  int fd = open_raw_socket(f);
+  if (fd >= 0) {
+    struct ipt_getinfo info;
+    unsigned char *base = NULL;
+    ret = get_table(f, fd, "mangle", &info, &base);
+    if (ret == 0) {
+      if (rule_exists_in_hook(f, &info, ENTRIES_BLOB(base),
+                              NF_INET_POST_ROUTING, "", "", NULL, NULL,
+                              "TCPMSS")) {
+        ds_log("[IPT] %s TCPMSS clamp already present - skipping", f->bin);
+      } else {
+        unsigned char rule_buf[DS_XT_RULE_MAX];
+        unsigned int sz = clamp_rule(f, rule_buf);
+        ret = insert_rule_at_hook(f, fd, "mangle", &info, ENTRIES_BLOB(base),
+                                  NF_INET_POST_ROUTING, rule_buf, sz);
+      }
+      free(base);
+    }
+    close(fd);
+  }
+  if (ret == 0) {
+    ds_log("[IPT] %s TCPMSS clamp in place via raw socket API", f->bin);
+    return 0;
+  }
+
+  ds_log("[IPT] %s TCPMSS raw path failed (ret=%d), using the binary", f->bin,
+         ret);
   return bin_ensure(f, "mangle", "POSTROUTING", k_mss_spec);
 }
 
@@ -1328,7 +1451,10 @@ static void remove_rule(const struct xt_family *f, int fd, const char *table,
       free(base);
     }
   }
-  if (removed <= 0)
+  /* The clamp is the exception: when the raw path could read the table and
+   * found none of ours, there is nothing the binary could find either, and
+   * its spec would match a foreign clamp-to-pmtu rule that was never ours. */
+  if (removed < 0 || (removed == 0 && !(iface_flags & DS_IPT_MATCH_CLAMP)))
     bin_rule(f, "-D", table, chain, spec);
 }
 
@@ -1383,12 +1509,11 @@ int ds_ipt_remove_ds_rules(int family) {
   remove_rule(f, fd, "nat", NF_INET_POST_ROUTING, "POSTROUTING", net, mask,
               NULL, 0, masq_spec);
   remove_iface_accepts(f, fd, DS_NAT_BRIDGE);
+  remove_rule(f, fd, "mangle", NF_INET_POST_ROUTING, "POSTROUTING", NULL, NULL,
+              NULL, DS_IPT_MATCH_CLAMP, k_mss_spec);
 
   if (fd >= 0)
     close(fd);
-
-  /* MSS clamp: binary only, like its install. */
-  bin_rule(f, "-D", "mangle", "POSTROUTING", k_mss_spec);
   return 0;
 }
 
@@ -1397,18 +1522,25 @@ int ds_ipt_remove_ds_rules(int family) {
  * Falls back to false if the file is unreadable (e.g. no CONFIG_NETFILTER). */
 
 static int addrtype_available(void) {
-  FILE *f = fopen("/proc/net/ip_tables_matches", "re");
-  if (!f)
-    return 0;
-  char line[64];
-  while (fgets(line, sizeof(line), f)) {
-    if (strncmp(line, "addrtype", 8) == 0) {
-      fclose(f);
-      return 1;
+  /* A match the kernel has not loaded is not listed. Nothing asks the kernel
+   * to load one until a rule names it, so load the module batch once before
+   * giving up, as the old unconditional batch did. */
+  for (int tried = 0;; tried = 1) {
+    FILE *f = fopen("/proc/net/ip_tables_matches", "re");
+    if (!f)
+      return 0;
+    char line[64];
+    while (fgets(line, sizeof(line), f)) {
+      if (strncmp(line, "addrtype", 8) == 0) {
+        fclose(f);
+        return 1;
+      }
     }
+    fclose(f);
+    if (tried || modules_probed)
+      return 0;
+    probe_iptables_modules();
   }
-  fclose(f);
-  return 0;
 }
 
 /* Port-forward state file helpers
@@ -1816,6 +1948,14 @@ int ds_ipt_remove_portforwards(struct ds_config *cfg) {
         "MASQUERADE", NULL};
     run_command_quiet(del_masq);
   }
+
+  /* Nothing to sweep for a container that was booted without forwards: cfg
+   * is the snapshot it booted with, and both cases the sweep exists for (an
+   * older version that wrote no state file, a crash before the file was
+   * written) leave the forwards in it. Without this every NAT stop paid four
+   * sh pipelines for nothing. */
+  if (!had_state && cfg->port_forward_count == 0)
+    return 0;
 
   /* Pass 3: iptables-save shell sweep (fallback)
    */

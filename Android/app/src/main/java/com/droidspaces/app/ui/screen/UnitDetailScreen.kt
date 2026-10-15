@@ -9,7 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -101,10 +101,10 @@ fun UnitDetailScreen(
                     },
                     actions = {
                         IconButton(onClick = { load() }) { Icon(Icons.Default.Refresh, context.getString(R.string.refresh)) }
-                        IconButton(onClick = onViewLogs) { Icon(Icons.Default.Terminal, context.getString(R.string.view_logs)) }
+                        IconButton(onClick = onViewLogs) { Icon(Icons.AutoMirrored.Filled.Article, context.getString(R.string.view_logs)) }
                         IconButton(onClick = onEditOverride) { Icon(Icons.Default.Edit, context.getString(R.string.edit_override)) }
                     },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
                 )
             },
             containerColor = Color.Transparent

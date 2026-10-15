@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
  *
  * Both buttons are weight(1f) at a fixed 48.dp, so they are always the same
  * width and the same height and neither grows when the other's label is long.
+ * On a narrow window they stack instead, see [isCompactWidth].
  * Labels stay on one line and ellipsize: a button label that wraps is too long
  * to be a button label, shorten the string instead.
  *
@@ -55,13 +57,9 @@ fun DialogFooterRow(
         else -> MaterialTheme.colorScheme.onPrimary
     }
 
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    val dismiss = @Composable { m: Modifier ->
         Surface(
-            modifier = Modifier
-                .weight(1f)
+            modifier = m
                 .height(48.dp)
                 .clip(shape)
                 .clickable(onClick = onDismiss),
@@ -72,10 +70,10 @@ fun DialogFooterRow(
         ) {
             FooterLabel(dismissLabel, MaterialTheme.colorScheme.onSurfaceVariant)
         }
-
+    }
+    val confirm = @Composable { m: Modifier ->
         Surface(
-            modifier = Modifier
-                .weight(1f)
+            modifier = m
                 .height(48.dp)
                 .clip(shape)
                 .clickable(enabled = confirmEnabled, onClick = onConfirm),
@@ -84,6 +82,23 @@ fun DialogFooterRow(
             tonalElevation = 0.dp
         ) {
             FooterLabel(confirmLabel, confirmLabelColor)
+        }
+    }
+
+    // Two buttons side by side leave about 60dp each on a 240px flip phone, too
+    // little for "Cancel", so narrow windows stack them, confirm on top.
+    if (isCompactWidth()) {
+        Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            confirm(Modifier.fillMaxWidth())
+            dismiss(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            dismiss(Modifier.weight(1f))
+            confirm(Modifier.weight(1f))
         }
     }
 }

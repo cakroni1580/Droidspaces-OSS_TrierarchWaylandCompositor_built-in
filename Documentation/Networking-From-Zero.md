@@ -1,58 +1,12 @@
 <!--
 title: Networking from zero
 section: Guides
-order: 5
+order: 7
 desc: Every networking concept behind Droidspaces gateway mode, from the start: IP addresses, LAN, WAN, DHCP, DNS, NAT, bridges, veth pairs, network namespaces and OpenWRT.
 keywords: droidspaces, networking, gateway, openwrt, nat, dhcp, dns, lan, wan, veth, bridge, namespace, linux, android
 -->
 
-# Networking from zero: understanding Droidspaces gateway mode
-
-### Quick navigation
-
-- [Part 1: The absolute basics](#part-1-the-absolute-basics)
-    - [What is an IP address?](#what-is-an-ip-address)
-    - [What is a network?](#what-is-a-network)
-    - [LAN - Local Area Network](#lan---local-area-network)
-    - [WAN - Wide Area Network](#wan---wide-area-network)
-    - [Gateway](#gateway)
-- [Part 2: How data actually gets delivered](#part-2-how-data-actually-gets-delivered)
-    - [MAC address vs IP address](#mac-address-vs-ip-address)
-    - [What is a packet?](#what-is-a-packet)
-- [Part 3: DHCP (how you get an IP address)](#part-3-dhcp-how-you-get-an-ip-address)
-- [Part 4: DNS (how names become addresses)](#part-4-dns-how-names-become-addresses)
-- [Part 5: NAT (the magic your router does)](#part-5-nat-the-magic-your-router-does)
-    - [NAT in Droidspaces](#nat-in-droidspaces)
-    - [How NAT mode picks the WAN uplink (automatic)](#how-nat-mode-picks-the-wan-uplink-automatic)
-    - [Pinning the uplink manually with --upstream](#pinning-the-uplink-manually-with---upstream)
-    - [Use cases for --upstream](#use-cases-for---upstream)
-- [Part 6: Bridges and virtual cables (Linux plumbing)](#part-6-bridges-and-virtual-cables-linux-plumbing)
-    - [What is a network bridge?](#what-is-a-network-bridge)
-    - [What is a veth pair?](#what-is-a-veth-pair)
-    - [How NAT mode uses bridges and veths](#how-nat-mode-uses-bridges-and-veths)
-- [Part 7: Network namespaces (how containers are isolated)](#part-7-network-namespaces-how-containers-are-isolated)
-- [Part 8: OpenWRT and what it is](#part-8-openwrt-and-what-it-is)
-- [Part 9: The new gateway mode - putting it all together](#part-9-the-new-gateway-mode---putting-it-all-together)
-    - [Why does gateway mode exist?](#why-does-gateway-mode-exist)
-    - [The architecture](#the-architecture)
-    - [Step by step - what happens when you start a gateway-mode container](#step-by-step---what-happens-when-you-start-a-gateway-mode-container)
-    - [What "lazy attachment" means](#what-lazy-attachment-means)
-    - [Why resolv.conf is left alone in gateway mode](#why-resolvconf-is-left-alone-in-gateway-mode)
-    - [Why bridge-nf-call-iptables is set to 0](#why-bridge-nf-call-iptables-is-set-to-0)
-    - [Start order and automatic self-healing](#start-order-and-automatic-self-healing)
-    - [What happens when containers stop](#what-happens-when-containers-stop)
-- [Part 10: Gateway mode flags and configuration](#part-10-gateway-mode-flags-and-configuration)
-    - [Required vs optional flags](#required-vs-optional-flags)
-    - [What --gateway-net does](#what---gateway-net-does)
-    - [What --gateway-iface does](#what---gateway-iface-does)
-    - [The flag conflict you must avoid](#the-flag-conflict-you-must-avoid)
-    - [IPv6 through the gateway](#ipv6-through-the-gateway)
-    - [Validation rules and kernel requirements](#validation-rules-and-kernel-requirements)
-- [Part 11: Comparing all networking modes](#part-11-comparing-all-networking-modes)
-- [Part 12: Real-world use cases for gateway mode](#part-12-real-world-use-cases-for-gateway-mode)
-- [Quick reference - terms](#quick-reference---terms)
-
----
+# Networking from zero
 
 ## Part 1: The absolute basics
 
@@ -112,7 +66,6 @@ At home, the router *is* the gateway. Your phone's IP is `192.168.1.5` (LAN). Wh
 
 **Rule:** every device on a LAN is configured with a "default gateway", the address it sends all traffic to when it has no more specific route.
 
----
 
 ## Part 2: How data actually gets delivered
 
@@ -142,7 +95,6 @@ Data crossing a network is split into small chunks called **packets**. Each pack
 
 The destination reassembles the packets.
 
----
 
 ## Part 3: DHCP (how you get an IP address)
 
@@ -177,7 +129,6 @@ At home, the **router runs the DHCP server** and hands out IPs to every device t
 
 In **Droidspaces NAT mode**, Droidspaces runs its own small DHCP server that gives the container its IP (in the `172.28.x.x` range). The IP is deterministic: it is derived from the container's name, saved to its config file and offered again on every boot, so a container keeps the same address across restarts.
 
----
 
 ## Part 4: DNS (how names become addresses)
 
@@ -205,7 +156,6 @@ Every device is configured with a DNS server address. On most home networks the 
 
 In **Droidspaces NAT mode**, Droidspaces writes a `resolv.conf` inside the container that points at a DNS server (`1.1.1.1` and `8.8.8.8` by default, or whatever you pass with `--dns`). The same DNS servers are also advertised in the DHCP lease.
 
----
 
 ## Part 5: NAT (the magic your router does)
 
@@ -309,7 +259,6 @@ droidspaces --name=box --rootfs=/data/box --net=nat --upstream=rmnet* start
 
 The container's traffic goes out over mobile data while the rest of the phone stays on Wi-Fi. Useful for testing from a different IP or network, moving a container's bandwidth onto cellular, or running something on a separate connection from everything else on the phone.
 
----
 
 ## Part 6: Bridges and virtual cables (Linux plumbing)
 
@@ -364,11 +313,10 @@ In Droidspaces NAT mode:
                      (Android's real network)
 ```
 
-The bridge `ds-br0` holds the gateway IP `172.28.0.1`, which every NAT container uses as its default gateway. The veth pair is named after the container's init process ID: the host side is `ds-v<PID>`, and the container side starts as `ds-p<PID>` and is renamed to `eth0` inside the container.
+The bridge `ds-br0` holds the gateway IP `172.28.0.1`, which every NAT container uses as its default gateway. Its MAC is pinned from its name on every start, because an unpinned bridge borrows the lowest MAC among its ports and would change it whenever that container stops, leaving every other container with a stale ARP entry for the gateway. The veth pair is named after the container's init process ID: the host side is `ds-v<PID>`, and the container side starts as `ds-p<PID>` and is renamed to `eth0` inside the container.
 
 Droidspaces runs a small per-container DHCP server on the container's host-side veth. The whole `172.28.0.0/16` subnet belongs to Droidspaces. The `172.28.0.x` row is reserved for the gateway itself, so containers always get an address from `172.28.1.x` to `172.28.254.x`, and all of it is NATed out through Android's real interface.
 
----
 
 ## Part 7: Network namespaces (how containers are isolated)
 
@@ -390,7 +338,6 @@ The veth pair is the link between the host's namespace and the container's:
 - One end sits in the container's network namespace (as `eth0`).
 - The other end stays in the host's network namespace, where Droidspaces connects it to a bridge.
 
----
 
 ## Part 8: OpenWRT and what it is
 
@@ -408,9 +355,8 @@ A running OpenWRT provides:
 
 So you can run OpenWRT in a Droidspaces container and it behaves like a real router: it manages networks, hands out DHCP leases, serves DNS, applies firewall rules, routes VPN traffic, and so on.
 
----
 
-## Part 9: The new gateway mode - putting it all together
+## Part 9: Gateway mode, putting it all together
 
 ### Why does gateway mode exist?
 
@@ -534,7 +480,7 @@ Setting it to `0` tells Linux not to run iptables on bridged traffic. OpenWRT's 
 
 ### Start order and automatic self-healing
 
-All wiring for a gateway-mode client is done **from the host side** by one function, `gateway_wire_client()`. It makes sure the bridge and the gateway-side cable exist, creates the client's app veth, and moves and renames the peer into the client's namespace as `eth0` (with a pinned MAC, brought up). The client's own boot code only brings up `lo`. Because the host owns every step, the same function wires a client whether it is starting or already running.
+All wiring for a gateway-mode client is done **from the host side** by one function, `gateway_wire_client()`. It makes sure the bridge and the gateway-side cable exist, then creates the client's app veth with its peer born inside the client's namespace as `eth0` (with a pinned MAC, brought up). The client's own boot code only brings up `lo`. Because the host owns every step, the same function wires a client whether it is starting or already running.
 
 That leads to one simple rule, keyed on **whether the gateway is running**:
 
@@ -543,19 +489,18 @@ That leads to one simple rule, keyed on **whether the gateway is running**:
 
 So healing is driven by **the gateway**, not the clients. On every boot cycle, the gateway container's monitor calls `ds_net_rewire_gateway_clients()`. It scans the running containers, finds those that delegate to this gateway, and runs `gateway_wire_client` for each, setting up the gateway-side `eth1` cable and every client's `eth0` in the gateway's *current* namespace. When the gateway **starts or reboots**, every running client is (re)wired **without restarting the client**.
 
-Wiring nothing while the gateway is down, instead of half-wiring a bridge and a dangling veth, also closes a race. A client started before its gateway can have its gateway and LAN settings (`--gateway-net`, `--host-bridge`, …) edited before the gateway comes up, and the gateway then wires each client from that client's *current* config, never a stale one.
+Wiring nothing while the gateway is down, instead of half-wiring a bridge and a dangling veth, also closes a race. A client started before its gateway can have its gateway and LAN settings (`--gateway-net`, `--gateway-bridge`, …) edited before the gateway comes up, and the gateway then wires each client from that client's *current* config, never a stale one.
 
-There is exactly **one actor** (the gateway) doing the wiring, so there is nothing to poll and no thundering herd. Wiring is serialised per segment with an advisory file lock, so concurrent client starts and the gateway's re-wire cannot race. Both `eth1` (gateway side) and each `eth0` (client side) keep a **stable MAC** and are moved and renamed into their namespace in one atomic step, so the container's own `netifd`/DHCP sees one persistent device instead of one that keeps being re-created.
+The gateway is the main actor, with one exception. Each side decides whether the other is running from its pidfile, which only appears once that container's init has started, so a client and a gateway booting at the same moment can each see the other as down and neither wires the client. To cover that, a client that is still unwired checks again about every two seconds and wires itself once the gateway is up, then stops checking. Wiring is serialised per segment with an advisory file lock, so concurrent client starts and the gateway's re-wire cannot race. Both `eth1` (gateway side) and each `eth0` (client side) keep a **stable MAC** and are created inside their namespace under their final name, in the one request that creates the pair. Nothing is moved or renamed afterwards: a rename is announced by the kernel before the device can be looked up by its new name, and a `netifd` inside the gateway that hears the announcement first fails to claim the device for good (seen on a 4.14 kernel, where that gap is tens of milliseconds).
 
 ### What happens when containers stop
 
 Cleanup in gateway mode is deliberately minimal, in line with "plumbing only":
 
-- **A client stops:** only that client's own veth is removed (gateway clients use the `ds-c<PID>` prefix, distinct from NAT's `ds-v<PID>`). The bridge and the gateway's `eth1` stay up, so other clients on the segment are not affected.
+- **A client stops:** only that client's own veth is removed (a gateway client's host-side veth is `ds-c` plus a hash of the container's name, distinct from NAT's `ds-v<PID>`, so a leftover from a crashed instance is found and replaced by the next start). The bridge and the gateway's `eth1` stay up, so other clients on the segment are not affected.
 - **The last client stops while the gateway is still running:** the bridge is **kept**, not reaped. Tearing it down would flap the carrier on the gateway's live `eth1` and sometimes make netifd report "device initialization failed". An idle bridge with no IP does no harm, and the next client reuses it.
-- **The gateway stops:** the gateway-side veth goes away with its namespace. Once no clients remain *and* the gateway is gone, the idle bridge is reaped.
+- **The gateway stops:** Droidspaces deletes the gateway-side veth itself. It cannot be left to the kernel: the host end of a veth holds a reference to its peer's namespace, so the dead gateway's namespace would never be freed. Once no clients remain *and* the gateway is gone, the idle bridge is reaped.
 
----
 
 ## Part 10: Gateway mode flags and configuration
 
@@ -627,7 +572,7 @@ Inside OpenWRT, the `lan` clients arrive on `eth1` and the `vpn` clients on `eth
 
 This sets **the name of the LAN interface inside the gateway container's network namespace**.
 
-When Droidspaces creates the gateway veth for a segment, it moves one end into OpenWRT's netns and renames it from its raw hash name (`ds-hXXXXXXXX`) to the name you pass here (default `eth1`).
+When Droidspaces creates the gateway veth for a segment, the gateway's end is born directly inside OpenWRT's netns under the name you pass here (default `eth1`); only the host end carries a hash name (`ds-gXXXXXXXX`).
 
 **Why it matters:** OpenWRT's configuration is keyed on interface names. If your OpenWRT `/etc/config/network` says:
 
@@ -642,7 +587,7 @@ For a second segment, pass `--gateway-iface=eth2` so OpenWRT sees a separate int
 
 **Important detail:** `--gateway-iface` only takes effect when the gateway veth for a segment is first created, which is when the first client container on that segment starts. The gateway veth is shared by every client on the same `--gateway-net`: it is created once and reused. Every later client skips creating the gateway veth and only wires its own app veth into the existing bridge.
 
-So if you start two containers on `--gateway-net=lan` and both pass `--gateway-iface=eth1`, that works: the first creates the veth and renames it `eth1`, and the second finds the veth already there and ignores `--gateway-iface`.
+So if you start two containers on `--gateway-net=lan` and both pass `--gateway-iface=eth1`, that works: the first creates the veth with its peer named `eth1` inside OpenWRT, and the second finds the veth already there and ignores `--gateway-iface`.
 
 ### The flag conflict you must avoid
 
@@ -656,7 +601,7 @@ droidspaces --name=kali   --net=gateway --gateway=openwrt --gateway-net=lan --ga
 droidspaces --name=torbox --net=gateway --gateway=openwrt --gateway-net=vpn --gateway-iface=eth1 start
 ```
 
-When the second command runs, Droidspaces tries to move a new veth peer into OpenWRT and rename it `eth1`, but `eth1` already exists there from the first segment. Instead of failing loudly, the code detects the conflict and brings the existing `eth1` up again, leaving the new veth peer inside OpenWRT under its raw hash name (`ds-hYYYYYYYY`). OpenWRT has no config for `ds-hYYYYYYYY` and silently ignores it. The `vpn` segment gets no gateway-side interface: no DHCP, no routing, and its containers are effectively isolated.
+When the second command runs, Droidspaces sees that OpenWRT already has an `eth1`, belonging to the first segment, and refuses to wire the `vpn` segment. The log says `'openwrt' already has an interface named eth1 that is not this segment's cable`. The `vpn` segment gets no gateway-side interface: no DHCP, no routing, and its containers are effectively isolated.
 
 **The rule:** every `--gateway-net` segment needs its own `--gateway-iface` name.
 
@@ -768,23 +713,21 @@ Two more things to know:
 - `--port` only makes sense in NAT mode. In gateway mode it is ignored with a warning, because port forwarding and uplink selection are the gateway container's job.
 - When the host bridge name is derived from `--gateway-net`, the name is sanitised (only letters, digits, `_` and `-` are kept) and truncated to 9 characters, giving `ds-` plus at most 9 characters. If you need an exact bridge name, set it with `--gateway-bridge`.
 
----
 
 ## Part 11: Comparing all networking modes
 
-| Feature | NAT Mode | Host Mode | None Mode | Gateway Mode |
-|---|---|---|---|---|
-| Who assigns IPs? | Droidspaces DHCP | Android (shared) | Nobody (loopback only) | OpenWRT dnsmasq |
-| Who does NAT? | Droidspaces iptables | Android | N/A | OpenWRT (via Droidspaces NAT on OpenWRT's WAN) |
-| Who manages firewall? | Droidspaces | Android | N/A | OpenWRT |
-| Who manages DNS? | Droidspaces | Android | Nobody | OpenWRT dnsmasq |
-| Container isolated from host network? | Yes | No | Yes | Yes |
-| Internet access? | Yes | Yes | No | Yes (via gateway container) |
-| IPv6? | Yes, with NAT66 (needs kernel support) | Whatever Android has | Loopback only | Yes, once OpenWRT is set up for it (see Part 10) |
-| Needs a second container to function? | No | No | No | Yes (the gateway container) |
-| Good for | Simple internet access | Maximum performance, no veth or bridge in the path | Offline / sandboxed workloads | Router appliance, VPN gateway, segmented LANs |
+| Feature | NAT Mode | Host Mode | None Mode | Gateway Mode | Macvlan Mode |
+|---|---|---|---|---|---|
+| Who assigns IPs? | Droidspaces DHCP | Android (shared) | Nobody (loopback only) | OpenWRT dnsmasq | The LAN's DHCP server (your router) |
+| Who does NAT? | Droidspaces iptables | Android | N/A | OpenWRT (via Droidspaces NAT on OpenWRT's WAN) | Your router, as for any LAN device |
+| Who manages firewall? | Droidspaces | Android | N/A | OpenWRT | The container itself |
+| Who manages DNS? | Droidspaces | Android | Nobody | OpenWRT dnsmasq | The LAN's DHCP server |
+| Container isolated from host network? | Yes | No | Yes | Yes | Yes (the phone cannot even reach it over that NIC) |
+| Internet access? | Yes | Yes | No | Yes (via gateway container) | Yes (via the LAN's router) |
+| IPv6? | Yes, with NAT66 (needs kernel support) | Whatever Android has | Loopback only | Yes, once OpenWRT is set up for it (see Part 10) | Whatever the LAN advertises |
+| Needs a second container to function? | No | No | No | Yes (the gateway container) | No, but a wired NIC and `CONFIG_MACVLAN` |
+| Good for | Simple internet access | Maximum performance, no veth or bridge in the path | Offline / sandboxed workloads | Router appliance, VPN gateway, segmented LANs | A real LAN address, OpenWRT on a physical LAN |
 
----
 
 ## Part 12: Real-world use cases for gateway mode
 
@@ -808,7 +751,6 @@ Run OpenWRT with a `dnsmasq` blocklist (or with Adblock installed via opkg). Eve
 
 OpenWRT's `tc` (traffic control) and `sqm-scripts` can shape bandwidth per container, because OpenWRT sees each container as a separate MAC address on its LAN interface.
 
----
 
 ## Quick reference - terms
 

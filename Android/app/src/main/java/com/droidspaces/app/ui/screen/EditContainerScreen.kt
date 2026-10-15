@@ -1,68 +1,52 @@
 package com.droidspaces.app.ui.screen
 
-import com.droidspaces.app.ui.component.SaveActionBottomBar
-import com.droidspaces.app.ui.component.DsTextFieldDefaults
-
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.ripple.rememberRipple
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.droidspaces.app.R
-import com.droidspaces.app.ui.component.ContainerConfigForm
-import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
-import com.droidspaces.app.ui.util.LoadingIndicator
+import com.droidspaces.app.ui.component.ContainerConfigHost
+import com.droidspaces.app.ui.component.DsTextFieldDefaults
+import com.droidspaces.app.ui.component.GroupField
+import com.droidspaces.app.ui.component.GroupHeader
+import com.droidspaces.app.ui.component.SaveActionBottomBar
+import com.droidspaces.app.ui.component.SettingsGroup
+import com.droidspaces.app.ui.component.screenGutter
+import com.droidspaces.app.ui.util.FocusUtils
 import com.droidspaces.app.ui.util.rememberClearFocus
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
-import com.droidspaces.app.util.ResourceLimits
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ContainerManager
+import com.droidspaces.app.util.HostCapabilities
+import com.droidspaces.app.util.ResourceLimits
 import com.droidspaces.app.util.SystemInfoManager
 import com.droidspaces.app.util.ValidationUtils
 import com.droidspaces.app.util.toConfigState
@@ -70,10 +54,7 @@ import com.droidspaces.app.util.withConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.droidspaces.app.util.HostCapabilities
-import androidx.compose.runtime.collectAsState
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditContainerScreen(
     container: ContainerInfo,
@@ -99,6 +80,15 @@ fun EditContainerScreen(
             context
         ).errorMessage
     }
+
+    val macvlanErrors = ValidationUtils.validateMacvlanConfig(
+        selfName = container.name,
+        netMode = state.netMode,
+        parent = state.macvlanParent,
+        mode = state.macvlanMode,
+        installed = containerViewModel.containerList,
+        context = context
+    )
 
     val gatewayErrors = ValidationUtils.validateGatewayConfig(
         selfName = container.name,
@@ -177,22 +167,15 @@ fun EditContainerScreen(
         }
     }
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        topBar = {
-            TopAppBar(
-                title = { Text(context.getString(R.string.edit_container_title, container.name), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    IconButton(onClick = { clearFocus(); onBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = context.getString(R.string.back))
-                    }
-                }
-            )
-        },
+    val isReadyToSave = !isSaving && !isSaved && hasChanges && hostnameError == null &&
+        (state.netMode != "gateway" || gatewayErrors.isValid) &&
+        macvlanErrors.isValid && collisionContainer == null &&
+        ResourceLimits.isValidPidsLimit(state.pidsLimit)
+
+    ContainerConfigHost(
+        title = context.getString(R.string.edit_container_title, container.name),
+        onBack = onBack,
         bottomBar = {
-            val isReadyToSave = !isSaving && !isSaved && hasChanges && hostnameError == null &&
-                (state.netMode != "gateway" || gatewayErrors.isValid) && collisionContainer == null &&
-                ResourceLimits.isValidPidsLimit(state.pidsLimit)
             SaveActionBottomBar(
                 isSaved = isSaved,
                 isSaving = isSaving,
@@ -202,73 +185,69 @@ fun EditContainerScreen(
                 savingLabel = context.getString(R.string.saving),
                 savedLabel = context.getString(R.string.saved)
             )
-        }
-    ) { innerPadding ->
-        ClearFocusOnClickOutside(
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
-                .imePadding()
-        ) {
-            ContainerConfigForm(
-                state = state,
-                onStateChange = { state = it },
-                installedContainers = containerViewModel.containerList,
-                selfName = container.name,
-                gatewayErrors = gatewayErrors,
-                collisionContainer = collisionContainer,
-                modifier = Modifier.fillMaxSize(),
-                leadingContent = {
-                    errorMessage?.let { error ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
-                            modifier = Modifier.fillMaxWidth().clickable { clearFocus() }
-                        ) {
-                            Text(
-                                text = error,
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+        },
+        state = state,
+        onStateChange = { state = it },
+        installedContainers = containerViewModel.containerList,
+        selfName = container.name,
+        gatewayErrors = gatewayErrors,
+        macvlanErrors = macvlanErrors,
+        collisionContainer = collisionContainer,
+        leadingContent = {
+            val gutter = Modifier.padding(start = screenGutter(), end = screenGutter(), top = 8.dp)
+            errorMessage?.let { error ->
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                    modifier = gutter.fillMaxWidth()
+                ) {
+                    Text(
+                        text = error,
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            if (container.isRunning) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                    modifier = gutter.fillMaxWidth()
+                ) {
+                    Row(modifier = Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Column(Modifier.weight(1f)) {
+                            Text(text = context.getString(R.string.container_is_running), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                            Text(text = context.getString(R.string.changes_take_effect_after_restart), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         }
                     }
+                }
+            }
 
-                    if (container.isRunning) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(20.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Icon(imageVector = Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.error)
-                                Column {
-                                    Text(text = context.getString(R.string.container_is_running), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                                    Text(text = context.getString(R.string.changes_take_effect_after_restart), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                                }
-                            }
-                        }
-                    }
-
-                    val hostnameFieldShape = RoundedCornerShape(16.dp)
-                    val hostnameFieldColors = DsTextFieldDefaults.colors()
+            GroupHeader(context.getString(R.string.config_general))
+            SettingsGroup {
+                GroupField {
                     OutlinedTextField(
                         value = hostname,
                         onValueChange = { hostname = it },
                         label = { Text(context.getString(R.string.hostname)) },
-                        placeholder = { Text(ValidationUtils.sanitizeHostname(container.name)) },
+                        placeholder = { Text(ValidationUtils.sanitizeHostname(container.name), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         isError = hostnameError != null,
-                        supportingText = hostnameError?.let { { Text(it) } } ?: { Text(context.getString(R.string.hostname_hint)) },
+                        supportingText = { Text(hostnameError ?: context.getString(R.string.hostname_hint)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = hostnameFieldShape,
-                        colors = hostnameFieldColors,
-                        leadingIcon = { Icon(Icons.Default.Computer, contentDescription = null) }
+                        shape = RoundedCornerShape(16.dp),
+                        colors = DsTextFieldDefaults.colors(),
+                        leadingIcon = { Icon(Icons.Default.Computer, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done, autoCorrectEnabled = false),
+                        keyboardActions = FocusUtils.clearFocusKeyboardActions()
                     )
                 }
-            )
+            }
         }
-    }
+    )
 }

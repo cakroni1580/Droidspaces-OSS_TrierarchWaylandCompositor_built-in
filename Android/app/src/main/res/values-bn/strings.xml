@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="welcome_tagline">Linux containers. Native. কোনো overhead নেই।</string>
     <string name="get_started">শুরু করুন</string>
     <string name="feat_containers_title">আসল Linux containers</string>
     <string name="feat_containers_desc">LXC, Podman এবং Docker এর মতো একই kernel Namespace প্রযুক্তি। কোনো emulation নয়, কোনো chroot নয়।</string>
@@ -19,12 +18,9 @@
     <string name="feat_autoboot_title">Power up এ নিজে থেকেই boot হবে</string>
     <string name="feat_autoboot_desc">Screen lock এবং data encrypted থাকলেও, Boot করার সময় নিজে থেকেই container- গুলো চালু হবে।</string>
     <string name="checking_root">Root access check করা হচ্ছে..।</string>
-    <string name="root_granted">Root access পাওয়া গেছে</string>
     <string name="root_denied">Root access পাওয়া যায় নি</string>
     <string name="root_required_message">Container- গুলো পরিচালনা করতে root access এর প্রয়োজন।</string>
     <string name="check_root_access">Check Root Access</string>
-    <string name="check_root_access_click">Root access check করতে নিচে click করুন</string>
-    <string name="root_available_message">আপনি এখন Droidspaces ব্যবহার করতে পারবেন</string>
     <string name="skip">বাদ দিন</string>
     <string name="continue_button">চালিয়ে যান</string>
     <string name="home_title">Home</string>

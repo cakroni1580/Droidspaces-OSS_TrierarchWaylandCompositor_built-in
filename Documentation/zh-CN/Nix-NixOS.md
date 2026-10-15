@@ -6,6 +6,9 @@ desc: 在 Droidspaces 容器中运行 NixOS。构建 tarball、配置兼容性�
 keywords: nixos, droidspaces, nix, container, android, finix, containerized
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Nix-NixOS.md)。
+
 # Droidspaces 上的 NixOS 入门指南
 
 要构建用于 Droidspaces 的最小 tarball 归档文件，请运行：

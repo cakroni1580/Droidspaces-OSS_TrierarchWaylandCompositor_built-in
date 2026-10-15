@@ -46,6 +46,7 @@ data class ContainerInfo(
     val dnsServers: String = "",
     val runAtBoot: Boolean = false,
     val runAtBootPriority: Int = 0,
+    val enableAnland: Boolean = false,
     val status: ContainerStatus = ContainerStatus.STOPPED,
     val pid: Int? = null,
     val useSparseImage: Boolean = false,
@@ -59,6 +60,8 @@ data class ContainerInfo(
     val gatewayNet: String = "",
     val gatewayIface: String = "",
     val gatewayBridge: String = "",
+    val macvlanParent: String = "",
+    val macvlanMode: String = "",
     val privileged: String = "",
     val customInit: String = "",
     /** Bytes, cpu_quota microseconds per [ResourceLimits.CPU_PERIOD_US], process count. 0 is unlimited. */
@@ -110,6 +113,7 @@ data class ContainerInfo(
         if (runAtBoot && runAtBootPriority > 0) {
             appendLine("run_at_boot_priority=$runAtBootPriority")
         }
+        appendLine("enable_anland=${if (enableAnland) "1" else "0"}")
         appendLine("force_cgroupv1=${if (forceCgroupv1) "1" else "0"}")
         if (netMode == "nat" && staticNatIp.isNotEmpty()) {
             appendLine("static_nat_ip=$staticNatIp")
@@ -121,6 +125,11 @@ data class ContainerInfo(
             if (gatewayNet.isNotBlank()) appendLine("gateway_net=$gatewayNet")
             if (gatewayIface.isNotBlank()) appendLine("gateway_lan_ifname=$gatewayIface")
             if (gatewayBridge.isNotBlank()) appendLine("gateway_bridge=$gatewayBridge")
+        }
+        // Bridge is the runtime's default, so only the other modes are written.
+        if (netMode == "macvlan") {
+            if (macvlanParent.isNotBlank()) appendLine("macvlan_parent=$macvlanParent")
+            if (macvlanMode.isNotBlank() && macvlanMode != "bridge") appendLine("macvlan_mode=$macvlanMode")
         }
         appendLine("use_sparse_image=${if (useSparseImage) "1" else "0"}")
         if (sparseImageSizeGB != null) {
@@ -329,23 +338,23 @@ object ContainerManager {
     /**
      * Parse container configuration from string content.
      */
-    fun parseConfig(configContent: String, defaultName: String): ContainerInfo? {
-        try {
-            val configMap = mutableMapOf<String, String>()
-
-            // Parse config file (key=value format)
-            configContent.lines().forEach { line ->
-                val trimmed = line.trim()
-                // Skip comments and empty lines
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                    return@forEach
-                }
-
+    internal fun parseConfigValues(configContent: String): Map<String, String> = buildMap {
+        configContent.lineSequence().forEach { line ->
+            val trimmed = line.trim()
+            if (trimmed.isNotEmpty() && !trimmed.startsWith("#")) {
                 val parts = trimmed.split("=", limit = 2)
-                if (parts.size == 2) {
-                    configMap[parts[0].trim()] = parts[1].trim()
-                }
+                if (parts.size == 2) put(parts[0].trim(), parts[1].trim())
             }
+        }
+    }
+
+    fun parseConfig(
+        configContent: String,
+        defaultName: String,
+        loadEnvironment: Boolean = true
+    ): ContainerInfo? {
+        try {
+            val configMap = parseConfigValues(configContent)
 
             // Build ContainerInfo from config
             val containerName = configMap["name"] ?: defaultName
@@ -412,10 +421,11 @@ object ContainerManager {
                 dnsServers = configMap["dns_servers"] ?: "",
                 runAtBoot = configMap["run_at_boot"] == "1",
                 runAtBootPriority = configMap["run_at_boot_priority"]?.toIntOrNull() ?: 0,
+                enableAnland = configMap["enable_anland"] == "1",
                 status = ContainerStatus.STOPPED,
                 useSparseImage = useSparseImage,
                 sparseImageSizeGB = sparseImageSizeGB,
-                envFileContent = loadEnvFileContent(containerName),
+                envFileContent = if (loadEnvironment) loadEnvFileContent(containerName) else null,
                 upstreamInterfaces = upstreamInterfaces,
                 portForwards = portForwards,
                 forceCgroupv1 = configMap["force_cgroupv1"] == "1",
@@ -424,6 +434,8 @@ object ContainerManager {
                 gatewayNet = configMap["gateway_net"] ?: "",
                 gatewayIface = configMap["gateway_lan_ifname"] ?: "",
                 gatewayBridge = configMap["gateway_bridge"] ?: "",
+                macvlanParent = configMap["macvlan_parent"] ?: "",
+                macvlanMode = configMap["macvlan_mode"] ?: "",
                 privileged = configMap["privileged"] ?: "",
                 customInit = configMap["custom_init"] ?: "",
                 memoryLimit = configMap["memory_limit"]?.toLongOrNull() ?: 0,
@@ -530,6 +542,27 @@ object ContainerManager {
             emptyList()
         }
     }
+
+    /**
+     * Host interfaces a macvlan can sit on: Ethernet-type links (type 1), minus
+     * our own, dummies and tunnels. Wi-Fi is listed too; whether a given access
+     * point carries a second MAC is for the user to find out.
+     */
+    suspend fun listEthernetInterfaces(): List<String> = withContext(Dispatchers.IO) {
+        try {
+            // One grep over every type file: a cat per interface cost about a second
+            // on a phone with 45 of them, most of them rmnet.
+            val busybox = Constants.BUSYBOX_BINARY_PATH
+            val result = Shell.cmd("$busybox grep -l '^1$' /sys/class/net/*/type; true").exec()
+            result.out.mapNotNull { it.trim().removePrefix("/sys/class/net/").removeSuffix("/type").takeIf(String::isNotEmpty) }
+                .filterNot { n -> ETHERNET_SKIP.any { n.startsWith(it) } }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Ours, dummies and tunnels: type 1 links a macvlan cannot usefully sit on. */
+    private val ETHERNET_SKIP = listOf("ds-", "dummy", "ifb", "gretap", "erspan", "p2p")
 
     /**
      * Update container configuration.

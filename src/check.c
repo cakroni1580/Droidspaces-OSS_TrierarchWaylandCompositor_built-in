@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -47,14 +47,23 @@ static int check_root(void) {
 }
 
 int check_ns(int flag, const char *name) {
-  /* 1. Fast check for kernel support via /proc */
+  /* The ns file is the kernel's own answer for CONFIG_<name>_NS. */
   char path[PATH_MAX];
   snprintf(path, sizeof(path), "/proc/self/ns/%s", name);
   if (access(path, F_OK) != 0)
     return 0;
 
-  /* 2. Functional check: Try to actually unshare.
-   * We fork because unshare() affects the current process. */
+  /* A network namespace is not probed by creating one. Its teardown holds
+   * net_mutex for dozens of RCU grace periods on kernels before 4.17, and the
+   * real unshare(CLONE_NEWNET) a moment later waits for it: 400 ms on every
+   * NAT, gateway or none start of a 4.14 phone. The real unshare fails loudly
+   * if anything else is wrong. The other namespaces are cheap to tear down,
+   * so they keep the functional test below. */
+  if (flag == CLONE_NEWNET)
+    return 1;
+
+  /* Try to actually unshare, in a child because unshare() would change this
+   * process. */
   pid_t p = fork();
   if (p < 0)
     return 0;
@@ -405,6 +414,9 @@ int check_requirements_detailed(int format_output) {
   print_ds_check("veth", "Veth pair support",
                  "Required for --net=nat; no fallback exists if absent",
                  check_veth_support(), "OPT");
+  print_ds_check("macvlan", "Macvlan support",
+                 "CONFIG_MACVLAN; required for --net=macvlan",
+                 is_root && ds_nl_probe_macvlan(), "OPT");
   /* An IPv6 stack alone is not enough for NAT mode, which also needs the
    * IPv6 nat table. This is the probe the runtime runs before it gives a
    * container IPv6, so it is the only IPv6 line worth showing. */

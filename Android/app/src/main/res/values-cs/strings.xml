@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="welcome_tagline">Linuxové kontejnery. Nativně. Bez režie.</string>
     <string name="get_started">Začít</string>
     <string name="feat_containers_title">Skutečné linuxové kontejnery</string>
     <string name="feat_containers_desc">Stejná technologie jmenných prostorů jádra jako u LXC, Podmanu a Dockeru. Bez emulace a bez chrootu.</string>
@@ -18,14 +17,10 @@
     <string name="feat_privileged_desc">Pro pokročilé uživatele umožňuje v privilegovaném režimu uvolnit bezpečnostní omezení.</string>
     <string name="feat_autoboot_title">Automatické spuštění při startu</string>
     <string name="feat_autoboot_desc">Automaticky spustí kontejnery při startu, i když je obrazovka zamknutá a data zašifrovaná.</string>
-    <string name="root_check_title">Kontrola přístupu roota</string>
     <string name="checking_root">Kontroluje se přístup roota...</string>
-    <string name="root_granted">Přístup roota udělen</string>
     <string name="root_denied">Přístup roota odepřen</string>
     <string name="root_required_message">Ke správě kontejnerů je vyžadován přístup roota.</string>
     <string name="check_root_access">Zkontrolovat přístup roota</string>
-    <string name="check_root_access_click">Klepnutím níže zkontrolujte přístup roota</string>
-    <string name="root_available_message">Nyní můžete používat Droidspaces</string>
     <string name="skip">Přeskočit</string>
     <string name="continue_button">Pokračovat</string>
     <string name="home_title">Domů</string>
@@ -91,7 +86,6 @@
     <string name="no_containers_installed">Nejsou nainstalovány žádné kontejnery</string>
     <string name="install_container_description">Nainstalujte kontejner pomocí tlačítka níže</string>
     <string name="install_container">Nainstalovat kontejner</string>
-    <string name="install">Nainstalovat</string>
     <string name="file_picker_error">Vyberte soubor .tar.xz nebo .tar.gz. Vybráno: %1$s</string>
     <string name="file_picker_error_unknown">Vyberte soubor .tar.xz nebo .tar.gz. Typ souboru se nepodařilo zjistit.</string>
     <string name="stopping_container">Zastavuje se kontejner...</string>
@@ -200,8 +194,7 @@
     <string name="network_mode_none_short">Žádná</string>
     <string name="network_mode_gateway">Brána (virtuální směrovač)</string>
     <string name="network_mode_gateway_short">Brána</string>
-    <string name="gateway_settings">Nastavení brány</string>
-    <string name="gateway_settings_description">Směruje tento kontejner přes jiný kontejner, který funguje jako směrovač (např. OpenWRT). Tato brána musí být spuštěna jako první.</string>
+    <string name="gateway_settings_description">Směruje tento kontejner přes jiný kontejner, který funguje jako směrovač (např. OpenWRT).</string>
     <string name="gateway_container">Kontejner brány</string>
     <string name="gateway_net">Název sítě LAN</string>
     <string name="gateway_net_hint">lan</string>
@@ -209,8 +202,6 @@
     <string name="gateway_iface_hint">eth1</string>
     <string name="gateway_bridge">Most hostitele</string>
     <string name="gateway_bridge_hint">ds-lan</string>
-    <string name="gateway_configure">Nastavit bránu</string>
-    <string name="gateway_configure_title">Nastavit bránu</string>
     <string name="gateway_configure_intro">Tato nastavení určují, jak se kontejner připojí k virtuální síti LAN brány. Výchozí hodnoty fungují pro jednu síť LAN za jednou bránou – měňte je pouze při provozu více segmentů LAN nebo více bran.</string>
     <string name="gateway_iface_explain">Název rozhraní, pod kterým se toto připojení zobrazí UVNITŘ kontejneru brány (např. eth1 v OpenWRT). Musí odpovídat rozhraní, na kterém má brána poskytovat DHCP. Každý samostatný segment stejné brány musí mít jedinečný název. Výchozí: eth1.</string>
     <string name="gateway_net_explain">Označení tohoto segmentu LAN. Kontejnery se stejnou bránou a názvem sítě LAN se připojí ke stejnému virtuálnímu přepínači a navzájem se uvidí. Chcete-li vytvořit druhý izolovaný segment, použijte jiný název. Výchozí: lan.</string>
@@ -223,20 +214,11 @@
     <string name="error_iface_too_long">Příliš dlouhé – nejvýše 15 znaků</string>
     <string name="error_gateway_bridge_taken">Most již používá „%1$s“. Použijte jiný název sítě LAN.</string>
     <string name="error_gateway_iface_taken">Rozhraní již používá jiný segment („%1$s“). Použijte jiné.</string>
-    <string name="nat_settings">Nastavení NAT</string>
     <string name="upstream_interface_title">Výstupní rozhraní (volitelné)</string>
     <string name="upstream_interface_hint">Přiřadí přístup k internetu ke konkrétním rozhraním. Ponecháte-li pole prázdné, aktivní výstupní spojení se zjistí automaticky.</string>
     <string name="add_upstream_interface">Přidat výstupní rozhraní</string>
-    <string name="available_system_interfaces">Dostupná systémová rozhraní:</string>
-    <string name="enter_manually">Nebo jej zadejte ručně (jsou podporovány i zástupné znaky):</string>
-    <string name="interface_name_hint">Název rozhraní (např. wlan0, v4-rmnet_data*)</string>
     <string name="port_forwarding">Přesměrování portů</string>
     <string name="add_port_forward">Přidat přesměrování portu</string>
-    <string name="host_port_hint">Port hostitele (1–65535 nebo rozsah 100–200)</string>
-    <string name="container_port_hint">Port kontejneru (1–65535 nebo rozsah)</string>
-    <string name="protocol">Protokol</string>
-    <string name="optional_symmetric_hint">Volitelné (např. 8080 nebo 1000–2000)</string>
-    <string name="leave_blank_for_symmetric">Pro symetrické mapování ponechte prázdné</string>
     <string name="error_invalid_range_format">Neplatný formát rozsahu (ZAČÁTEK–KONEC)</string>
     <string name="error_ports_must_be_numbers">Porty musí být čísla</string>
     <string name="error_port_out_of_range">Porty musí být v rozsahu 1–65535</string>
@@ -244,7 +226,6 @@
     <string name="error_port_must_be_number">Port musí být číslo</string>
     <string name="error_port_width_mismatch">Rozsahy hostitele a kontejneru mají různou šířku</string>
     <string name="error_port_overlap">Překrývá se s existujícím pravidlem přesměrování portů</string>
-    <string name="symmetric_label">(Symetrické)</string>
     <string name="port_forward_examples">Příklady: 8080 (jeden port), 8000–8010 (rozsah). Pro symetrické mapování ponechte cíl prázdný.</string>
     <string name="saved">Uloženo</string>
     <string name="saving">Ukládá se...</string>
@@ -260,10 +241,7 @@
     <string name="bind_mounts">Vazebná připojení</string>
     <string name="add">Přidat</string>
     <string name="add_bind_mount">Přidat vazebné připojení</string>
-    <string name="enter_container_path">Zadejte cestu v kontejneru</string>
     <string name="container_path_placeholder">např. /mnt/sdcard</string>
-    <string name="host_path">Cesta v hostiteli: %1$s</string>
-    <string name="container_path">Cesta v kontejneru: %1$s</string>
     <string name="read_only">Jen pro čtení</string>
     <string name="dns_servers_label">Servery DNS</string>
     <string name="dns_servers_placeholder">např. 1.1.1.1,8.8.8.8 (volitelné)</string>
@@ -285,7 +263,6 @@
     <string name="container_name_exists">Kontejner s tímto názvem již existuje</string>
     <string name="next_configuration">Další: konfigurace</string>
     <string name="configuration_title">Konfigurace</string>
-    <string name="container_options">Možnosti kontejneru</string>
     <string name="next_storage">Další: úložiště</string>
     <string name="installing_container">Instaluje se kontejner</string>
     <string name="installation_complete">Instalace byla dokončena</string>
@@ -424,7 +401,6 @@
     <string name="help_card_title">Začínáte s Droidspaces?</string>
     <string name="help_card_message">Klepnutím sem se dozvíte, jak nastavit svůj první linuxový kontejner!</string>
     <string name="privileged_mode">Privilegovaný režim</string>
-    <string name="privileged_mode_description">Nastavte dílčí uvolnění bezpečnostních omezení pro vnořenou virtualizaci nebo pokročilý přístup k hardwaru.</string>
     <string name="privileged_nomask_desc">Vypne ochranné maskování a povolí zápis do /proc a /sys. Poznámka: /sys zůstane jen pro čtení, pokud není zapnutý také přístup k hardwaru.</string>
     <string name="privileged_nocaps_desc">Neodebírá žádné schopnosti (capabilities) Linuxu (plný přístup roota).</string>
     <string name="privileged_noseccomp_desc">Vypne filtrování systémových volání seccomp. Tím povolí pokročilé funkce jádra, například neprivilegované uživatelské jmenné prostory, které jsou nezbytné pro vnořený sandboxing (Bubblewrap, Flatpak), a také načítání modulů jádra mimo strom.</string>
@@ -547,7 +523,6 @@
     <string name="easter_egg_warning">Backend je v pořádku, není třeba ho zahlcovat 🙂</string>
     <string name="easter_egg_reward">Řekli jste si o to 🎵</string>
     <string name="env_placeholder">KEY=VALUE, jeden záznam na řádek. Řádky začínající znakem # se ignorují.</string>
-    <string name="env_lines_skipped">Počet řádků, které nejsou ve tvaru KEY=VALUE: %1$d</string>
     <string name="fetching_logs">Načítají se protokoly...</string>
     <string name="journal_load_error_title">Nepodařilo se načíst protokoly</string>
     <string name="journal_load_error_message">Jednotka možná nemá žádné záznamy v journalu nebo je kontejner nedostupný.</string>
@@ -584,4 +559,127 @@
         <item quantity="many">%1$s jader</item>
         <item quantity="other">%1$s jader</item>
     </plurals>
+    <string name="welcome_headline">Skutečný Linux ve vašem telefonu</string>
+    <string name="welcome_body">Droidspaces spouští plnohodnotné distribuce v kontejnerech na vlastním jádře vašeho zařízení. Bez emulátoru, bez virtuálního stroje.</string>
+    <string name="next">Další</string>
+    <string name="page_counter">%1$d z %2$d</string>
+    <string name="root_access_title">Přístup roota</string>
+    <string name="root_access_body">Droidspaces potřebuje k vytváření kontejnerů přístup roota. Váš správce roota vás požádá o povolení tohoto přístupu.</string>
+    <string name="limit_memory_requirement">CONFIG_MEMCG a příkazový řádek jádra bez cgroup_disable=memory</string>
+    <string name="limit_cpu_requirement">CONFIG_CFS_BANDWIDTH a příkazový řádek jádra bez cgroup_disable=cpu</string>
+    <string name="limit_pids_requirement">CONFIG_CGROUP_PIDS a příkazový řádek jádra bez cgroup_disable=pids</string>
+    <string name="hardware_access_not_supported">Není k dispozici. Toto jádro nepodporuje devtmpfs (CONFIG_DEVTMPFS).</string>
+    <string name="volatile_mode_not_supported">Není k dispozici. Toto jádro nepodporuje OverlayFS (CONFIG_OVERLAY_FS).</string>
+    <string name="force_cgroupv1_not_supported">Není k dispozici. Toto jádro má pouze cgroup v1, takže není co vynucovat.</string>
+    <string name="disable_ipv6_forced">Vynuceně zapnuto. Toto jádro nepodporuje NAT pro IPv6 (CONFIG_IP6_NF_NAT), takže kontejnery v režimu NAT používají pouze IPv4.</string>
+    <string name="memory_kb">%1$s KB</string>
+    <string name="memory_mb_decimal">%1$s MB</string>
+    <string name="installing_backend_message">Nastavuje se backend. Chvíli to potrvá.</string>
+    <string name="backend_installed_unsupported_kernel">Backend Droidspaces byl úspěšně nainstalován, ale toto jádro nepodporuje Droidspaces.</string>
+    <string name="ram_used_label">%1$s (%2$.1f%%)</string>
+    <string name="ram_used_of_limit_label">%1$s / %2$s (%3$.0f%%)</string>
+    <string name="kernel_unsupported">Jádro není podporováno</string>
+    <string name="kernel_unsupported_description">Tato stránka není dostupná, protože tomuto jádru chybějí funkce potřebné pro Droidspaces</string>
+    <string name="kernel_unsupported_message">Klepnutím zjistíte, jak nastavit jádro pro Droidspaces.</string>
+    <string name="add_container">Přidat kontejner</string>
+    <string name="install_from_file">Nainstalovat ze souboru</string>
+    <string name="fab_menu_expanded">Rozbaleno</string>
+    <string name="fab_menu_collapsed">Sbaleno</string>
+    <string name="close_menu">Zavřít nabídku</string>
+    <string name="anland_option">Anland</string>
+    <string name="termux_not_installed">Není k dispozici. Termux není nainstalován.</string>
+    <string name="termux_x11_not_installed">Není k dispozici. Je nutné mít nainstalované aplikace Termux i Termux:X11.</string>
+    <string name="enable_anland">Zobrazení přes Anland</string>
+    <string name="enable_anland_description">Zobrazit plochu Wayland v aplikaci Anland</string>
+    <string name="launch_anland_window">Spustit</string>
+    <string name="anland_not_installed">Není k dispozici. Je nutné mít nainstalovanou aplikaci Anland.</string>
+    <string name="anland_needs_gpu">Vyžaduje přístup ke GPU nebo přístup k hardwaru.</string>
+    <string name="anland_replaces_x11">Vypnuto, když je zapnuté zobrazení přes Anland. Kontejner používá jednu cestu grafického zobrazení.</string>
+    <string name="network_mode_macvlan">Macvlan (kabelová LAN)</string>
+    <string name="network_mode_macvlan_short">Macvlan</string>
+    <string name="macvlan_parent">Rozhraní hostitele</string>
+    <string name="macvlan_parent_choose">Vybrat rozhraní hostitele</string>
+    <string name="macvlan_parent_hint">Kabelové rozhraní, nad kterým běží eth0 kontejneru, obvykle adaptér USB Ethernet. Jedno rozhraní zadané přesným názvem.</string>
+    <string name="error_macvlan_parent_required">Vyberte rozhraní hostitele</string>
+    <string name="warning_macvlan_passthru_shared">%1$s používá také „%2$s“. V režimu passthru může současně běžet pouze jeden z těchto kontejnerů.</string>
+    <string name="macvlan_mode">Režim Macvlan</string>
+    <string name="macvlan_mode_bridge_desc">Kontejnery na tomto rozhraní mohou komunikovat přímo mezi sebou.</string>
+    <string name="macvlan_mode_private_desc">Kontejnery na tomto rozhraní nemohou komunikovat mezi sebou, pouze se sítí LAN.</string>
+    <string name="macvlan_mode_vepa_desc">Komunikace mezi kontejnery prochází přes přepínač sítě LAN a zpět, takže je potřeba přepínač s podporou hairpin.</string>
+    <string name="macvlan_mode_passthru_desc">Celé rozhraní se předá tomuto jedinému kontejneru a telefon na něm ztratí síťové připojení.</string>
+    <string name="macvlan_mode_bridge">Most (výchozí)</string>
+    <string name="macvlan_mode_private">Soukromý</string>
+    <string name="macvlan_mode_vepa">VEPA</string>
+    <string name="macvlan_mode_passthru">Passthru</string>
+    <string name="rootfs_config_loading">Načítají se doporučená nastavení…</string>
+    <string name="rootfs_config_loaded_title">Nastavení byla předvyplněna za vás</string>
+    <string name="rootfs_config_loaded">Tento archiv obsahuje vlastní nastavení kontejneru a všechna už byla použita, včetně přístupu k hardwaru a privilegovaného režimu. Rootfs od někoho jiného může požadovat větší přístup, než jste chtěli povolit. Před instalací si pečlivě projděte následující stránku.</string>
+    <string name="rootfs_config_review">Zkontrolovat konfiguraci</string>
+    <string name="rootfs_config_invalid">Doporučená nastavení se nepodařilo načíst. Nastavte tento kontejner ručně. %1$s</string>
+    <string name="export_container_title">Exportovat %1$s</string>
+    <string name="export_action">Exportovat</string>
+    <plurals name="export_env_body">
+        <item quantity="one">Tento kontejner má %1$d proměnnou prostředí. Proměnné prostředí často obsahují hesla a tokeny API a každý, kdo získá archiv, si je může přečíst.</item>
+        <item quantity="few">Tento kontejner má %1$d proměnné prostředí. Často obsahují hesla a tokeny API a každý, kdo získá archiv, si je může přečíst.</item>
+        <item quantity="many">Tento kontejner má %1$d proměnných prostředí. Často obsahují hesla a tokeny API a každý, kdo získá archiv, si je může přečíst.</item>
+        <item quantity="other">Tento kontejner má %1$d proměnných prostředí. Často obsahují hesla a tokeny API a každý, kdo získá archiv, si je může přečíst.</item>
+    </plurals>
+    <string name="export_env_include">Zahrnout proměnné prostředí</string>
+    <string name="export_env_include_desc">U archivů, které sdílíte, ponechte tuto volbu vypnutou. Pro vlastní zálohy ji zapněte.</string>
+    <string name="config_general">Obecné</string>
+    <string name="network_mode_nat_desc">Soukromá síť za telefonem</string>
+    <string name="network_mode_gateway_desc">Přes jiný kontejner fungující jako směrovač</string>
+    <string name="network_mode_macvlan_desc">Přímo do kabelové sítě LAN</string>
+    <string name="network_mode_host_desc">Sdílí síť telefonu</string>
+    <string name="network_mode_none_desc">Bez sítě, pouze rozhraní loopback</string>
+    <plurals name="upstream_count">
+        <item quantity="one">%1$d výstupní rozhraní</item>
+        <item quantity="few">%1$d výstupní rozhraní</item>
+        <item quantity="many">%1$d výstupních rozhraní</item>
+        <item quantity="other">%1$d výstupních rozhraní</item>
+    </plurals>
+    <plurals name="port_rule_count">
+        <item quantity="one">%1$d pravidlo pro porty</item>
+        <item quantity="few">%1$d pravidla pro porty</item>
+        <item quantity="many">%1$d pravidel pro porty</item>
+        <item quantity="other">%1$d pravidel pro porty</item>
+    </plurals>
+    <plurals name="bind_mount_count">
+        <item quantity="one">%1$d připojení</item>
+        <item quantity="few">%1$d připojení</item>
+        <item quantity="many">%1$d připojení</item>
+        <item quantity="other">%1$d připojení</item>
+    </plurals>
+    <string name="network_summary_gateway">Přes %1$s</string>
+    <string name="network_summary_macvlan">Na %1$s</string>
+    <string name="add_interfaces_lead">Klepněte na ně v pořadí, ve kterém se mají zkoušet.</string>
+    <string name="add_interfaces_manual_hint">Lze použít zástupné znaky. Ručně zadaný název se zařadí na konec a po přidání můžete pořadí všech položek změnit.</string>
+    <string name="or_type_a_name">Nebo zadejte název</string>
+    <string name="or_type_exact_name">Nebo zadejte jeho přesný název</string>
+    <string name="no_interfaces_found">Momentálně nebyla nalezena žádná rozhraní.</string>
+    <string name="port_forwarding_intro">Porty na telefonu, které vedou do tohoto kontejneru.</string>
+    <string name="port_forward_same_port">%1$s, uvnitř stejný port</string>
+    <string name="host_port">Port hostitele</string>
+    <string name="container_port">Port kontejneru</string>
+    <string name="same_as_host">Stejný jako u hostitele</string>
+    <string name="optional">Volitelné</string>
+    <string name="gateway_lan">LAN brány</string>
+    <string name="delete_item">Odstranit %1$s</string>
+    <string name="reorder">Přetažením změnit pořadí</string>
+    <string name="env_not_key_value">Řádky, které nemají podobu KEY=VALUE, jsou podtržené. Chcete-li uložit změny, opravte je nebo odstraňte.</string>
+    <string name="bind_mounts_intro">Složky na telefonu, které se zobrazí uvnitř kontejneru.</string>
+    <string name="bind_dest_taken">Tuto cestu už používá jiné připojení</string>
+    <string name="folder_on_phone">Složka na telefonu</string>
+    <string name="choose_folder">Vybrat složku</string>
+    <string name="path_in_container">Cesta v kontejneru</string>
+    <string name="path_in_container_hint">Složka uvnitř kontejneru, například /mnt/music. Ne samotná / a bez znaků , nebo :</string>
+    <string name="read_only_description">Kontejner může tyto soubory číst, ale ne měnit</string>
+    <string name="mount_from">z %1$s</string>
+    <string name="discard_edits_title">Zahodit úpravy?</string>
+    <string name="discard_edits_body">Změny provedené na této stránce ještě nebyly použity.</string>
+    <string name="discard_invalid_body">Některá nastavení na této stránce nejsou platná. Opravte je, abyste změny zachovali, nebo změny zahoďte.</string>
+    <string name="discard">Zahodit</string>
+    <string name="upstream_max">Nejvýše %1$d rozhraní. Chcete-li přidat další, zrušte výběr některého z nich.</string>
+    <string name="bind_path_separator">Cesty nesmějí obsahovat znaky , nebo :</string>
+    <string name="keep_editing">Pokračovat v úpravách</string>
 </resources>

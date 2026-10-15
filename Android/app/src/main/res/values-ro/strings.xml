@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Droidspaces</string>
-    <string name="root_check_title">Verificatul permisiunilor de root</string>
     <string name="checking_root">Se verifică accesul permisiunilor de root...</string>
-    <string name="root_granted">Permisiunile de root au fost acordate</string>
     <string name="root_denied">Permisiunile de root nu au fost acordate</string>
     <string name="root_required_message">Permmisiunile de root sunt necesare pentru a gestiona containere.</string>
     <string name="check_root_access">Verifică accesul la root</string>
-    <string name="check_root_access_click">Apasă butonul de mai jos pentru a verifica accesul la root</string>
-    <string name="root_available_message">Poți utiliza Droidspaces</string>
     <string name="skip">Treci peste</string>
     <string name="continue_button">Continuă</string>
     <string name="home_title">Acasă</string>
@@ -119,18 +115,10 @@
     <string name="network_mode_host">Gazdă</string>
     <string name="network_mode_nat">NAT (implicit)</string>
     <string name="network_mode_none">Niciunul (fără nicio conexiune la rețea)</string>
-    <string name="nat_settings">Setări NAT</string>
     <string name="upstream_interface_title">Interfață de uplink (opțională)</string>
     <string name="upstream_interface_hint">Fixează accesul la internet pe anumite interfețe. Lasă gol pentru a detecta automat uplink-ul activ.</string>
     <string name="add_upstream_interface">Adaugă interfață de uplink</string>
-    <string name="available_system_interfaces">Interfețe de sistem disponibile:</string>
-    <string name="enter_manually">Sau scrie-le manual (de asemenea, wildcard-urile sunt suportate):</string>
-    <string name="interface_name_hint">Numele interfeței (de exemplu, wlan0, v4-rmnet_data*)</string>
     <string name="add_port_forward">Adaugă port forward</string>
-    <string name="host_port_hint">Portul gazdei (1-65535 sau intervalul 100-200)</string>
-    <string name="container_port_hint">Portul container-ului (1-65535 sau interval)</string>
-    <string name="optional_symmetric_hint">Opțional (de exemplu, 8080 sau 1000-2000)</string>
-    <string name="leave_blank_for_symmetric">Lasă necompletat pentru mapare simetrică</string>
     <string name="error_invalid_range_format">Formatul intervalului este invalid (START-SFÂRȘIT)</string>
     <string name="error_ports_must_be_numbers">Porturile trebuie să fie numere</string>
     <string name="error_port_out_of_range">Porturile trebuie să fie între 1-65535</string>
@@ -138,7 +126,6 @@
     <string name="error_port_must_be_number">Portul trebuie să fie un număr</string>
     <string name="error_port_width_mismatch">Intervalul gazdă/container are o lățime nepotrivită</string>
     <string name="error_port_overlap">Coincide cu o regulă port forward deja adăugată</string>
-    <string name="symmetric_label">(Simetric)</string>
     <string name="port_forward_examples">Exemple: 8080 (singur), 8000-8010 (interval). Lasă targetul gol pentru maparea simetrică.</string>
     <string name="saved">Salvat</string>
     <string name="saving">Se salvează...</string>
@@ -153,10 +140,7 @@
     <string name="volatile_mode_description">Modul RAM-only (schimbările dispar după oprire)</string>
     <string name="add">Adaugă</string>
     <string name="add_bind_mount">Adaugă un bind mount</string>
-    <string name="enter_container_path">Alege calea din container</string>
     <string name="container_path_placeholder">de exemplu, /mnt/sdcard</string>
-    <string name="host_path">Calea gazdei: %1$s</string>
-    <string name="container_path">Calea container-ului: %1$s</string>
     <string name="dns_servers_label">Servere DNS</string>
     <string name="dns_servers_placeholder">de exemplu, 1.1.1.1,8.8.8.8 (Opțional)</string>
     <string name="dns_servers_hint">Numai numere, puncte și două puncte sunt permise</string>
@@ -171,7 +155,6 @@
     <string name="container_name_exists">Un container cu acest nume există deja</string>
     <string name="next_configuration">Următorul: Configurarea</string>
     <string name="configuration_title">Configurare</string>
-    <string name="container_options">Opțiunile container-ului</string>
     <string name="next_storage">Următorul: Stocarea</string>
     <string name="installation_complete">Instalarea a fost finalizată</string>
     <string name="installation_failed">Instalarea a eșuat</string>
@@ -279,7 +262,6 @@
     <string name="cat_networking">Categorii de configurație și modul de rețea</string>
     <string name="no_options_enabled">­Nicio opțiune suplimentară este activată</string>
     <string name="installation_setup_summary">Rezumatul instalării</string>
-    <string name="welcome_tagline">Containere Linux. Native. Fără pierderi de performanță.</string>
     <string name="feat_containers_title">Containere Linux adevărate</string>
     <string name="feat_containers_desc">Aceeași tehnologie de namespace-uri precum LXC, Podman și Docker. Fără emulare și zero chroot.</string>
     <string name="feat_overhead_title">Zero pierderi de performanță</string>
@@ -303,7 +285,6 @@
     <string name="guide">Ghid</string>
     <string name="symlink_integration">Integrează Droidspaces în calea sistemului</string>
     <string name="symlink_integration_description">Creează un symlink în /system/bin pentru a accesa comanda droidspaces într-un shell Android rootat. AVERTISMENT: ACTIVAREA ACESTEI OPȚIUNI VA CAUZA UN BOOTLOOP DACA SISTEMUL TĂU MOUNT ESTE O METAMODULĂ OVERLAYFS. Utilizează această opțiune numai cu sistemele de mount Magic Mount (Restart necesar)</string>
-    <string name="install">Instalează</string>
     <string name="failure_in_operation">Eroare în %1$s la containerul %2$s</string>
     <string name="selinux_permissive_option">SELinux Permisiv</string>
     <string name="volatile_option">Volatil</string>
@@ -338,7 +319,6 @@
     <string name="export_container_failed">Nu s-a putut exporta container-ul %1$s</string>
     <string name="starting_export">Export-ul a pornit...</string>
     <string name="privileged_mode">Modul privilegiat</string>
-    <string name="privileged_mode_description">Configurează detaliat relaxarea securității pentru virtualizarea nested sau accesul avansat al hardware-ului.</string>
     <string name="privileged_nomask_desc">Dezactivează jail masks-urile pentru a permite scrierea către /proc și /sys. Notă: /sys rămâne read-only dacă Accesul la Hardware nu este activat.</string>
     <string name="privileged_nocaps_desc">Nu dezactiva nicio capacitate Linux (putere completă de root).</string>
     <string name="privileged_noseccomp_desc">Dezactivează filtrarea Seccomp de syscall. Aceasta permite opțiuni de kernel avansate precum utilizarea neprivilegiată a namespace-urilor user, necesară pentru sandboxing nested (Bubblewrap, Flatpak). Dezactivarea acestei opțiuni va permite, de asemenea, încărcarea modulelor kernel out-of-tree.</string>

@@ -12,25 +12,22 @@ import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.droidspaces.app.ui.component.DsDropdown
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import com.droidspaces.app.ui.util.rememberClearFocus
 import androidx.compose.ui.unit.dp
 import com.droidspaces.app.util.Constants
 import com.droidspaces.app.util.ContainerCommandBuilder
-import com.droidspaces.app.util.ContainerUsersManager
+import com.droidspaces.app.util.PreferencesManager
 import com.droidspaces.app.ui.util.LoadingIndicator
 import com.droidspaces.app.ui.util.LoadingSize
 import com.droidspaces.app.ui.util.showSuccess
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.droidspaces.app.R
@@ -39,7 +36,8 @@ import com.droidspaces.app.R
 @Composable
 fun ContainerUsersCard(
     containerName: String,
-    refreshTrigger: Int = 0,
+    users: List<String>?,
+    onRefresh: suspend () -> Unit,
     snackbarHostState: SnackbarHostState? = null,
     modifier: Modifier = Modifier
 ) {
@@ -47,74 +45,30 @@ fun ContainerUsersCard(
     val context = LocalContext.current
     val clearFocus = rememberClearFocus()
 
-    // Use cached value initially for instant display
-    var users by remember {
-        mutableStateOf<List<String>>(
-            ContainerUsersManager.getCachedUsers(containerName) ?: emptyList()
-        )
-    }
-    var isLoading by remember {
-        mutableStateOf(ContainerUsersManager.getCachedUsers(containerName) == null)
-    }
-    var isManuallyRefreshing by remember { mutableStateOf(false) }
+    // Null means the screen is still probing the container
+    val isLoading = users == null
 
     // Available users list: always include "root", plus any local users
     val availableUsers = remember(users) {
-        val userList = users.toMutableList()
+        val userList = users.orEmpty().toMutableList()
         if (!userList.contains("root")) {
             userList.add(0, "root") // Add root at the beginning if not present
         }
         userList
     }
 
-    // Selected user state - default to "root"
-    var selectedUser by remember { mutableStateOf("root") }
+    // Same preselection as the terminal's user picker
+    var selectedUser by remember {
+        mutableStateOf(PreferencesManager.getInstance(context).getLastTerminalUser(containerName) ?: "root")
+    }
 
-    // Update selected user when users list changes (keep current selection if still valid)
+    // Skipped while loading, or the remembered user is reset before the list arrives
     LaunchedEffect(users) {
-        if (!availableUsers.contains(selectedUser)) {
+        if (!isLoading && !availableUsers.contains(selectedUser)) {
             selectedUser = "root"
         }
     }
 
-
-    LaunchedEffect(containerName, refreshTrigger) {
-        scope.launch {
-            // Only show loading if we don't have cached data (first load)
-            // Don't show loading on refresh to prevent glitches
-            val shouldShowLoading = users.isEmpty() && refreshTrigger == 0
-            if (shouldShowLoading) {
-                isLoading = true
-            }
-            users = ContainerUsersManager.getUsers(containerName, useCache = refreshTrigger == 0)
-            isLoading = false
-            isManuallyRefreshing = false
-        }
-    }
-
-
-    // Manual refresh function with premium rotation animation
-    fun refreshUsers() {
-        if (!isManuallyRefreshing) {
-            isManuallyRefreshing = true
-            scope.launch {
-                // Start timing for artificial delay
-                val startTime = System.currentTimeMillis()
-
-                // Fetch fresh data
-                users = ContainerUsersManager.getUsers(containerName, useCache = false)
-
-                // Premium UX: Ensure icon completes exactly 1 full rotation (600ms)
-                val elapsed = System.currentTimeMillis() - startTime
-                val minRotationTime = 600L // One complete 360° rotation
-                if (elapsed < minRotationTime) {
-                    delay(minRotationTime - elapsed)
-                }
-
-                isManuallyRefreshing = false
-            }
-        }
-    }
 
     Surface(
         modifier = modifier
@@ -160,45 +114,16 @@ fun ContainerUsersCard(
                     )
                 }
 
-                // Premium refresh icon button - exactly 1 full rotation, perfectly visible!
-                val rotation by animateFloatAsState(
-                    targetValue = if (isManuallyRefreshing) 360f else 0f,
-                    animationSpec = if (isManuallyRefreshing) {
-                        // Animate forward smoothly - 600ms for one full rotation
-                        tween(
-                            durationMillis = 600,
-                            easing = LinearEasing
-                        )
-                    } else {
-                        // Snap back instantly when done (no reverse animation)
-                        tween(
-                            durationMillis = 0,
-                            easing = LinearEasing
-                        )
-                    },
-                    label = "refresh_rotation"
-                )
-
-                IconButton(
-                    onClick = {
+                DsRefreshButton(
+                    contentDescription = context.getString(R.string.refresh_users),
+                    onRefresh = {
                         clearFocus()
-                        refreshUsers()
+                        onRefresh()
                     },
-                    enabled = !isManuallyRefreshing,
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = context.getString(R.string.refresh_users),
-                        modifier = Modifier
-                            .size(20.dp)
-                            .graphicsLayer {
-                                // Hardware-accelerated rotation for buttery smooth 60fps
-                                rotationZ = rotation
-                            },
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                    modifier = Modifier.size(40.dp),
+                    iconSize = 20.dp,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             // Show users list - use stable layout to prevent glitches
@@ -211,7 +136,7 @@ fun ContainerUsersCard(
                 ) {
                     LoadingIndicator(size = LoadingSize.Medium)
                 }
-            } else if (users.isEmpty()) {
+            } else if (users.isNullOrEmpty()) {
                 Text(
                     text = context.getString(R.string.no_local_users_found),
                     style = MaterialTheme.typography.bodyLarge,
@@ -230,7 +155,7 @@ fun ContainerUsersCard(
                             clearFocus()
                         }
                 ) {
-                    users.forEach { user ->
+                    users.orEmpty().forEach { user ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,

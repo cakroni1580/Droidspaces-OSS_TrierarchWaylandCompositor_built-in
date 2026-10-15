@@ -6,6 +6,9 @@ desc: 深入了解每个 Droidspaces 功能：命名空间隔离、初始化系�
 keywords: droidspaces, 功能, 命名空间, 隔离, cgroup, overlayfs, 易失, 模式, 初始化, 系统, 支持, gpu, 加速
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Features.md)。
+
 # 功能详解
 
 每个主要 Droidspaces 功能及其底层工作原理的详细说明。

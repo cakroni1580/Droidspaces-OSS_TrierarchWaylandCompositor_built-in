@@ -6,6 +6,9 @@ desc: 从 Android 和 Linux 上安全卸载 Droidspaces。彻底删除容器、�
 keywords: uninstall, droidspaces, remove, android, delete, rootfs, cleanup, container, runtime, backend, data
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Uninstallation.md)。
+
 # 卸载指南
 
 本指南将讲述如何从你的系统中安全、彻底地删除 Droidspaces。

@@ -44,16 +44,6 @@ object AnimationUtils {
         easing = LinearOutSlowInEasing
     )
 
-    fun <T> fadeInSpec(): TweenSpec<T> = tween(
-        durationMillis = DURATION_SCREEN_TRANSITION,
-        easing = STANDARD_EASING
-    )
-
-    fun <T> fadeOutSpec(): TweenSpec<T> = tween(
-        durationMillis = DURATION_FAST,
-        easing = FastOutLinearInEasing
-    )
-
     // Specific use cases
     const val SCREEN_TRANSITION_DURATION = DURATION_FAST
     const val ELEMENT_EXPANSION_DURATION = DURATION_MEDIUM

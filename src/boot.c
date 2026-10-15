@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -171,8 +171,8 @@ int internal_boot(struct ds_config *cfg) {
       if (nr != (ssize_t)sizeof(hs)) {
         ds_warn("[NET] Child: incomplete handshake (read %zd, expected %zu)",
                 nr, sizeof(hs));
-      } else if (cfg->net_mode == DS_NET_GATEWAY) {
-        ds_log("[NET] Child: handshake received (gateway mode)");
+      } else if (cfg->net_mode != DS_NET_NAT) {
+        ds_log("[NET] Child: handshake received");
       } else {
         ds_log("[NET] Child: handshake received: peer=%s ip=%s", hs.peer_name,
                hs.ip_str);
@@ -183,7 +183,8 @@ int internal_boot(struct ds_config *cfg) {
     if (cfg->net_mode == DS_NET_NAT || cfg->net_mode == DS_NET_GATEWAY) {
       setup_veth_child_side_named(cfg, hs.peer_name, hs.ip_str);
     } else {
-      /* DS_NET_NONE: just bring up loopback */
+      /* none: just loopback. macvlan: the same, its eth0 is created and
+       * brought up by the monitor, see ds_net_macvlan_wire() */
       ds_nl_ctx_t *nlctx = ds_nl_open();
       if (nlctx) {
         ds_nl_link_up(nlctx, "lo");
@@ -518,9 +519,6 @@ int internal_boot(struct ds_config *cfg) {
   }
 
   write_file("run/droidspaces/name", cfg->container_name);
-
-  if (cfg->img_mount_point[0])
-    write_file("run/droidspaces/mount", cfg->img_mount_point);
 
   /* Legacy compatibility: write version to the marker directory root */
   write_file("run/droidspaces/version", DS_VERSION);

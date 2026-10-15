@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 daemon & client mode
+ * Droidspaces v7 daemon & client mode
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later

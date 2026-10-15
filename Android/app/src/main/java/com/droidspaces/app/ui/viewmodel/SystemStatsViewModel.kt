@@ -29,9 +29,10 @@ class SystemStatsViewModel(application: Application) : AndroidViewModel(applicat
     /**
      * Poll OS info for every running container until cancelled.  Returns
      * immediately when nothing is running; the caller re-invokes with a fresh
-     * list whenever the running set changes.
+     * list whenever the running set changes. [onStopped] runs on a tick that found a
+     * container gone, so the list can mark it stopped.
      */
-    suspend fun monitorContainers(containers: List<ContainerInfo>) {
+    suspend fun monitorContainers(containers: List<ContainerInfo>, onStopped: () -> Unit) {
         val running = containers.filter { it.isRunning }
         if (running.isEmpty()) return
 
@@ -39,7 +40,8 @@ class SystemStatsViewModel(application: Application) : AndroidViewModel(applicat
             // One `show --format` call covers every container, so a tick costs the same
             // for ten containers as for one. Absence from the result means it died.
             val live = ContainerOSInfoManager.fetchAll(getApplication())
-            running.filter { it.name !in live }.forEach { container ->
+            val dead = running.filter { it.name !in live }
+            dead.forEach { container ->
                 val ctx = getApplication<Application>()
                 ctx.startService(
                     android.content.Intent(ctx, com.droidspaces.app.service.TerminalSessionService::class.java).apply {
@@ -50,6 +52,7 @@ class SystemStatsViewModel(application: Application) : AndroidViewModel(applicat
                 containerUsageMap.remove(container.name)
             }
             containerUsageMap.putAll(live)
+            if (dead.isNotEmpty()) onStopped()
             delay(CONTAINER_INTERVAL_MS)
         }
     }

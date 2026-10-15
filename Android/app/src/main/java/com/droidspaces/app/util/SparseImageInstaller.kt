@@ -23,7 +23,7 @@ object SparseImageInstaller {
      * Extracts a tarball into a sparse image file.
      *
      * @param context App context
-     * @param tarball The source tarball file in app cache
+     * @param tarball Path of the source tarball, readable by root
      * @param imgPath The target path for the rootfs.img
      * @param mountPoint The temporary directory where the image will be mounted
      * @param sizeGB The desired size of the sparse image in GB
@@ -31,7 +31,7 @@ object SparseImageInstaller {
      */
     suspend fun extract(
         context: Context,
-        tarball: File,
+        tarball: String,
         imgPath: String,
         mountPoint: String,
         sizeGB: Int,
@@ -94,12 +94,7 @@ object SparseImageInstaller {
             try {
                 // 5. Extract Tarball
                 logger.i("[SPARSE] Extracting tarball to mount point...")
-                val isXz = tarball.name.lowercase().endsWith(".xz")
-                val extractCmd = if (isXz) {
-                    "cd ${quote(mountPoint)} && ${Constants.BUSYBOX_BINARY_PATH} xzcat ${quote(tarball.absolutePath)} | ${Constants.BUSYBOX_BINARY_PATH} tar -xpf - 2>&1"
-                } else {
-                    "cd ${quote(mountPoint)} && ${Constants.BUSYBOX_BINARY_PATH} tar -xzpf ${quote(tarball.absolutePath)} 2>&1"
-                }
+                val extractCmd = ContainerInstaller.extractCommand(tarball, mountPoint)
 
                 // For extraction, we stream the output to the logger's debug level
                 val extractResult = Shell.cmd(extractCmd).exec()

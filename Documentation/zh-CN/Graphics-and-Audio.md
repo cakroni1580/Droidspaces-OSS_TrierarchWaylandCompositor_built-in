@@ -6,6 +6,9 @@ desc: 在 Android 和 Linux 上为 Droidspaces 容器配置 GPU 加速、PulseAu
 keywords: gpu, acceleration, droidspaces, termux, virgl, turnip, adreno, pulseaudio, sound, audio, desktop, xfce, container, graphics
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Graphics-and-Audio.md)。
+
 # Droidspaces 显示、音频与桌面指南
 
 本指南介绍如何在 Droidspaces 容器中配置显示、GPU 加速、音效（PulseAudio）以及桌面环境自动启动。在 Android 上，自 **v6.3.0** 起，X 服务器、VirGL 服务器和 PulseAudio 守护进程均会在容器启动时自动拉起 - 无需在 Termux 中手动执行任何命令。

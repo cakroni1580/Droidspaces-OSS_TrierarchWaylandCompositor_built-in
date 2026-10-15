@@ -15,8 +15,10 @@ import com.droidspaces.app.util.ContainerCommandBuilder
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ContainerManager
 import com.droidspaces.app.util.ContainerOSInfoManager
+import com.droidspaces.app.util.ContainerDiskUsageManager
 import com.droidspaces.app.util.ContainerUsersManager
 import com.droidspaces.app.util.ContainerOperationExecutor
+import com.droidspaces.app.util.FilePickerUtils
 import com.droidspaces.app.util.PreferencesManager
 import com.droidspaces.app.util.SystemInfoManager
 import com.droidspaces.app.util.ViewModelLogger
@@ -101,6 +103,7 @@ class ContainerOperationsViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun executeExport(
         container: ContainerInfo,
         outputUri: Uri,
+        includeEnv: Boolean,
         onError: (String) -> Unit,
     ) {
         runningOperationContainer = container.name
@@ -137,12 +140,16 @@ class ContainerOperationsViewModel(app: Application) : AndroidViewModel(app) {
             }
             Shell.cmd("chmod 755 ${ContainerCommandBuilder.quote(deployed.absolutePath)}").exec()
 
-            tempArchive = File("${appContext.cacheDir}/${container.name}_export_tmp.tar.gz")
-            tempArchive.delete()
+            // Write straight into the picked document when its provider exposes a file.
+            // Only a pipe-backed one (cloud storage) still goes through cacheDir.
+            val output = FilePickerUtils.realPath(appContext, outputUri, "w")
+                ?: File("${appContext.cacheDir}/${container.name}_export_tmp.tar.gz")
+                    .also { it.delete(); tempArchive = it }.absolutePath
 
             val cmd = "${ContainerCommandBuilder.quote(deployed.absolutePath)} " +
                 "${ContainerCommandBuilder.quote(container.name)} " +
-                ContainerCommandBuilder.quote(tempArchive.absolutePath)
+                ContainerCommandBuilder.quote(output) +
+                if (includeEnv) " --with-env" else ""
             val success = ContainerOperationExecutor.executeCommand(
                 command = cmd,
                 operation = "export",
@@ -151,17 +158,18 @@ class ContainerOperationsViewModel(app: Application) : AndroidViewModel(app) {
                 operationCompletedMessage = string(R.string.operation_completed_success)
             )
 
-            if (success && tempArchive.exists() && tempArchive.length() > 0) {
+            val staged = tempArchive
+            if (!success) {
+                logger.e(string(R.string.export_container_failed, container.name))
+                onError(string(R.string.export_container_failed, container.name))
+            } else if (staged != null && staged.length() > 0) {
                 logger.i("Writing archive to destination...")
                 withContext(Dispatchers.IO) {
                     appContext.contentResolver.openOutputStream(outputUri)?.use { out ->
-                        tempArchive.inputStream().use { it.copyTo(out) }
+                        staged.inputStream().use { it.copyTo(out) }
                     }
                 }
                 logger.i("Done! Archive written successfully.")
-            } else if (!success) {
-                logger.e(string(R.string.export_container_failed, container.name))
-                onError(string(R.string.export_container_failed, container.name))
             }
         } catch (e: Exception) {
             logger.e("Export error: ${e.message}")
@@ -212,6 +220,9 @@ class ContainerOperationsViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 ContainerOSInfoManager.clearCache(container.name, appContext)
                 ContainerUsersManager.clearCache(container.name)
+                ContainerDiskUsageManager.forget(container.rootfsPath)
+                prefsManager.forgetContainer(container.name)
+                containerLogs = containerLogs - container.name
                 onSuccess(string(R.string.container_uninstalled_success, container.name))
                 onRefresh()
             }

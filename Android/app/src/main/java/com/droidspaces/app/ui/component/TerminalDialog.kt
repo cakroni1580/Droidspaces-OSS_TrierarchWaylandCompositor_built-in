@@ -7,7 +7,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -106,7 +105,7 @@ fun TerminalDialog(
                                 .clickable(
                                     enabled = canClear,
                                     onClick = onClear,
-                                    indication = rememberRipple(bounded = true),
+                                    indication = ripple(bounded = true),
                                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                                 ),
                             shape = buttonShape,
@@ -151,7 +150,7 @@ fun TerminalDialog(
                                     clipboard.setPrimaryClip(clip)
                                     Toast.makeText(context, R.string.logs_copied, Toast.LENGTH_SHORT).show()
                                 },
-                                indication = rememberRipple(bounded = true),
+                                indication = ripple(bounded = true),
                                 interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
                             ),
                         shape = buttonShape,

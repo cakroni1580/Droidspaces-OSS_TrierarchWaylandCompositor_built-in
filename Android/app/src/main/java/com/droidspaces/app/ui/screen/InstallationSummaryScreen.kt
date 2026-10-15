@@ -14,7 +14,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.ripple.rememberRipple
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -25,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
 import com.droidspaces.app.R
+import com.droidspaces.app.ui.theme.DsIcons
 import androidx.compose.ui.platform.LocalContext
 import com.droidspaces.app.util.ContainerInfo
 import com.droidspaces.app.util.ResourceLimits
@@ -92,7 +92,7 @@ fun InstallationSummaryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SummaryItem(stringResource(R.string.tarball_label), tarballName, Icons.Default.Archive)
-                    SummaryItem(stringResource(R.string.container_singular), config.name, Icons.Default.Storage)
+                    SummaryItem(stringResource(R.string.container_singular), config.name, DsIcons.Logo)
                     SummaryItem(stringResource(R.string.hostname), config.hostname, Icons.Default.Computer)
                     SummaryItem(
                         stringResource(R.string.network_mode),
@@ -103,7 +103,7 @@ fun InstallationSummaryScreen(
                         SummaryItem(stringResource(R.string.static_ip_address), config.staticNatIp, Icons.Default.NetworkCheck)
                     }
                     if (config.useSparseImage && config.sparseImageSizeGB != null) {
-                        SummaryItem(stringResource(R.string.storage_configuration), "${stringResource(R.string.sparse_image_section)} (${config.sparseImageSizeGB}GB)", Icons.Default.Storage)
+                        SummaryItem(stringResource(R.string.storage_configuration), "${stringResource(R.string.sparse_image_section)} (${config.sparseImageSizeGB}GB)", DsIcons.Logo)
                     } else {
                         SummaryItem(stringResource(R.string.storage_configuration), stringResource(R.string.directory_label), Icons.Default.Folder)
                     }
@@ -125,10 +125,11 @@ fun InstallationSummaryScreen(
                     )
 
                     if (config.disableIPv6) SummaryItem(stringResource(R.string.disable_ipv6), stringResource(R.string.enabled_legend), Icons.Default.NetworkCheck)
-                    if (config.enableAndroidStorage) SummaryItem(stringResource(R.string.android_storage), stringResource(R.string.enabled_legend), Icons.Default.Storage)
+                    if (config.enableAndroidStorage) SummaryItem(stringResource(R.string.android_storage), stringResource(R.string.enabled_legend), DsIcons.Logo)
                     if (config.enableHwAccess) SummaryItem(stringResource(R.string.hardware_access), stringResource(R.string.enabled_legend), Icons.Default.Devices)
                     if (!config.enableHwAccess && config.enableGpuMode) SummaryItem(stringResource(R.string.gpu_access), stringResource(R.string.enabled_legend), Icons.Default.DeveloperBoard)
                     if (config.enableTermuxX11) SummaryItem(stringResource(R.string.termux_x11), stringResource(R.string.enabled_legend), painterResource(id = R.drawable.ic_x11))
+                    if (config.enableAnland) SummaryItem(stringResource(R.string.enable_anland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
                     if (config.enableVirgl) SummaryItem(stringResource(R.string.enable_virgl), stringResource(R.string.enabled_legend), Icons.Default.Layers)
                     if (config.enablePulseaudio) SummaryItem(stringResource(R.string.enable_pulseaudio), stringResource(R.string.enabled_legend), Icons.AutoMirrored.Filled.VolumeUp)
                     if (config.enableWayland && Constants.isArm64) SummaryItem(stringResource(R.string.enable_wayland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
@@ -171,7 +172,7 @@ fun InstallationSummaryScreen(
                         !config.enableHwAccess && !config.enableGpuMode && !config.selinuxPermissive &&
                         !config.allowSandboxing && !config.volatileMode && config.bindMounts.isEmpty() &&
                         !config.runAtBoot && !config.disableIPv6 &&
-                        !config.enableTermuxX11 && !config.enableVirgl && !config.enablePulseaudio &&
+                        !config.enableTermuxX11 && !config.enableAnland && !config.enableVirgl && !config.enablePulseaudio &&
                         !config.forceCgroupv1 &&
                         !config.enableWayland &&
                         config.memoryLimit == 0L && config.cpuQuota == 0L && config.pidsLimit == 0L &&

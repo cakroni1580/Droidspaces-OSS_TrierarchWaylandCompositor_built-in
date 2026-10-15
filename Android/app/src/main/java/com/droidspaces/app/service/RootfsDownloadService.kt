@@ -291,6 +291,10 @@ class RootfsDownloadService : Service() {
             ctx.startService(Intent(ctx, RootfsDownloadService::class.java).setAction(ACTION_CANCEL).putExtra(EXTRA_URL, url))
         }
 
+        // The done notification is a shortcut into the installer, stale once the sheet got the user there
+        fun dismissDone(ctx: Context, url: String) =
+            ctx.getSystemService(NotificationManager::class.java).cancel(url.hashCode())
+
         fun set(url: String, state: AssetDownloadState?) =
             _states.update { if (state == null) it - url else it + (url to state) }
 

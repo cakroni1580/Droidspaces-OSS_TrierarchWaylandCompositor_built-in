@@ -1,0 +1,6 @@
+id=droidspaces
+name=Droidspaces: Daemon & Init
+version=v7.0.0
+versionCode=7000
+author=ravindu644
+description=Automatically starts the Droidspaces daemon if "Daemon Mode" is enabled, and starts containers during boot if "Run-at-Boot" is active.

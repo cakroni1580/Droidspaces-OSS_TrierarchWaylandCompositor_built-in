@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - private backend bridge for droidspaces-socketd
+ * Droidspaces v7 - private backend bridge for droidspaces-socketd
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 

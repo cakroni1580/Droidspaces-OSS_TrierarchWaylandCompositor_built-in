@@ -26,8 +26,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: recursive
-        
+        fetch-depth: 0
+
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
@@ -228,3 +228,10 @@ jobs:
           release-assets/*.apk
           release-assets/*.tar.gz
           release-assets/*.deb
+
+    # The site reads the latest release only when it builds. A release made with
+    # GITHUB_TOKEN starts no other workflow, so tell the site from here.
+    - name: Rebuild droidspaces.org
+      env:
+        GH_TOKEN: ${{ secrets.WEBPAT }}
+      run: gh api repos/droidspaces/droidspaces.github.io/dispatches -f event_type=docs-updated

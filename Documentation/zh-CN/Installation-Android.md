@@ -6,6 +6,9 @@ desc: Droidspaces 的 Android 分步安装指南。Root 你的设备、安装 AP
 keywords: install, droidspaces, android, rooted, container, apk, atomic, backend, sparse, image, linux
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Installation-Android.md)。
+
 # Android 安装指南
 
 Droidspaces 在 Android 上旨在提供"零终端"体验。从首次安装到运行完整的 Linux 发行版，一切都通过直观的 Android 应用完成。
@@ -58,6 +61,24 @@ Droidspaces 在 Android 上旨在提供"零终端"体验。从首次安装到运
 1. **打开容器选项卡**，点击 **"+"** 按钮。
 2. 从存储中**选择你的 tarball 文件**。
 3. 按照上述相同的**配置向导**步骤操作即可。
+
+归档顶层可以包含一个普通文件 `container.config`，与 `bin/`、`etc/`、`usr/`
+并列。应用会读取原有的 `key=value` 格式并自动填入向导。可以使用已安装容器的完整
+配置，也可以只填写需要推荐的选项。未填写的选项沿用向导
+默认值。文件中的所有设置都会被应用，包括硬件访问和特权模式，因此向导会在配置页之前
+显示一个提醒页面。请在配置页仔细检查，并在安装前修改不需要的选项。推荐配置直接复用
+已有解析，不另加字段过滤。解包前的 rootfs 校验仍然执行。
+
+导出容器会把宿主侧当前的 `container.config` 放在归档最前面，替换 rootfs 中可能
+残留的旧副本，因此再次导入时不必解压扫描整个归档来读取推荐值。如果第一个成员
+不是 `container.config` 或 `./container.config`，应用直接跳过推荐配置，进入默认配置
+向导，不再查找后面的成员。新容器的名称和存储位置由向导决定。
+绑定挂载沿用 `bind_mounts=源路径:目标路径[:ro],...` 格式，可在向导中检查和修改。
+
+环境变量常包含密码和令牌，因此导出时默认不包含。容器有环境变量时，导出前会先询问，
+开启"包含环境变量"后会在 `container.config` 之后加入 `container.env` 成员。
+导入这样的归档时，向导中的环境变量也会被填写。这两个成员都不会被解压到新的 rootfs 中。
+导出过程不会修改实际 rootfs。
 
 > [!NOTE]
 > 两种方式最终都会进入同一个向导——唯一的区别是 tarball 的来源不同。

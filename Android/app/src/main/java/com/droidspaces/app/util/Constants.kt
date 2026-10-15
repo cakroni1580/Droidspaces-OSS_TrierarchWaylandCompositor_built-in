@@ -35,7 +35,6 @@ object Constants {
     const val KEY_ROOT_AVAILABLE = "root_available"
     const val KEY_ROOT_PROVIDER_VERSION = "root_provider_version"
     const val KEY_DROIDSPACES_VERSION = "droidspaces_version"
-    const val KEY_CONTAINER_COUNT = "container_count"
     const val KEY_RUNNING_COUNT = "running_count"
     const val KEY_BACKEND_STATUS = "backend_status"
     const val KEY_FOLLOW_SYSTEM_THEME = "follow_system_theme"

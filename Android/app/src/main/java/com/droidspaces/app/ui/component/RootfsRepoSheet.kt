@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,14 +43,21 @@ import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
 import com.droidspaces.app.ui.util.FocusUtils
 import com.droidspaces.app.ui.util.FullScreenLoading
 import com.droidspaces.app.service.AssetDownloadState
+import com.droidspaces.app.service.RootfsDownloadService
 import com.droidspaces.app.ui.viewmodel.RepoUiState
 import com.droidspaces.app.ui.viewmodel.RootfsRepoViewModel
 import com.droidspaces.app.util.IconUtils
 import com.droidspaces.app.util.RootfsAsset
 
+/** The sheet arrives on the standard motion, like every sheet; see [StandardMotion]. */
+@Composable
+fun RootfsRepoSheet(onDismiss: () -> Unit, onInstall: (Uri) -> Unit) {
+    StandardMotion { RootfsRepoSheetContent(onDismiss, onInstall) }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RootfsRepoSheet(
+private fun RootfsRepoSheetContent(
     onDismiss: () -> Unit,
     onInstall: (Uri) -> Unit
 ) {
@@ -106,7 +113,7 @@ fun RootfsRepoSheet(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp,
-        windowInsets = WindowInsets(0),
+        contentWindowInsets = { WindowInsets(0) },
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
         ClearFocusOnClickOutside(modifier = Modifier.fillMaxWidth()) {
@@ -518,14 +525,20 @@ private fun RootfsAssetCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    LinearProgressIndicator(
-                        progress = { state.percent / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp),
+                    // The service reports whole percents, so the bar would step 1% at a time
+                    val progress by animateFloatAsState(
+                        targetValue = state.percent / 100f,
+                        animationSpec = WavyProgressIndicatorDefaults.ProgressAnimationSpec,
+                        label = "downloadProgress"
+                    )
+                    LinearWavyProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.tertiary, // Match state pill
                         trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
-                        strokeCap = StrokeCap.Round
+                        // The default flattens the wave below 10% and above 95%; a bar that
+                        // only starts waving part way through a download looks broken.
+                        amplitude = { 1f }
                     )
                     Text(
                         text = "${state.percent}%",
@@ -571,7 +584,10 @@ private fun RootfsAssetCard(
                     accentColor = MaterialTheme.colorScheme.onPrimary
                     btnIcon = Icons.Default.InstallMobile
                     btnText = context.getString(R.string.repo_install)
-                    onClickAction = { onInstall(state.uri) }
+                    onClickAction = {
+                        RootfsDownloadService.dismissDone(context, asset.downloadUrl)
+                        onInstall(state.uri)
+                    }
                 }
                 is AssetDownloadState.Failed -> {
                     btnColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
@@ -706,7 +722,6 @@ private fun RepoManagerDialog(
 
     DsDialog(
         onDismiss = onDismiss,
-        modifier = Modifier.imePadding(),
         scrollableContent = false,
         footer = {
             DialogFooterRow(
@@ -933,5 +948,3 @@ private fun RepoSearchBar(query: String, onQueryChange: (String) -> Unit) {
         )
     }
 }
-
-

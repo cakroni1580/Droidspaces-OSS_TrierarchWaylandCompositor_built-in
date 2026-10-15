@@ -49,7 +49,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.rememberCoroutineScope
 import com.droidspaces.app.ui.util.showSuccess
-import com.droidspaces.app.ui.util.LoadingIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -531,6 +532,7 @@ private fun CodeBox(
  * Check Requirements Button - runs droidspaces check command
  */
 @Composable
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 private fun CheckRequirementsButton(
     enabled: Boolean,
     isRunning: Boolean,

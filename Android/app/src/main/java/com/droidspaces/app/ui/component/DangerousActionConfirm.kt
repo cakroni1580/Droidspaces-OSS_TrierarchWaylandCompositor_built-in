@@ -13,6 +13,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldColors
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.droidspaces.app.ui.util.FocusUtils
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -22,7 +27,7 @@ import com.droidspaces.app.R
 
 /**
  * The red "you are about to do something dangerous" disclaimer card shared by
- * PrivilegedModeDialog and HardwareAccessDialog.
+ * PrivilegedModePage and HardwareAccessDialog.
  */
 @Composable
 fun DangerousWarningCard(title: String, text: String, modifier: Modifier = Modifier) {
@@ -60,7 +65,8 @@ fun ConfirmPhraseField(
     value: String,
     onValueChange: (String) -> Unit,
     isError: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    colors: TextFieldColors = DsTextFieldDefaults.surfaceColors()
 ) {
     val context = LocalContext.current
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -77,7 +83,9 @@ fun ConfirmPhraseField(
             singleLine = true,
             isError = isError,
             shape = RoundedCornerShape(16.dp),
-            colors = DsTextFieldDefaults.surfaceColors()
+            colors = colors,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            keyboardActions = FocusUtils.clearFocusKeyboardActions()
         )
     }
 }

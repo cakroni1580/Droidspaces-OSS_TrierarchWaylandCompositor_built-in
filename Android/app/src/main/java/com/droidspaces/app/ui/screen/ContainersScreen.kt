@@ -4,6 +4,17 @@ import com.droidspaces.app.ui.component.DsDialog
 import com.droidspaces.app.ui.component.DsTextFieldDefaults
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -33,6 +44,8 @@ import com.droidspaces.app.ui.util.ProgressDialog
 import com.droidspaces.app.ui.util.ErrorLogsDialog
 import com.droidspaces.app.ui.util.LoadingIndicator
 import com.droidspaces.app.ui.util.LoadingSize
+import com.droidspaces.app.ui.util.AnimatedListEntry
+import com.droidspaces.app.ui.util.rememberAnimatedEntries
 import com.droidspaces.app.ui.util.showError
 import com.droidspaces.app.ui.util.showSuccess
 import androidx.compose.material3.SnackbarHostState
@@ -48,6 +61,8 @@ import com.droidspaces.app.ui.component.ContainerCard
 import com.droidspaces.app.ui.component.ContainerCardActions
 import com.droidspaces.app.ui.component.DialogFooterRow
 import com.droidspaces.app.ui.component.TerminalDialog
+import com.droidspaces.app.ui.component.ExportContainerDialog
+import com.droidspaces.app.util.ValidationUtils
 import com.droidspaces.app.ui.component.EmptyState
 import com.droidspaces.app.ui.component.ErrorState
 import com.droidspaces.app.ui.component.KernelUnsupportedState
@@ -60,10 +75,11 @@ import com.droidspaces.app.ui.viewmodel.SparseOperation
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import com.droidspaces.app.R
+import com.droidspaces.app.ui.theme.DsIcons
 import androidx.compose.ui.window.Dialog
 import com.droidspaces.app.wayland.WaylandManager
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun ContainersScreen(
     isBackendAvailable: Boolean,
@@ -75,7 +91,7 @@ fun ContainersScreen(
     containerViewModel: ContainerViewModel,
     expandedContainerName: String?,
     onExpandedContainerNameChange: (String?) -> Unit,
-    emptyStateBottomInset: Dp = 0.dp
+    bottomBarInset: Dp = 0.dp
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -91,17 +107,21 @@ fun ContainersScreen(
     var showUninstallConfirmation by remember { mutableStateOf<ContainerInfo?>(null) }
     var pendingSparseOperation by remember { mutableStateOf<SparseOperation?>(null) }
     var pendingExportContainer by remember { mutableStateOf<ContainerInfo?>(null) }
+    var pendingExportEnv by remember { mutableStateOf(false) }
+    var askExportEnv by remember { mutableStateOf<ContainerInfo?>(null) }
     var showRepoSheet by remember { mutableStateOf(false) }
+    var fabMenuExpanded by rememberSaveable { mutableStateOf(false) }
 
     // File picker launcher - CreateDocument for saving the export archive
     val exportFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/gzip")
     ) { uri: Uri? ->
         val container = pendingExportContainer
+        val includeEnv = pendingExportEnv
         pendingExportContainer = null
         if (uri != null && container != null) {
             scope.launch {
-                opsViewModel.executeExport(container, uri, onError = { msg -> scope.showError(snackbarHostState, msg) })
+                opsViewModel.executeExport(container, uri, includeEnv, onError = { msg -> scope.showError(snackbarHostState, msg) })
             }
         }
     }
@@ -132,6 +152,8 @@ fun ContainersScreen(
 
     // Get containers from ViewModel - single source of truth (KernelSU pattern)
     val containers = containerViewModel.containerList
+    // Removed cards stay here until they finish leaving, so the empty state waits for them.
+    val entries = rememberAnimatedEntries(containers) { it.name }
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -139,30 +161,30 @@ fun ContainersScreen(
         // Show root unavailable state first, then backend unavailable, then content
         when {
             !isRootAvailable -> {
-                RootUnavailableState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+                RootUnavailableState(modifier = Modifier.padding(bottom = bottomBarInset))
             }
             !isBackendAvailable -> {
-                ErrorState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+                ErrorState(modifier = Modifier.padding(bottom = bottomBarInset))
             }
             !isKernelSupported -> {
-                KernelUnsupportedState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+                KernelUnsupportedState(modifier = Modifier.padding(bottom = bottomBarInset))
             }
-            containers.isEmpty() -> {
+            entries.isEmpty() -> {
                 if (containerViewModel.isRefreshing) {
                     Box(
-                        modifier = Modifier.fillMaxSize().padding(bottom = emptyStateBottomInset),
+                        modifier = Modifier.fillMaxSize().padding(bottom = bottomBarInset),
                         contentAlignment = Alignment.Center
                     ) {
                         LoadingIndicator(size = LoadingSize.Large)
                     }
                 } else {
                     EmptyState(
-                        icon = Icons.Default.Storage,
+                        icon = DsIcons.Logo,
                         title = context.getString(R.string.no_containers_installed),
                         description = context.getString(R.string.install_container_description),
                         // Reserve the floating tab bar's space so the centered
                         // content sits in the visible region, not behind the bar.
-                        modifier = Modifier.padding(bottom = emptyStateBottomInset)
+                        modifier = Modifier.padding(bottom = bottomBarInset)
                     )
                 }
             }
@@ -174,142 +196,159 @@ fun ContainersScreen(
                         .combinedClickable(
                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                             indication = null,
-                            onClick = { onExpandedContainerNameChange(null) }
+                            onClick = {
+                                onExpandedContainerNameChange(null)
+                                fabMenuExpanded = false
+                            }
                         )
                         .padding(horizontal = 16.dp),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp), // Clear floating tab bar
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    // Each card carries its own 16dp gap (AnimatedListEntry) on top of this
+                    contentPadding = PaddingValues(top = 8.dp, bottom = bottomBarInset + 16.dp),
                 ) {
-                    items(containers, key = { it.name }) { container ->
+                    items(entries, key = { it.key }) { entry ->
+                        val container = entry.item
                         // Console button is always visible - logs persist for each container
                         val isRunning = opsViewModel.runningOperationContainer == container.name
 
-                        // No animateItemPlacement here: a card animates its own height when
-                        // its drawer opens, and a placement animation makes the card below
-                        // chase that edge 200ms behind, so the two overlap all the way down.
-                        ContainerCard(
-                            container = container,
-                            isOperationRunning = isRunning,
-                            isExpanded = expandedContainerName == container.name,
-                            actions = ContainerCardActions(
-                            onToggleExpand = {
-                                onExpandedContainerNameChange(if (expandedContainerName == container.name) null else container.name)
-                            },
-                             onShowLogs = {
-                                opsViewModel.showLogViewerFor = container.name
-                            },
-                            onStart = {
-                                scope.launch {
-                                    opsViewModel.executeOperation(
-                                        container, "start",
-                                        onRefresh = { containerViewModel.refresh() },
-                                        onClearUsage = { systemStatsViewModel.clearContainerUsage(it) },
-                                        onFailureSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long) } }
-                                    )
+                        AnimatedListEntry(entry) {
+                            ContainerCard(
+                                container = container,
+                                isOperationRunning = isRunning,
+                                isExpanded = expandedContainerName == container.name,
+                                actions = ContainerCardActions(
+                                onToggleExpand = {
+                                    onExpandedContainerNameChange(if (expandedContainerName == container.name) null else container.name)
+                                },
+                                 onShowLogs = {
+                                    opsViewModel.showLogViewerFor = container.name
+                                },
+                                onStart = {
+                                    scope.launch {
+                                        opsViewModel.executeOperation(
+                                            container, "start",
+                                            onRefresh = { containerViewModel.refresh() },
+                                            onClearUsage = { systemStatsViewModel.clearContainerUsage(it) },
+                                            onFailureSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long) } }
+                                        )
+                                    }
+                                },
+                                onStop = {
+                                    scope.launch {
+                                        opsViewModel.executeOperation(
+                                            container, "stop",
+                                            onRefresh = { containerViewModel.refresh() },
+                                            onClearUsage = { systemStatsViewModel.clearContainerUsage(it) },
+                                            onFailureSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long) } }
+                                        )
+                                    }
+                                },
+                                onRestart = {
+                                    scope.launch {
+                                        opsViewModel.executeOperation(
+                                            container, "restart",
+                                            onRefresh = { containerViewModel.refresh() },
+                                            onClearUsage = { systemStatsViewModel.clearContainerUsage(it) },
+                                            onFailureSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long) } }
+                                        )
+                                    }
+                                },
+                                onEdit = {
+                                    onExpandedContainerNameChange(null)
+                                    onNavigateToEditContainer(container.name)
+                                },
+                                onEnter = {
+                                    onNavigateToContainerDetails(container.name)
+                                },
+                                onUninstall = {
+                                    onExpandedContainerNameChange(null)
+                                    showUninstallConfirmation = container
+                                },
+                                onMigrate = {
+                                    onExpandedContainerNameChange(null)
+                                    pendingSparseOperation = SparseOperation.Migrate(container)
+                                },
+                                onResize = {
+                                    onExpandedContainerNameChange(null)
+                                    pendingSparseOperation = SparseOperation.Resize(container)
+                                },
+                                onExport = {
+                                    onExpandedContainerNameChange(null)
+                                    // Only a container with env vars has something to decide.
+                                    if (ValidationUtils.countEnvVars(container.envFileContent) > 0) {
+                                        askExportEnv = container
+                                    } else {
+                                        pendingExportEnv = false
+                                        pendingExportContainer = container
+                                        exportFileLauncher.launch(exportFileName(container))
+                                    }
                                 }
-                            },
-                            onStop = {
-                                scope.launch {
-                                    opsViewModel.executeOperation(
-                                        container, "stop",
-                                        onRefresh = { containerViewModel.refresh() },
-                                        onClearUsage = { systemStatsViewModel.clearContainerUsage(it) },
-                                        onFailureSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long) } }
-                                    )
-                                }
-                            },
-                            onRestart = {
-                                scope.launch {
-                                    opsViewModel.executeOperation(
-                                        container, "restart",
-                                        onRefresh = { containerViewModel.refresh() },
-                                        onClearUsage = { systemStatsViewModel.clearContainerUsage(it) },
-                                        onFailureSnackbar = { msg -> scope.launch { snackbarHostState.showSnackbar(msg, duration = SnackbarDuration.Long) } }
-                                    )
-                                }
-                            },
-                            onEdit = {
-                                onExpandedContainerNameChange(null)
-                                onNavigateToEditContainer(container.name)
-                            },
-                            onEnter = {
-                                onNavigateToContainerDetails(container.name)
-                            },
-                            onUninstall = {
-                                onExpandedContainerNameChange(null)
-                                showUninstallConfirmation = container
-                            },
-                            onMigrate = {
-                                onExpandedContainerNameChange(null)
-                                pendingSparseOperation = SparseOperation.Migrate(container)
-                            },
-                            onResize = {
-                                onExpandedContainerNameChange(null)
-                                pendingSparseOperation = SparseOperation.Resize(container)
-                            },
-                            onExport = {
-                                onExpandedContainerNameChange(null)
-                                // Generate filename: <name>_yyyyMMdd_HHmmss.tar.gz
-                                val timestamp = java.text.SimpleDateFormat(
-                                    "yyyyMMdd_HHmmss",
-                                    java.util.Locale.US
-                                ).format(java.util.Date())
-                                val fileName = "${container.name}_${timestamp}.tar.gz"
-                                pendingExportContainer = container
-                                exportFileLauncher.launch(fileName)
-                            }
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
         }
 
-        // FAB LAYER (Above everything, below dialogs)
+        // One FAB, a Material 3 Expressive menu: the plus morphs into a cross and the two
+        // install routes rise above it. Replaces the small FAB stacked on an extended one.
         if (isBackendAvailable && isRootAvailable && isKernelSupported) {
-            Column(
+            BackHandler(fabMenuExpanded) { fabMenuExpanded = false }
+
+            FloatingActionButtonMenu(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = 24.dp, bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.End
-            ) {
-                // Small secondary FAB: browse online repo (icon only)
-                SmallFloatingActionButton(
-                    onClick = { showRepoSheet = true },
-                    shape = RoundedCornerShape(16.dp),
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CloudDownload,
-                        contentDescription = context.getString(R.string.repo_fab_label),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                // Primary FAB: install local file
-                ExtendedFloatingActionButton(
-                    onClick = { filePickerLauncher.launch("*/*") },
-                    shape = RoundedCornerShape(20.dp),
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    icon = {
+                    .padding(end = 24.dp, bottom = bottomBarInset + 16.dp),
+                expanded = fabMenuExpanded,
+                button = {
+                    ToggleFloatingActionButton(
+                        modifier = Modifier.semantics {
+                            traversalIndex = -1f
+                            contentDescription = context.getString(R.string.add_container)
+                            stateDescription = context.getString(
+                                if (fabMenuExpanded) R.string.fab_menu_expanded else R.string.fab_menu_collapsed
+                            )
+                        },
+                        checked = fabMenuExpanded,
+                        onCheckedChange = { fabMenuExpanded = !fabMenuExpanded }
+                    ) {
+                        val imageVector by remember {
+                            derivedStateOf { if (checkedProgress > 0.5f) Icons.Default.Close else Icons.Default.Add }
+                        }
                         Icon(
-                            imageVector = Icons.Default.Add,
+                            painter = rememberVectorPainter(imageVector),
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = context.getString(R.string.install),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
+                            modifier = Modifier.animateIcon({ checkedProgress })
                         )
                     }
+                }
+            ) {
+                FloatingActionButtonMenuItem(
+                    onClick = {
+                        fabMenuExpanded = false
+                        showRepoSheet = true
+                    },
+                    icon = { Icon(Icons.Default.CloudDownload, contentDescription = null) },
+                    text = { Text(context.getString(R.string.repo_fab_label)) }
+                )
+                // Last item, nearest the thumb. TalkBack reaches the close button before the
+                // first item, so the last one offers a close action of its own.
+                FloatingActionButtonMenuItem(
+                    modifier = Modifier.semantics {
+                        isTraversalGroup = true
+                        customActions = listOf(
+                            CustomAccessibilityAction(context.getString(R.string.close_menu)) {
+                                fabMenuExpanded = false
+                                true
+                            }
+                        )
+                    },
+                    onClick = {
+                        fabMenuExpanded = false
+                        filePickerLauncher.launch("*/*")
+                    },
+                    icon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                    text = { Text(context.getString(R.string.install_from_file)) }
                 )
             }
         }
@@ -328,7 +367,7 @@ fun ContainersScreen(
         // SNACKBAR LAYER (Highest Z-index in the root Box)
         DsSnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp)
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomBarInset + 16.dp)
         )
 
         // Log viewer dialog - console stays open, user must close manually
@@ -354,6 +393,20 @@ fun ContainersScreen(
                     opsViewModel.clearLogsBuffer(containerName)
                 },
                 isBlocking = isBlocking // Block dismissal when operation is running
+            )
+        }
+
+        askExportEnv?.let { container ->
+            ExportContainerDialog(
+                containerName = container.name,
+                envCount = ValidationUtils.countEnvVars(container.envFileContent),
+                onConfirm = { includeEnv ->
+                    askExportEnv = null
+                    pendingExportEnv = includeEnv
+                    pendingExportContainer = container
+                    exportFileLauncher.launch(exportFileName(container))
+                },
+                onDismiss = { askExportEnv = null }
             )
         }
 
@@ -426,6 +479,12 @@ fun ContainersScreen(
     }
 }
 
+/** <name>_yyyyMMdd_HHmmss.tar.gz, the name the save dialog suggests. */
+private fun exportFileName(container: ContainerInfo): String {
+    val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+    return "${container.name}_${timestamp}.tar.gz"
+}
+
 @Composable
 private fun SparseSizeDialog(
     title: String,
@@ -446,7 +505,6 @@ private fun SparseSizeDialog(
 
     DsDialog(
         onDismiss = onDismiss,
-        modifier = Modifier.imePadding(),
         footer = {
             DialogFooterRow(
                 dismissLabel = context.getString(R.string.cancel),

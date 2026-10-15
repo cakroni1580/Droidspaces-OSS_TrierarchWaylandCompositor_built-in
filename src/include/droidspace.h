@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -20,6 +20,7 @@
 #include <getopt.h>
 #include <grp.h>
 #include <limits.h>
+#include <linux/if_link.h>
 #include <net/if.h>
 #include <poll.h>
 #include <pthread.h>
@@ -56,6 +57,9 @@
 #ifndef TMPFS_MAGIC
 #define TMPFS_MAGIC 0x01021994
 #endif
+#ifndef BINDERFS_SUPER_MAGIC
+#define BINDERFS_SUPER_MAGIC 0x6c6f6f70
+#endif
 
 /* Cgroup Namespace support (Linux 4.6+) */
 #ifndef CLONE_NEWCGROUP
@@ -65,7 +69,7 @@
 /* Constants */
 
 #define DS_PROJECT_NAME "Droidspaces"
-#define DS_VERSION "6.6.0"
+#define DS_VERSION "7.0.0"
 #define DS_MIN_KERNEL_MAJOR 3
 #define DS_MIN_KERNEL_MINOR 10
 
@@ -125,7 +129,6 @@
 /* Hardening constants */
 #define DS_DEFAULT_TTY_GID 5
 #define DS_DEFAULT_SUBNET "172.28.0.0/16"
-#define DS_MAX_TRACKED_ENTRIES 512
 
 /* X11 Display Number - change this one value to relocate everything */
 #define TX11_DISPLAY_NUM 5
@@ -177,9 +180,7 @@
 #define DS_EXT_PID ".pid"
 #define DS_EXT_XPID ".xpid"
 #define DS_EXT_VPID ".vpid"
-#define DS_EXT_MOUNT ".mount"
 #define DS_EXT_LOCK ".lock"
-#define DS_EXT_INIT ".init"
 
 /* Signals */
 #define DS_SIG_STOP (SIGRTMIN + 3)
@@ -217,10 +218,11 @@ int check_ns(int flag, const char *name);
 /* Networking modes */
 
 enum ds_net_mode {
-  DS_NET_HOST = 0, /* share host network namespace (default) */
+  DS_NET_HOST = 0, /* share host network namespace               */
   DS_NET_NAT,      /* isolated netns + bridge + MASQUERADE      */
   DS_NET_NONE,     /* isolated netns with loopback only          */
   DS_NET_GATEWAY,  /* isolated netns attached to gateway LAN     */
+  DS_NET_MACVLAN,  /* isolated netns, macvlan on a host NIC      */
 };
 
 /* Opaque RTNETLINK context - defined in ds_netlink.c */
@@ -375,12 +377,14 @@ struct ds_config {
   char container_name[256];          /* --name= (mandatory) */
   char hostname[256];                /* --hostname= or container_name */
   char dns_servers[1024];            /* --dns= (comma/space separated) */
-  enum ds_net_mode net_mode;         /* --net=host|nat|none|gateway */
+  enum ds_net_mode net_mode;         /* --net=host|nat|none|gateway|macvlan */
   char dns_server_content[1024];     /* In-memory DNS config for boot */
   char gateway_container[256];       /* --gateway=NAME for gateway mode */
   char gateway_net[64];              /* --gateway-net=NAME (default: lan) */
   char gateway_bridge[IFNAMSIZ];     /* optional host bridge name */
   char gateway_lan_ifname[IFNAMSIZ]; /* ifname inside gateway (default: eth1) */
+  char macvlan_parent[IFNAMSIZ];     /* --macvlan-parent= host NIC */
+  uint32_t macvlan_mode;             /* MACVLAN_MODE_*, 0 = bridge */
 
   /* UUID for PID discovery */
   char uuid[DS_UUID_LEN + 1];
@@ -395,6 +399,7 @@ struct ds_config {
   int virgl;               /* --virgl (Android only) */
   char *virgl_extra_flags; /* --virgl-flags "..." (heap, NULL if unset) */
   int pulseaudio;          /* --pulse-audio (Android only) */
+  int anland;              /* --anland: embed anland display daemon (Android) */
   int wayland;             /* --wayland (Android only) */
   int volatile_mode;       /* --volatile */
   int disable_ipv6;        /* --disable-ipv6 */
@@ -410,13 +415,15 @@ struct ds_config {
   char prog_name[64];  /* argv[0] for logging */
 
   /* Runtime state */
-  char volatile_dir[PATH_MAX];    /* temporary overlay dir */
-  pid_t container_pid;            /* PID 1 of the container (host view) */
-  pid_t intermediate_pid;         /* intermediate fork pid */
-  pid_t x11_pid;                  /* PID of the Termux-X11 server process */
-  pid_t virgl_pid;                /* PID of the VirGL server process */
-  pid_t pulse_pid;                /* PID of the PulseAudio daemon process */
-  int is_img_mount;               /* 1 if rootfs was loop-mounted from .img */
+  char volatile_dir[PATH_MAX]; /* temporary overlay dir */
+  pid_t container_pid;         /* PID 1 of the container (host view) */
+  pid_t intermediate_pid;      /* intermediate fork pid */
+  pid_t x11_pid;               /* PID of the Termux-X11 server process */
+  pid_t virgl_pid;             /* PID of the VirGL server process */
+  pid_t pulse_pid;             /* PID of the PulseAudio daemon process */
+  pid_t anland_pid;            /* PID of the anland display daemon process */
+  char anland_sock[108]; /* host socket of the anland daemon, sun_path size */
+  int is_img_mount;      /* 1 if rootfs was loop-mounted from .img */
   char img_mount_point[PATH_MAX]; /* where the .img was mounted */
   ds_init_type_t init_type;       /* detected container PID 1 init family */
   char custom_init[PATH_MAX]; /* --init=PATH override (default: /sbin/init) */
@@ -486,6 +493,7 @@ int ds_parse_iface_csv(const char *val, char ifaces[][IFNAMSIZ], int *count,
                        int max);
 char *ds_resolve_path_arg(const char *path);
 void ds_resolve_argv_paths(int argc, char **argv);
+long ds_clk_tck(void);
 long ds_get_container_uptime(pid_t pid);
 void ds_format_uptime(long uptime_sec, char *buf, size_t size);
 
@@ -494,10 +502,11 @@ void ds_format_uptime(long uptime_sec, char *buf, size_t size);
 struct ds_status {
   char name[128];
   pid_t pid;
-  char hostname[256]; /* from the container config, same source as info */
-  char os[256];       /* PRETTY_NAME from /proc/<pid>/root/etc/os-release */
-  char ip[256];       /* non-loopback IPv4 addresses, comma separated */
-  char ip6[512];      /* global and ULA IPv6 addresses, comma separated */
+  char hostname[256];    /* from the container config, same source as info */
+  char os[256];          /* PRETTY_NAME from /proc/<pid>/root/etc/os-release */
+  char ip[256];          /* non-loopback IPv4 addresses, comma separated */
+  char ip6[512];         /* global and ULA IPv6 addresses, comma separated */
+  char anland_sock[108]; /* host socket of the anland daemon, or "" */
   long uptime_sec;
   long ram_used_kb;
   long cpu_permill;
@@ -532,18 +541,17 @@ int parse_os_release(const char *rootfs_path, char *id_out, char *ver_out,
                      size_t out_size);
 int grep_file(const char *path, const char *pattern);
 int read_and_validate_pid(const char *pidfile, pid_t *pid_out);
-int save_mount_path(const char *pidfile, const char *mount_path);
-int read_mount_path(const char *pidfile, char *buf, size_t size);
-int remove_mount_path(const char *pidfile);
-int save_init_type(const char *pidfile, ds_init_type_t init_type);
-int read_init_type(const char *pidfile, ds_init_type_t *init_type_out);
-int remove_init_type(const char *pidfile);
 void firmware_path_add(const char *fw_path);
 void firmware_path_remove(const char *fw_path);
 int run_command(char *const argv[]);
 int run_command_quiet(char *const argv[]);
 int run_command_log(char *const argv[]);
 int set_selinux_context(const char *path, const char *context);
+#define DS_MAX_PASSED_FDS 8
+int ds_send_fds(int sock, const void *data, size_t len, const int *fds,
+                int count);
+ssize_t ds_recv_fds(int sock, void *data, size_t len, int *fds, int max,
+                    int *count);
 int ds_send_fd(int sock, int fd);
 int ds_recv_fd(int sock);
 void print_ds_banner(void);
@@ -558,6 +566,11 @@ int ds_container_lock(const char *name, int wait);
 void ds_container_unlock(int fd);
 int ds_container_lock_orphan(const char *name);
 void ds_container_claim_supervision(const char *name);
+void ds_container_release_supervision(void);
+void ds_container_prune_supervision(const char *name);
+int ds_container_lock_helpers(const char *name);
+void ds_container_wait_helpers(const char *name, int timeout_ms);
+void ds_android_helpers_sync(struct ds_config *cfg);
 int wait_for_socket_or_death(pid_t pid, const char *path, int timeout_ms,
                              int interval_us);
 void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
@@ -619,6 +632,11 @@ int ds_config_load_by_name(const char *name, struct ds_config *cfg);
 int ds_config_save(const char *config_path, struct ds_config *cfg);
 int ds_config_save_by_name(const char *name, struct ds_config *cfg);
 int ds_config_validate(struct ds_config *cfg);
+/* --net / net_mode= value to its mode, -1 if unknown. */
+int ds_parse_net_mode(const char *s);
+/* --macvlan-mode / macvlan_mode= value to MACVLAN_MODE_*, 0 if unknown. */
+uint32_t ds_parse_macvlan_mode(const char *s);
+const char *ds_macvlan_mode_name(uint32_t mode);
 int ds_config_add_bind(struct ds_config *cfg, const char *src, const char *dest,
                        int ro);
 void free_config_binds(struct ds_config *cfg);
@@ -683,6 +701,7 @@ int mount_rootfs_img(const char *img_path, char *mount_point, size_t mp_size,
                      const char *name);
 int unmount_rootfs_img(const char *mount_point, int silent);
 int is_mountpoint(const char *path);
+int ds_img_mount_point(const char *name, char *buf, size_t size);
 
 /* cgroup.c */
 
@@ -735,6 +754,13 @@ int ds_x11_daemon_start(struct ds_config *cfg);
 void ds_x11_daemon_stop(struct ds_config *cfg);
 int ds_setup_x11_socket(struct ds_config *cfg);
 
+/* anland/anland.c */
+
+int ds_anland_daemon_start(struct ds_config *cfg);
+void ds_anland_daemon_stop(struct ds_config *cfg);
+int ds_setup_anland_socket(struct ds_config *cfg);
+void ds_anland_load_sock(struct ds_config *cfg);
+
 /* virgl-android.c */
 
 int ds_virgl_daemon_start(struct ds_config *cfg);
@@ -778,7 +804,7 @@ int setup_veth_child_side_named(struct ds_config *cfg, const char *peer_name,
 void ds_net_derive_handshake(pid_t init_pid, struct ds_config *cfg,
                              struct ds_net_handshake *hs);
 void ds_net_cleanup(struct ds_config *cfg, pid_t container_pid);
-void ds_net_start_route_monitor(void);
+void ds_net_start_route_monitor(const char *container_name);
 void ds_net_stop_route_monitor(void);
 /* Marks route_localnet as required; route monitor re-asserts it every cycle
  * (same pattern as ip_forward). Called once port-forward rules with localhost
@@ -789,6 +815,11 @@ void ds_net_mark_local_forward_active(void);
  * Called from the gateway container's monitor on each boot cycle. */
 void ds_net_rewire_gateway_clients(const char *gateway_name, pid_t gateway_pid);
 int ds_net_gateway_reconcile(struct ds_config *cfg, pid_t client_pid);
+/* Macvlan: create eth0 in the container on its parent NIC. Called at start
+ * and then on every heartbeat, since unplugging the parent deletes it. */
+int ds_net_macvlan_wire(struct ds_config *cfg, pid_t init_pid, int at_start);
+/* Refuse a macvlan start that could never get a network. 0 or -1. */
+int ds_net_macvlan_check(const struct ds_config *cfg);
 /* Gateway teardown: when a container that ACTS AS A GATEWAY stops, explicitly
  * delete the gateway-side veth(s) it serves and reap any now-idle delegated
  * bridge.  The kernel does not auto-reap these (the host-side veth pins its
@@ -807,11 +838,14 @@ int ds_nl_link_exists(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_get_ifindex(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_create_bridge(ds_nl_ctx_t *ctx, const char *name);
 int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer);
+int ds_nl_create_macvlan(ds_nl_ctx_t *ctx, const char *name, int parent_index,
+                         int netns_fd, uint32_t mode, const uint8_t mac[6]);
 int ds_nl_create_veth_in(ds_nl_ctx_t *ctx, const char *host, const char *peer,
                          int peer_netns_fd, const uint8_t *peer_mac);
 int ds_nl_set_master(ds_nl_ctx_t *ctx, const char *ifname, const char *master);
 int ds_nl_link_up(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_link_down(ds_nl_ctx_t *ctx, const char *ifname);
+/* 1 = removed by this call, 0 = was already gone, negative = error. */
 int ds_nl_del_link(ds_nl_ctx_t *ctx, const char *ifname);
 int ds_nl_rename(ds_nl_ctx_t *ctx, const char *ifname, const char *newname);
 int ds_nl_set_mac(ds_nl_ctx_t *ctx, const char *ifname, const uint8_t mac[6]);
@@ -825,9 +859,6 @@ int ds_nl_add_route6(ds_nl_ctx_t *ctx, const struct in6_addr *dst,
                      uint8_t dst_len, int oif_idx);
 int ds_nl_rule6(ds_nl_ctx_t *ctx, int add, const struct in6_addr *net,
                 uint8_t len, int from_net, int table, int priority);
-int ds_nl_move_to_netns(ds_nl_ctx_t *ctx, const char *ifname, int netns_fd);
-int ds_nl_move_to_netns_named(ds_nl_ctx_t *ctx, const char *ifname,
-                              int netns_fd, const char *newname);
 int ds_nl_get_iface_table(ds_nl_ctx_t *ctx, int family, const char *ifname,
                           int *table_out);
 int ds_nl_get_table_default_oif(ds_nl_ctx_t *ctx, int family, int table,
@@ -838,13 +869,14 @@ int ds_nl_add_rule4(ds_nl_ctx_t *ctx, uint32_t src_be, uint8_t src_len,
                     uint32_t dst_be, uint8_t dst_len, int table, int priority);
 int ds_nl_del_rule4(ds_nl_ctx_t *ctx, uint32_t src_be, uint8_t src_len,
                     uint32_t dst_be, uint8_t dst_len, int table, int priority);
-void ds_nl_flush_stale_veths(ds_nl_ctx_t *ctx, const char *prefix);
 int ds_nl_count_ifaces_with_prefix(ds_nl_ctx_t *ctx, const char *prefix);
 /* Count links enslaved to `bridge` whose name starts with `prefix`.
  * Returns 0 if the bridge does not exist. */
 int ds_nl_count_bridge_members_with_prefix(ds_nl_ctx_t *ctx, const char *bridge,
                                            const char *prefix);
 int ds_nl_list_ifaces(ds_nl_ctx_t *ctx, char names[][IFNAMSIZ], int max);
+/* 1 if the kernel can create a macvlan, cached per boot */
+int ds_nl_probe_macvlan(void);
 /* Kernel capability probe - call before any NAT setup */
 int ds_nl_probe_nat_capability(char *reason, size_t rsz);
 
@@ -940,7 +972,6 @@ int is_container_init(pid_t pid);
 int ds_metadata_sync(pid_t pid);
 int count_running_containers(char *first_name, size_t size);
 pid_t find_container_init_pid(const char *uuid);
-int collect_active_uuids(char uuids[][DS_UUID_LEN + 1], int max_uuids);
 pid_t find_container_by_name(const char *name);
 int sync_pidfile(const char *src_pidfile, const char *name);
 int show_containers(struct ds_config *cfg);

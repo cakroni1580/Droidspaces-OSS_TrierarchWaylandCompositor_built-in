@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
@@ -15,7 +16,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -27,6 +30,9 @@ fun SwitchItem(
     summary: String? = null,
     checked: Boolean,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    painter: Painter? = null,
+    titleFontFamily: FontFamily? = null,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -36,7 +42,7 @@ fun SwitchItem(
     // slots as soon as the summary wraps to a second line, leaving the switch
     // floating above center on some rows while its one-line siblings stay centered.
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .toggleable(
                 value = checked,
@@ -51,12 +57,13 @@ fun SwitchItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (icon != null) {
-            Icon(
-                modifier = stateAlpha,
-                imageVector = icon,
-                contentDescription = title
-            )
+        if (icon != null || painter != null) {
+            // The title is read out already, so the icon stays silent.
+            if (icon != null) {
+                Icon(modifier = stateAlpha, imageVector = icon, contentDescription = null)
+            } else if (painter != null) {
+                Icon(modifier = stateAlpha.size(24.dp), painter = painter, contentDescription = null)
+            }
             Spacer(modifier = Modifier.width(16.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -64,7 +71,8 @@ fun SwitchItem(
                 modifier = stateAlpha,
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = titleFontFamily
             )
             if (summary != null) {
                 Text(

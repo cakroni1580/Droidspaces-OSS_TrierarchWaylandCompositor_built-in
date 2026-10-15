@@ -6,6 +6,9 @@ desc: Droidspaces 酷项目：使用 Tailscale + UFW + Fail2Ban 搭建安全移�
 keywords: droidspaces, projects, android, server, tailscale, ufw, failban, container, nested, docker
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Cool-things-you-can-do.md)。
+
 # 通过 Droidspaces 能做的酷事
 
 > [!IMPORTANT]

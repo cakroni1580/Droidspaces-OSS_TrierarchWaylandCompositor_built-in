@@ -6,7 +6,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -47,7 +47,7 @@ private fun ContainerSystemdManager.ServiceInfo.toRow(
             if (isRunning) add(InitServiceMenuAction.Command(R.string.restart_service, Icons.Default.Refresh) { ContainerSystemdManager.restartService(containerName, name).toInit() })
             add(InitServiceMenuAction.Command(R.string.mask_service, Icons.Default.Lock) { ContainerSystemdManager.maskService(containerName, name).toInit() })
             add(InitServiceMenuAction.Navigate(R.string.inspect_unit, Icons.Default.Info) { onInspectUnit(name) })
-            add(InitServiceMenuAction.Navigate(R.string.view_logs, Icons.Default.Terminal) { onViewLogs(name) })
+            add(InitServiceMenuAction.Navigate(R.string.view_logs, Icons.AutoMirrored.Filled.Article) { onViewLogs(name) })
             add(InitServiceMenuAction.Navigate(R.string.edit_override, Icons.Default.Edit) { onEditOverride(name) })
         }
     )

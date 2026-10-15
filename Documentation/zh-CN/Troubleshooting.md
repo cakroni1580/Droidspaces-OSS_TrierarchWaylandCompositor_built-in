@@ -6,6 +6,9 @@ desc: 排查 Droidspaces 容器问题：systemd 挂起、paranoid networking、S
 keywords: droidspaces, 故障排除, systemd, 挂起, 修复, 网络, 问题, selinux, overlayfs, ffs, 容器, 错误
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Troubleshooting.md)。
+
 # 故障排除
 
 常见问题、原因及修复方法。

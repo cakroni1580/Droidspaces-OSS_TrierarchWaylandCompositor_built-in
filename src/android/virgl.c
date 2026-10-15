@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - VirGL Server and Socket Manager
+ * Droidspaces v7 - VirGL Server and Socket Manager
  *
  * Manages the virgl_test_server_android daemon lifecycle on Android
  * (spawning, logging, and stopping) and host-to-container socket bridging.

@@ -58,7 +58,7 @@ daemon keeps running and nothing gets reinstalled.
 
 ```
 make aarch64                                   # match `adb shell uname -m`
-adb push output/droidspaces-aarch64 /data/local/tmp/ds-test
+adb push output/droidspaces /data/local/tmp/ds-test
 adb shell su <<'EOF'
 DS_NO_PROXY=1 /data/local/tmp/ds-test -n NAME start
 EOF

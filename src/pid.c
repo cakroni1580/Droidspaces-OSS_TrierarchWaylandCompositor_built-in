@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -196,7 +196,7 @@ static void resolve_scanned_container(const char *dirent_name,
                             sizeof(tmp_cfg->pidfile));
 }
 
-/* Remove a stale container's pidfile and its sidecar metadata (.mount/.init).
+/* Remove a stale container's pidfile.
  *
  * A dead PID in a pidfile is not always stale. During a restart the old init
  * is dead and the new one not written yet, and a container that just exited
@@ -209,8 +209,6 @@ static void prune_stale_pidfile(const char *name, const char *pidfile) {
   if (lock_fd < 0)
     return;
   unlink(pidfile);
-  remove_mount_path(pidfile);
-  remove_init_type(pidfile);
   ds_container_unlock(lock_fd);
 }
 
@@ -322,55 +320,6 @@ pid_t find_container_init_pid(const char *uuid) {
   return 0;
 }
 
-int collect_active_uuids(char uuids[][DS_UUID_LEN + 1], int max_uuids) {
-  if (!uuids || max_uuids <= 0)
-    return 0;
-
-  pid_t *pids = NULL;
-  size_t count = 0;
-  char path[PATH_MAX];
-  int found = 0;
-
-  if (collect_pids(&pids, &count) < 0)
-    return 0;
-
-  for (size_t i = 0; i < count && found < max_uuids; i++) {
-    if (build_proc_root_path(pids[i], "/run/droidspaces", path, sizeof(path)) <
-        0)
-      continue;
-    if (access(path, F_OK) != 0)
-      continue;
-
-    DIR *d = opendir(path);
-    if (!d)
-      continue;
-
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL && found < max_uuids) {
-      if (strlen(ent->d_name) != DS_UUID_LEN)
-        continue;
-      /* Verify it's all hex chars -- UUID marker files are 32 hex chars */
-      int is_uuid = 1;
-      for (int j = 0; j < DS_UUID_LEN; j++) {
-        char c = ent->d_name[j];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
-          is_uuid = 0;
-          break;
-        }
-      }
-      if (is_uuid) {
-        memcpy(uuids[found], ent->d_name, DS_UUID_LEN);
-        uuids[found][DS_UUID_LEN] = '\0';
-        found++;
-      }
-    }
-    closedir(d);
-  }
-
-  free(pids);
-  return found;
-}
-
 pid_t find_container_by_name(const char *name) {
   if (!name || name[0] == '\0')
     return 0;
@@ -477,22 +426,23 @@ int show_containers(struct ds_config *cfg) {
     memset(st, 0, sizeof(*st));
     safe_strncpy(st->name, tmp_cfg.container_name, sizeof(st->name));
     st->pid = pid;
-    if (cfg->format_output) {
-      /* The booted snapshot carries the display name and hostname the
-       * container actually got, the same source ds_config_load_by_name()
-       * prefers for a running one. The app keys its cards by that display
-       * name, not by the sanitized pidfile name, so report it when known. */
-      char snap[PATH_MAX];
-      if (build_proc_root_path(pid, "/run/droidspaces/container.config", snap,
-                               sizeof(snap)) == 0 &&
-          ds_config_load(snap, &tmp_cfg) == 0) {
-        safe_strncpy(st->name, tmp_cfg.container_name, sizeof(st->name));
-        safe_strncpy(st->hostname, tmp_cfg.hostname, sizeof(st->hostname));
-      }
-      ds_config_free(&tmp_cfg);
-      if (!st->hostname[0])
-        safe_strncpy(st->hostname, st->name, sizeof(st->hostname));
+    /* The booted snapshot carries the display name and hostname the container
+     * actually got, the same source ds_config_load_by_name() prefers for a
+     * running one. The table needs it too: a name copied from it into -n is
+     * what gets saved on the next start. */
+    char snap[PATH_MAX];
+    if (build_proc_root_path(pid, "/run/droidspaces/container.config", snap,
+                             sizeof(snap)) == 0 &&
+        ds_config_load(snap, &tmp_cfg) == 0) {
+      safe_strncpy(st->name, tmp_cfg.container_name, sizeof(st->name));
+      safe_strncpy(st->hostname, tmp_cfg.hostname, sizeof(st->hostname));
+      ds_anland_load_sock(&tmp_cfg);
+      safe_strncpy(st->anland_sock, tmp_cfg.anland_sock,
+                   sizeof(st->anland_sock));
     }
+    ds_config_free(&tmp_cfg);
+    if (!st->hostname[0])
+      safe_strncpy(st->hostname, st->name, sizeof(st->hostname));
     size_t nlen = strlen(st->name);
     if (nlen > max_name_len)
       max_name_len = nlen;
@@ -616,7 +566,6 @@ int ds_metadata_sync(pid_t pid) {
 
   char path[PATH_MAX];
   char name[256] = {0};
-  char mount[PATH_MAX] = {0};
 
   /* 1. Resolve Identity */
   build_proc_root_path(pid, "/run/droidspaces/name", path, sizeof(path));
@@ -672,31 +621,6 @@ int ds_metadata_sync(pid_t pid) {
     }
   }
 
-  /* 6. Restore MOUNT Sidecar */
-  char mpath[PATH_MAX];
-  if (read_mount_path(pidfile, mpath, sizeof(mpath)) < 0) {
-    build_proc_root_path(pid, "/run/droidspaces/mount", path, sizeof(path));
-    if (read_file(path, mount, sizeof(mount)) >= 0) {
-      mount[strcspn(mount, "\n")] = '\0';
-      /* This marker is read from inside the container's own root, so a
-       * compromised container could plant an arbitrary path; it later feeds
-       * unmount_rootfs_img()/umount2() on the host.  A legitimate image mount
-       * is deterministically DS_IMG_MOUNT_ROOT_UNIVERSAL/<sanitized-name>
-       * (find_available_mountpoint), so require an exact match and ignore
-       * anything else -- this also prevents pointing at another container's
-       * mount. */
-      char expected_mount[PATH_MAX];
-      snprintf(expected_mount, sizeof(expected_mount), "%s/%s",
-               DS_IMG_MOUNT_ROOT_UNIVERSAL, safe_name);
-      if (strcmp(mount, expected_mount) == 0)
-        save_mount_path(pidfile, mount);
-      else if (mount[0])
-        ds_warn("Ignoring unexpected mount marker '%s' from container %d "
-                "(expected %s)",
-                mount, pid, expected_mount);
-    }
-  }
-
   free_config_binds(&recovery_cfg);
   return 0;
 }
@@ -709,17 +633,7 @@ int scan_containers(void) {
   if (collect_pids(&pids, &count) < 0)
     return -1;
 
-  /* 1. Tracked Mount Points (to detect orphaned mounts) */
-  typedef char mount_path_t[PATH_MAX];
-  mount_path_t *tracked_mounts =
-      calloc(DS_MAX_TRACKED_ENTRIES, sizeof(mount_path_t));
-  if (!tracked_mounts) {
-    free(pids);
-    return -1;
-  }
-  int tracked_mount_count = 0;
-
-  /* 2. Process all running PIDs */
+  /* 1. Process all running PIDs */
   int recovered_found = 0;
   for (size_t i = 0; i < count; i++) {
     pid_t pid = pids[i];
@@ -728,7 +642,7 @@ int scan_containers(void) {
 
     /* If it's a Droidspaces init process, synchronize its metadata.
      * This handles both untracked containers and tracked containers
-     * with missing sidecars (.env, .mount, .config). */
+     * with a missing pidfile, env file or config. */
     if (is_valid_container_pid(pid) && is_container_init(pid)) {
       if (ds_metadata_sync(pid) == 0) {
         recovered_found++;
@@ -736,24 +650,18 @@ int scan_containers(void) {
     }
   }
 
-  /* 3. Get list of newly tracked mount points to detect orphans */
-  tracked_mount_count = 0;
+  /* 2. Prune pidfiles nobody owns any more */
   DIR *d = opendir(get_pids_dir());
   if (d) {
     struct dirent *ent;
-    while ((ent = readdir(d)) != NULL &&
-           tracked_mount_count < DS_MAX_TRACKED_ENTRIES) {
+    while ((ent = readdir(d)) != NULL) {
       if (!is_pid_file(ent->d_name))
         continue;
       char pf[PATH_MAX];
       snprintf(pf, sizeof(pf), "%s/%s", get_pids_dir(), ent->d_name);
 
       pid_t p;
-      if (read_and_validate_pid(pf, &p) == 0) {
-        if (read_mount_path(pf, tracked_mounts[tracked_mount_count], PATH_MAX) >
-            0)
-          tracked_mount_count++;
-      } else if (p == 0) {
+      if (read_and_validate_pid(pf, &p) < 0 && p == 0) {
         char name[256];
         get_container_name_from_pidfile(ent->d_name, name, sizeof(name));
         prune_stale_pidfile(name, pf);
@@ -762,7 +670,7 @@ int scan_containers(void) {
     closedir(d);
   }
 
-  /* 4. Scan for orphaned loop mounts in /mnt/Droidspaces */
+  /* 3. Scan for orphaned loop mounts in /mnt/Droidspaces */
   int orphaned_found = 0;
   DIR *md = opendir(DS_IMG_MOUNT_ROOT_UNIVERSAL);
   if (md) {
@@ -775,18 +683,18 @@ int scan_containers(void) {
       snprintf(mpath, sizeof(mpath), "%s/%s", DS_IMG_MOUNT_ROOT_UNIVERSAL,
                ent->d_name);
 
-      /* Untracked is not the same as orphaned: a start creates and mounts
-       * this directory before it writes the pidfile, and a restart keeps the
-       * mount while no instance is running. Both hold the lifecycle lock, and
-       * the directory is named after the container. */
-      int is_tracked = 0;
-      for (int i = 0; i < tracked_mount_count; i++) {
-        if (strcmp(mpath, tracked_mounts[i]) == 0) {
-          is_tracked = 1;
-          break;
-        }
-      }
-      int lock_fd = is_tracked ? -1 : ds_container_lock_orphan(ent->d_name);
+      /* The directory is named after its container. A live pidfile means the
+       * container is running: a monitor from a build before the lifecycle lock
+       * holds no lock at all, so the lock probe below alone would not protect
+       * it. Unmounted is not the same as orphaned either: a start mounts here
+       * before it writes the pidfile, and a restart keeps the mount while no
+       * instance is running. Both hold the lifecycle lock. */
+      char pf[PATH_MAX];
+      pid_t p;
+      if (resolve_pidfile_from_name(ent->d_name, pf, sizeof(pf)) == 0 &&
+          read_and_validate_pid(pf, &p) == 0)
+        continue;
+      int lock_fd = ds_container_lock_orphan(ent->d_name);
       if (lock_fd < 0)
         continue;
 
@@ -803,7 +711,6 @@ int scan_containers(void) {
   }
 
   free(pids);
-  free(tracked_mounts);
 
   if (recovered_found == 0 && orphaned_found == 0)
     ds_log("No untracked resources found.");

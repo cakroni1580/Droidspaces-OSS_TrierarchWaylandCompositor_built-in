@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -11,7 +11,7 @@
 /* Container lifecycle lock
  *
  * Everything a container owns on disk is keyed by its name: pidfile, mount
- * point, cgroup, sidecars. So at most one actor may change a container's state
+ * point, cgroup. So at most one actor may change a container's state
  * at a time, and that includes the monitor, not only commands. Whoever holds
  * <pids>/<name>.lock owns the transition, and decides what to do from the
  * state it finds while holding it.
@@ -24,27 +24,35 @@
  * somebody still responsible for this container's leftovers? */
 
 #define DS_EXT_MONITOR ".monitor"
+#define DS_EXT_HELPERS ".helpers"
 
-static int g_held_locks[4] = {-1, -1, -1, -1};
+/* Four is enough: a monitor holds at most supervision, helpers and, while it
+ * acts on its container's exit, the lifecycle lock. The path is kept so that
+ * release can unlink the file. */
+static struct held_lock {
+  int fd;
+  char path[PATH_MAX];
+} g_held_locks[4] = {{-1, ""}, {-1, ""}, {-1, ""}, {-1, ""}};
+
+#define N_HELD_LOCKS (sizeof(g_held_locks) / sizeof(g_held_locks[0]))
+
+static struct held_lock *find_held(int fd) {
+  for (size_t i = 0; i < N_HELD_LOCKS; i++)
+    if (g_held_locks[i].fd == fd)
+      return &g_held_locks[i];
+  return NULL;
+}
 
 /* A lock belongs to the process that took it. flock() locks live on the open
  * file description, which fork() shares with the child, so without this any
  * long-lived child (the monitor, a log relay) would keep its parent's lock
- * held long after the parent let go. */
+ * held long after the parent let go. Close only: the parent still holds them.
+ */
 static void drop_inherited_locks(void) {
-  for (size_t i = 0; i < sizeof(g_held_locks) / sizeof(g_held_locks[0]); i++) {
-    if (g_held_locks[i] >= 0)
-      close(g_held_locks[i]);
-    g_held_locks[i] = -1;
-  }
-}
-
-static void track_lock(int fd, int held) {
-  for (size_t i = 0; i < sizeof(g_held_locks) / sizeof(g_held_locks[0]); i++) {
-    if (g_held_locks[i] == (held ? -1 : fd)) {
-      g_held_locks[i] = held ? fd : -1;
-      return;
-    }
+  for (size_t i = 0; i < N_HELD_LOCKS; i++) {
+    if (g_held_locks[i].fd >= 0)
+      close(g_held_locks[i].fd);
+    g_held_locks[i].fd = -1;
   }
 }
 
@@ -65,10 +73,12 @@ static int get_lock_path(const char *name, const char *ext, char *buf,
 /* open + flock. Returns the fd, or -1 with errno set (EWOULDBLOCK when op has
  * LOCK_NB and somebody else holds it).
  *
- * We never unlink a lock file, but a monitor from a build before this lock
- * does: it deletes a lock file it considers stale. A lock on an unlinked file
+ * unlock_file() removes a lock file whose last holder lets go, so the file we
+ * locked may no longer be the one the path names. A lock on an unlinked file
  * guards nothing, so after locking check the path still names our file, and
- * start over if it does not. */
+ * start over if it does not. Bounded: on a filesystem where fstat and stat
+ * disagree (overlayfs before 4.19) every attempt fails, and the callers all
+ * tolerate -1. */
 static int lock_file(const char *path, int op) {
   static int atfork_registered;
   if (!atfork_registered) {
@@ -95,7 +105,11 @@ static int lock_file(const char *path, int op) {
     struct stat held, named;
     if (fstat(fd, &held) == 0 && stat(path, &named) == 0 &&
         held.st_ino == named.st_ino && held.st_dev == named.st_dev) {
-      track_lock(fd, 1);
+      struct held_lock *slot = find_held(-1);
+      if (slot) {
+        slot->fd = fd;
+        safe_strncpy(slot->path, path, sizeof(slot->path));
+      }
       return fd;
     }
     close(fd);
@@ -104,8 +118,19 @@ static int lock_file(const char *path, int op) {
   return -1;
 }
 
+/* Release, and remove the file when we are its last holder: an exclusive lock
+ * means nobody else has one. Unlinking while still holding the lock is what
+ * makes this safe, see lock_file(). The same pattern as systemd's
+ * release_lock_file(). Converting a shared lock drops it first and, on
+ * EWOULDBLOCK, does not put it back, which is fine only because we are
+ * releasing anyway: never call this on a shared lock you still need. */
 static void unlock_file(int fd) {
-  track_lock(fd, 0);
+  struct held_lock *slot = find_held(fd);
+  if (slot) {
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0)
+      unlink(slot->path);
+    slot->fd = -1;
+  }
   flock(fd, LOCK_UN);
   close(fd);
 }
@@ -148,10 +173,77 @@ void ds_container_unlock(int fd) {
 }
 
 /* Called once by a monitor, which then holds it until it exits. */
+static int g_supervision_fd = -1;
+
 void ds_container_claim_supervision(const char *name) {
   char path[PATH_MAX];
   if (get_lock_path(name, DS_EXT_MONITOR, path, sizeof(path)) == 0)
-    lock_file(path, LOCK_SH);
+    g_supervision_fd = lock_file(path, LOCK_SH);
+}
+
+/* The monitor's last act. Its pidfile is gone by now, so no pruner can be
+ * looking for it, and a successor monitor (restart) holds its own shared lock
+ * on the same file, in which case the file stays. */
+void ds_container_release_supervision(void) {
+  if (g_supervision_fd >= 0)
+    unlock_file(g_supervision_fd);
+  g_supervision_fd = -1;
+}
+
+/* Take and release a lock that only a monitor ever holds. Returns 0 when it
+ * was free, and then the file is gone too (see unlock_file), or -1 when a
+ * live monitor has it. */
+static int probe_free(const char *name, const char *ext) {
+  char path[PATH_MAX];
+  if (get_lock_path(name, ext, path, sizeof(path)) < 0)
+    return -1;
+  /* No file, no holder. Also keeps a 20 ms wait loop and a scan over stray
+   * directory names from minting and deleting lock files. */
+  if (access(path, F_OK) != 0)
+    return 0;
+  int fd = lock_file(path, LOCK_EX | LOCK_NB);
+  if (fd < 0)
+    return -1;
+  unlock_file(fd);
+  return 0;
+}
+
+/* For a stop, which holds the lifecycle lock: a monitor killed with -9 never
+ * released its supervision file, and nothing else takes it. A live monitor
+ * holds it shared, so this is a no-op while one exists. */
+void ds_container_prune_supervision(const char *name) {
+  probe_free(name, DS_EXT_MONITOR);
+}
+
+/* Held by the monitor for exactly the life of its route monitor thread. That
+ * thread reinstalls the shared NAT rules whenever it finds them missing, and
+ * it lives in the monitor process, so a stop command cannot join it; it waits
+ * for this lock instead. Non-blocking: a monitor left behind by an unkillable
+ * init still holds its lock, and a new instance must boot past it rather than
+ * hang in its handshake. Returns an fd for ds_container_unlock(), or -1. */
+int ds_container_lock_helpers(const char *name) {
+  char path[PATH_MAX];
+  if (get_lock_path(name, DS_EXT_HELPERS, path, sizeof(path)) < 0)
+    return -1;
+  return lock_file(path, LOCK_EX | LOCK_NB);
+}
+
+/* Wait until the helpers lock is free, or timeout_ms has passed. A free lock
+ * (no monitor, or one from a build before this lock) returns at once. On
+ * timeout carry on anyway: that is no worse than before the lock existed, and
+ * the holder is then a monitor that is wedged, not one winding down. */
+void ds_container_wait_helpers(const char *name, int timeout_ms) {
+  for (int waited = 0;; waited += 20) {
+    if (probe_free(name, DS_EXT_HELPERS) == 0)
+      return;
+    if (waited >= timeout_ms) {
+      ds_warn("Could not confirm that the monitor for '%s' stopped its "
+              "network helpers - proceeding with cleanup",
+              name);
+      return;
+    }
+    usleep(20000);
+  }
 }
 
 /* For the pruners: take the lifecycle lock only if nobody is in the middle of
@@ -161,20 +253,18 @@ void ds_container_claim_supervision(const char *name) {
  * ds_container_unlock(), or -1, in which case leave the container alone.
  * Anything we cannot determine counts as "not ours to touch". */
 int ds_container_lock_orphan(const char *name) {
-  char path[PATH_MAX];
-  if (get_lock_path(name, DS_EXT_MONITOR, path, sizeof(path)) < 0)
-    return -1;
-
   int fd = ds_container_lock(name, 0);
   if (fd < 0)
     return -1;
 
-  int probe = lock_file(path, LOCK_EX | LOCK_NB);
-  if (probe < 0) {
+  if (probe_free(name, DS_EXT_MONITOR) < 0) {
     ds_container_unlock(fd);
     return -1;
   }
-  unlock_file(probe);
+  /* No monitor, so nobody holds the helpers lock either: a monitor killed
+   * with -9 while its route monitor ran leaves the file, and only a stop
+   * would otherwise ever look at it. */
+  probe_free(name, DS_EXT_HELPERS);
   return fd;
 }
 
@@ -236,6 +326,41 @@ int wait_for_socket_or_death(pid_t pid, const char *path, int timeout_ms,
   return -1;
 }
 
+/* Start the Android helper servers this config wants and stop the ones it
+ * no longer does. A restart and an in-container reboot keep the helpers
+ * alive for the next boot to reuse, so a toggle turned off between two boots
+ * has to be honoured here, or the server outlives it: a stale Anland record
+ * kept the app's launch button up on a container that no longer had a
+ * display. The global servers stay up while another running container
+ * needs them; the Anland broker is per container and goes. */
+void ds_android_helpers_sync(struct ds_config *cfg) {
+  if (!is_android())
+    return;
+  if (cfg->x11) {
+    if (ds_x11_daemon_start(cfg) == 0)
+      wait_for_socket_or_death(
+          cfg->x11_pid, TX11_SOCK_DIR "/" TX11_DISPLAY_SOCK, 5000, 50000);
+  } else {
+    ds_x11_daemon_stop(cfg);
+  }
+  if (cfg->virgl) {
+    if (ds_virgl_daemon_start(cfg) == 0)
+      wait_for_socket_or_death(cfg->virgl_pid, TX11_VIRGL_SOCKET, 2000, 20000);
+  } else {
+    ds_virgl_daemon_stop(cfg);
+  }
+  if (cfg->pulseaudio)
+    ds_pulse_daemon_start(cfg);
+  else
+    ds_pulse_daemon_stop(cfg);
+  /* The broker's socket path is generated here and recorded in the Pids dir,
+   * never in container.config, so a reboot finds it through the record. */
+  if (cfg->anland)
+    ds_anland_daemon_start(cfg);
+  else
+    ds_anland_daemon_stop(cfg);
+}
+
 void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
                                  int skip_unmount, int force_cleanup) {
   /* Flush filesystem buffers (skip if force cleanup - sync can hang on
@@ -247,6 +372,7 @@ void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
     ds_x11_daemon_stop(cfg);
     ds_virgl_daemon_stop(cfg);
     ds_pulse_daemon_stop(cfg);
+    ds_anland_daemon_stop(cfg);
     if (count_running_containers(NULL, 0) == 0) {
       android_optimizations(0);
     }
@@ -292,14 +418,7 @@ void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
   }
 
   /* 4. Handle rootfs image unmount */
-  char mount_point[PATH_MAX] = "";
-  if (read_mount_path(cfg->pidfile, mount_point, sizeof(mount_point)) <= 0) {
-    /* Fallback: use cfg->img_mount_point if .mount sidecar is gone */
-    if (cfg->img_mount_point[0]) {
-      safe_strncpy(mount_point, cfg->img_mount_point, sizeof(mount_point));
-    }
-  }
-
+  const char *mount_point = cfg->img_mount_point;
   if (mount_point[0] && !skip_unmount) {
     if (force_cleanup) {
       /* Force path: detach+force unmount, no sync, no retry loops */
@@ -311,20 +430,19 @@ void cleanup_container_resources(struct ds_config *cfg, pid_t pid,
     }
   }
 
-  /* 5. Remove tracking info and unlink PID files.
-   * For restart (skip_unmount), preserve the .mount sidecar and pidfiles
-   * so start_rootfs() can detect the existing mount and reuse it. */
+  /* 5. Unlink PID files. A restart (skip_unmount) keeps them: the monitor
+   * reads the dead PID in them as "nobody has claimed this exit yet". */
   if (!skip_unmount) {
-    remove_mount_path(cfg->pidfile);
-    remove_init_type(cfg->pidfile);
     if (cfg->pidfile[0])
       unlink(cfg->pidfile);
     if (global_pidfile[0] && strcmp(cfg->pidfile, global_pidfile) != 0)
       unlink(global_pidfile);
   }
 
-  /* Network cleanup: remove host veth and owned network state */
-  if (cfg->net_mode == DS_NET_NAT || cfg->net_mode == DS_NET_GATEWAY) {
+  /* Network cleanup: remove host veth and owned network state. Any isolated
+   * mode can be someone's gateway (an OpenWrt in --net=none, say), and its
+   * LAN cables must go with it, so this is not limited to NAT and gateway. */
+  if (cfg->net_mode != DS_NET_HOST) {
     ds_net_cleanup(cfg, pid > 0 ? pid : cfg->container_pid);
   }
 
@@ -397,18 +515,23 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
                                int reuse_mount) {
 
   int has_side_effects = 0;
+  int sync_pipe[2] = {-1, -1}; /* read by cleanup: set before any goto */
+  pid_t tweaks_pid = -1;       /* the android_optimizations(1) helper */
+
+  /* Here and not with the other network checks in main.c: a restart reloads
+   * its config after those ran, and this is the one both paths go through. */
+  if (cfg->net_mode == DS_NET_MACVLAN && ds_net_macvlan_check(cfg) < 0)
+    return -1;
 
   /* 0. Restart: pick the preserved mount back up. If it is gone after all,
    *    this is an ordinary start that mounts the image again. */
   if (reuse_mount) {
-    if (cfg->pidfile[0] == '\0')
-      resolve_pidfile_from_name(cfg->container_name, cfg->pidfile,
-                                sizeof(cfg->pidfile));
-
+    /* Only an image container may adopt a mount under its name: a directory
+     * one that inherits a leftover image mount would boot the wrong rootfs. */
     char existing_mount[PATH_MAX];
-    if (cfg->pidfile[0] &&
-        read_mount_path(cfg->pidfile, existing_mount, sizeof(existing_mount)) >
-            0 &&
+    if (cfg->rootfs_img_path[0] &&
+        ds_img_mount_point(cfg->container_name, existing_mount,
+                           sizeof(existing_mount)) == 0 &&
         is_mountpoint(existing_mount)) {
       safe_strncpy(cfg->rootfs_path, existing_mount, sizeof(cfg->rootfs_path));
       cfg->is_img_mount = 1;
@@ -492,6 +615,8 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     ds_warn("--virgl-flags is only applicable on Android. Skipping.");
   if (cfg->pulseaudio && !is_android())
     ds_warn("--pulse-audio is only applicable on Android. Skipping.");
+  if (cfg->anland && !is_android())
+    ds_warn("--anland is only applicable on Android. Skipping.");
   if (cfg->wayland && !is_android())
     ds_warn("--wayland is only applicable on Android. Skipping.");
 
@@ -557,43 +682,20 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     cfg->init_type = detect_container_init(rootfs_norm);
   }
 
-  /* 2b. Android: start Termux-X11, VirGL, and PulseAudio servers before fork
-   * so the sockets exist when bind-mounted later */
-  if (is_android() && cfg->x11) {
-    if (ds_x11_daemon_start(cfg) == 0)
-      wait_for_socket_or_death(
-          cfg->x11_pid, TX11_SOCK_DIR "/" TX11_DISPLAY_SOCK, 5000, 50000);
-  }
-
-  if (is_android() && cfg->virgl) {
-    if (ds_virgl_daemon_start(cfg) == 0)
-      wait_for_socket_or_death(cfg->virgl_pid, TX11_VIRGL_SOCKET, 2000, 20000);
-  }
-
-  if (is_android() && cfg->pulseaudio) {
-    ds_pulse_daemon_start(cfg);
-  }
+  /* 2b. Android helper servers, before fork so their sockets exist when
+   * they are bind-mounted post-pivot. */
+  ds_android_helpers_sync(cfg);
 
   /* 3. Early pre-flight for volatile mode (before any host changes) */
   if (check_volatile_mode(cfg) < 0) {
     goto cleanup;
   }
 
-  {
-    char active_uuids[DS_MAX_CONTAINERS][DS_UUID_LEN + 1];
-    int uuid_count = collect_active_uuids(active_uuids, DS_MAX_CONTAINERS);
-    int need_new = (cfg->uuid[0] == '\0');
-    if (!need_new) {
-      for (int _i = 0; _i < uuid_count; _i++) {
-        if (strcmp(cfg->uuid, active_uuids[_i]) == 0) {
-          need_new = 1;
-          break;
-        }
-      }
-    }
-    if (need_new)
-      generate_uuid(cfg->uuid, sizeof(cfg->uuid));
-  }
+  /* The uniqueness check above reports the name as in use when a running
+   * container carries this UUID (its deep scan is by UUID marker), so a UUID
+   * is only ever minted here, never replaced. */
+  if (cfg->uuid[0] == '\0')
+    generate_uuid(cfg->uuid, sizeof(cfg->uuid));
 
   /* Resolve and lock in the container's static NAT IP before the first save.
    *
@@ -699,8 +801,27 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     safe_strncpy(cfg->pidfile, global_pidfile, sizeof(cfg->pidfile));
   }
 
+  /* Three binder round trips into system_server. They used to run after the
+   * host-side network setup, in series, with the whole start waiting on them.
+   * Nothing between here and init's exec needs them, so a helper applies them
+   * while the container boots and is reaped after wait_for_boot(), so they
+   * are still in place by the time start returns. The guest may fork its
+   * first services before the phantom process cap is lifted; the cap is
+   * applied by a periodic trim of the app's cgroup, which the container's
+   * processes have left by then, not at fork. Forked before the sync pipe
+   * exists: holding its write end would hold back the EOF that marks init's
+   * exec. */
+  if (is_android()) {
+    tweaks_pid = fork();
+    if (tweaks_pid == 0) {
+      android_optimizations(1);
+      _exit(0);
+    }
+    if (tweaks_pid < 0)
+      android_optimizations(1);
+  }
+
   /* 6. Pipe for synchronization */
-  int sync_pipe[2];
   if (pipe(sync_pipe) < 0) {
     ds_error("pipe failed: %s", strerror(errno));
     goto cleanup;
@@ -714,7 +835,6 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
    * This eliminates the race condition where the child boots and reads
    * DNS before the parent has written it. */
   fix_networking_host(cfg);
-  android_optimizations(1);
 
   /* Record start time before fork so monitor and virtualize_update share it */
   clock_gettime(CLOCK_BOOTTIME, &cfg->start_time);
@@ -776,19 +896,20 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     }
   }
 
-  if (cfg->is_img_mount)
-    save_mount_path(cfg->pidfile, cfg->img_mount_point);
+  /* 11. Do not show the info or return until init has exec'd. A command that
+   * returned earlier left init still logging to a terminal nobody was reading
+   * any more, and its last lines, "Booting ..." among them, went missing. */
+  int booted = wait_for_boot(sync_pipe[0], cfg->container_pid);
+  close(sync_pipe[0]);
+  sync_pipe[0] = -1;
+  while (tweaks_pid > 0 && waitpid(tweaks_pid, NULL, 0) < 0 && errno == EINTR)
+    ;
+  tweaks_pid = -1;
 
-  /* Also save init type */
-  save_init_type(cfg->pidfile, cfg->init_type);
-
-  /* 11. Foreground or background finish */
   if (cfg->foreground) {
     /* We stay attached for the container's whole life, so let go of the lock
      * here, but not before the container is visible as running: a start that
      * raced in before that would not see it and would boot a second one. */
-    wait_for_boot(sync_pipe[0], cfg->container_pid);
-    close(sync_pipe[0]);
     ds_container_unlock(*lock_fd);
     *lock_fd = -1;
 
@@ -796,13 +917,6 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     free_config_env_vars(cfg);
     return ret;
   } else {
-    /* Do not show the info or return until init has exec'd. A command that
-     * returned earlier left init still logging to a terminal nobody was reading
-     * any more, and its last lines, "Booting ..." among them, went missing. */
-    int booted = wait_for_boot(sync_pipe[0], cfg->container_pid);
-    close(sync_pipe[0]);
-    sync_pipe[0] = -1;
-
     if (!booted) {
       ds_error("Container failed to boot correctly.");
       /* If pid is still alive, we might want to kill it, but monitor usually
@@ -830,6 +944,11 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
   return 0;
 
 cleanup:
+  /* The helper must be done before cleanup's android_optimizations(0), or its
+   * last command would land after the reset. */
+  while (tweaks_pid > 0 && waitpid(tweaks_pid, NULL, 0) < 0 && errno == EINTR)
+    ;
+
   /* Centralized host-side cleanup IF we are returning error.
    * This ensures image mounts and tracking files are reverted on fatal boot
    * errors. Only execute if we successfully crossed the point of creating
@@ -937,31 +1056,32 @@ static int stop_rootfs_locked(struct ds_config *caller_cfg, int skip_unmount,
 
   ds_log("Stopping container '%s' (PID %d)...", cfg->container_name, pid);
 
-  /* Safe Metadata Capture: Read the mount path from the tracking file (.mount)
-   * into memory before we start the shutdown wait loop. This ensures we have
-   * the correct host path even if the tracking files are deleted by the monitor
-   * or another process during the timeout. */
-  if (cfg->img_mount_point[0] == '\0') {
-    read_mount_path(cfg->pidfile, cfg->img_mount_point,
-                    sizeof(cfg->img_mount_point));
+  /* The snapshot names the image file, not where it is mounted. The mount
+   * point is a function of the name, so look there. A directory container
+   * does not claim a leftover image mount under its name: the firmware path
+   * and unmount below would then act on a mount it never owned. An image
+   * deleted under a running container reloads as a directory and leaves its
+   * mount for the next scan or start to clear. */
+  if (cfg->img_mount_point[0] == '\0' && cfg->rootfs_img_path[0]) {
+    char expected[PATH_MAX];
+    if (ds_img_mount_point(cfg->container_name, expected, sizeof(expected)) ==
+            0 &&
+        is_mountpoint(expected))
+      safe_strncpy(cfg->img_mount_point, expected,
+                   sizeof(cfg->img_mount_point));
   }
 
   /* 1. Send shutdown signal. */
   if (cfg->custom_init[0]) {
     kill(pid, SIGKILL);
   } else {
-    /* Detect init system and send the correct shutdown signal. */
+    /* Detect the init system through the live container's root rather than a
+     * host path: that is right for a volatile overlay, a --pidfile-only
+     * invocation and a container from before config snapshots alike. */
     ds_init_type_t init_type = DS_INIT_UNKNOWN;
-    const char *probe_root =
-        cfg->img_mount_point[0] ? cfg->img_mount_point : cfg->rootfs_path;
-    if (__builtin_expect((read_init_type(cfg->pidfile, &init_type) != 0 ||
-                          init_type == DS_INIT_UNKNOWN),
-                         0)) {
-      /* Fallback for containers launched before .init sidecars existed,
-       * or if runtime metadata was lost / non-informative. */
-      if (__builtin_expect(probe_root[0], '/'))
-        init_type = detect_container_init(probe_root);
-    }
+    char probe_root[PATH_MAX];
+    if (build_proc_root_path(pid, "", probe_root, sizeof(probe_root)) == 0)
+      init_type = detect_container_init(probe_root);
 
     switch (init_type) {
     case DS_INIT_PROCD:
@@ -1034,16 +1154,16 @@ static int stop_rootfs_locked(struct ds_config *caller_cfg, int skip_unmount,
            timeout_seconds);
   }
 
-  /* 2. Wait for exit */
+  /* 2. Wait for exit. We are not init's parent, so this is a poll; 20 ms
+   * keeps the overshoot small and fifty kill(2)s a second cost nothing. */
+  const int poll_us = 20000;
   int stopped = 0;
-  for (int i = 0; i < timeout_seconds * 5; i++) {
-    if (kill(pid, 0) < 0) {
-      if (errno == ESRCH) {
-        stopped = 1;
-        break;
-      }
+  for (int i = 0; i < timeout_seconds * (1000000 / poll_us); i++) {
+    if (kill(pid, 0) < 0 && errno == ESRCH) {
+      stopped = 1;
+      break;
     }
-    usleep(DS_RETRY_DELAY_US);
+    usleep(poll_us);
   }
 
   /* 3. Force kill if still running */
@@ -1083,8 +1203,16 @@ static int stop_rootfs_locked(struct ds_config *caller_cfg, int skip_unmount,
     firmware_path_remove(fw_path);
   }
 
+  /* The monitor's route monitor thread puts the shared NAT rules back when it
+   * finds them missing, and only the monitor can join it. Wait for that before
+   * pulling the rules, or they come back and nobody removes them: the monitor
+   * concedes the cleanup to us once it sees the pidfile gone. */
+  if (!unkillable)
+    ds_container_wait_helpers(cfg->container_name, 5000);
+
   /* 5. Complete resource cleanup. */
   cleanup_container_resources(cfg, pid, skip_unmount, unkillable);
+  ds_container_prune_supervision(cfg->container_name);
   ds_socketd_record_core_event("die", cfg->container_name, cfg->uuid);
 
   if (!cfg->foreground)
@@ -1632,6 +1760,8 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     safe_strncpy(st.name, cfg->container_name, sizeof(st.name));
     st.pid = pid;
     safe_strncpy(st.hostname, cfg->hostname, sizeof(st.hostname));
+    ds_anland_load_sock(cfg);
+    safe_strncpy(st.anland_sock, cfg->anland_sock, sizeof(st.anland_sock));
     long ram_total = ds_collect_status(&st, 1);
 
     int first = 1;
@@ -1651,6 +1781,9 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       break;
     case DS_NET_GATEWAY:
       net = "gateway";
+      break;
+    case DS_NET_MACVLAN:
+      net = "macvlan";
       break;
     default:
       net = "host";
@@ -1682,6 +1815,10 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       ds_json_str("gateway_iface",
                   cfg->gateway_lan_ifname[0] ? cfg->gateway_lan_ifname : "eth1",
                   &first);
+    } else if (cfg->net_mode == DS_NET_MACVLAN) {
+      ds_json_str("macvlan_parent", cfg->macvlan_parent, &first);
+      ds_json_str("macvlan_mode", ds_macvlan_mode_name(cfg->macvlan_mode),
+                  &first);
     }
 
     ds_json_int("disable_ipv6", cfg->disable_ipv6, &first);
@@ -1700,6 +1837,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       if (cfg->virgl_extra_flags)
         ds_json_str("virgl_flags", cfg->virgl_extra_flags, &first);
       ds_json_int("pulseaudio", cfg->pulseaudio, &first);
+      ds_json_int("anland", cfg->anland, &first);
     }
 
 
@@ -1807,6 +1945,9 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     case DS_NET_GATEWAY:
       net = "gateway";
       break;
+    case DS_NET_MACVLAN:
+      net = "macvlan";
+      break;
     default:
       net = "host";
       break;
@@ -1818,6 +1959,12 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     if (cfg->net_mode == DS_NET_GATEWAY) {
       printf("  Gateway: %s (%s)\n", cfg->gateway_container,
              cfg->gateway_net[0] ? cfg->gateway_net : "lan");
+      feat_count++;
+    }
+
+    if (cfg->net_mode == DS_NET_MACVLAN) {
+      printf("  Macvlan: %s (%s)\n", cfg->macvlan_parent,
+             ds_macvlan_mode_name(cfg->macvlan_mode));
       feat_count++;
     }
 
@@ -1901,6 +2048,9 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
+    /* 9b. Anland */
+    if (is_android() && cfg->anland) {
+      printf("  Anland: enabled\n");
     /* 10. Wayland */
     if (is_android() && cfg->wayland) {
       printf("  Wayland: enabled (compositor in app)\n");
@@ -2057,8 +2207,8 @@ static int restart_rootfs_locked(struct ds_config *cfg, int *lock_fd,
    * (--reset included) so every flag behaves exactly as it would on a fresh
    * start. An explicit --conf never read the booted snapshot in the first
    * place: cfg already holds that file plus the overrides, so skip the
-   * reload entirely. start_rootfs re-derives the preserved mount from the
-   * on-disk .mount sidecar, so losing the snapshot paths is fine. */
+   * reload entirely. start_rootfs finds the preserved mount by name, so losing
+   * the snapshot paths is fine. */
   if (!cfg->config_file_specified) {
     /* Clean slate first: the load only overlays keys present in the file, so
      * without the reset every conditionally-written key would keep its value

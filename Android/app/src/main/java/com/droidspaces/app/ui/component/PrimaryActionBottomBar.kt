@@ -8,7 +8,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -25,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -38,9 +38,8 @@ import androidx.compose.ui.unit.dp
  * that was copy-pasted across the wizard/detail screens.
  *
  * The varying bits are parameters so each screen keeps its exact look:
- * [enabled] toggles the disabled colors, [secondaryAction] renders an extra row
- * (e.g. RootCheck's Skip), and [containerColor]/[disabledContainerColor] let a
- * screen keep the button a constant color regardless of [enabled].
+ * [enabled] toggles the disabled colors, and [containerColor]/[disabledContainerColor]
+ * let a screen keep the button a constant color regardless of [enabled].
  */
 @Composable
 fun PrimaryActionBottomBar(
@@ -56,8 +55,8 @@ fun PrimaryActionBottomBar(
     barColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     dividerAlpha: Float = 0.25f,
     horizontalPadding: Dp = 24.dp,
+    shape: Shape = RoundedCornerShape(20.dp),
     labelFontSize: TextUnit = TextUnit.Unspecified,
-    secondaryAction: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val fg = if (enabled) contentColor else disabledContentColor
     PrimaryActionBottomBar(
@@ -68,7 +67,7 @@ fun PrimaryActionBottomBar(
         barColor = barColor,
         dividerAlpha = dividerAlpha,
         horizontalPadding = horizontalPadding,
-        secondaryAction = secondaryAction
+        shape = shape
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = fg)
         Text(
@@ -96,10 +95,11 @@ fun PrimaryActionBottomBar(
     barColor: Color = MaterialTheme.colorScheme.surfaceContainer,
     dividerAlpha: Float = 0.25f,
     horizontalPadding: Dp = 24.dp,
-    secondaryAction: (@Composable ColumnScope.() -> Unit)? = null,
+    shape: Shape = RoundedCornerShape(20.dp),
     content: @Composable RowScope.() -> Unit,
 ) {
-    val btnShape = RoundedCornerShape(20.dp)
+    // A short window keeps the button but not the generous padding around it.
+    val short = isShortHeight()
     val bg by animateColorAsState(
         targetValue = containerColor,
         animationSpec = tween(durationMillis = 250),
@@ -118,21 +118,21 @@ fun PrimaryActionBottomBar(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontalPadding)
+                    .padding(horizontal = if (short) 8.dp else horizontalPadding, vertical = if (short) 8.dp else horizontalPadding)
                     .navigationBarsPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(btnShape)
+                        .clip(shape)
                         .clickable(enabled = enabled, onClick = onClick),
-                    shape = btnShape,
+                    shape = shape,
                     color = bg,
                     tonalElevation = 0.dp
                 ) {
                     Box(
-                        modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth(),
+                        modifier = Modifier.padding(vertical = if (short) 12.dp else 16.dp).fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
@@ -142,7 +142,6 @@ fun PrimaryActionBottomBar(
                         )
                     }
                 }
-                secondaryAction?.invoke(this)
             }
         }
     }

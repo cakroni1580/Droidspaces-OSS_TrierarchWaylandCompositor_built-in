@@ -48,6 +48,38 @@ object ContainerUsersManager {
         }
     }
 
+    // Each `run` joins the container's namespaces, so the details page asks for
+    // the init system and the users in one entry instead of four
+    private val PROBE_SCRIPT = """
+        if command -v systemctl >/dev/null 2>&1; then echo systemd
+        elif [ -f /etc/openwrt_release ] && { [ -x /sbin/procd ] || [ -x /sbin/ubusd ] || command -v ubus >/dev/null 2>&1 || command -v service >/dev/null 2>&1; }; then echo procd
+        elif command -v rc-service >/dev/null 2>&1; then echo openrc
+        else echo none; fi
+        awk -F: '$3 >= 1000 && $3 < 65534 && $1 !~ /^(nixbld)/ {print $1}' /etc/passwd 2>/dev/null
+    """.trimIndent()
+
+    private val INIT_SYSTEMS = setOf("systemd", "procd", "openrc", "none")
+
+    /**
+     * The container's init system ("systemd", "procd", "openrc" or "none") and its
+     * regular users, from one `run`. Null if the container could not be entered.
+     */
+    suspend fun probe(containerName: String): Pair<String, List<String>>? = withContext(Dispatchers.IO) {
+        try {
+            val out = Shell.cmd(
+                "${Constants.DROIDSPACES_BINARY_PATH} --name=${ContainerCommandBuilder.quote(containerName)} run ${ContainerCommandBuilder.quote(PROBE_SCRIPT)}"
+            ).exec().out.map { it.trim() }.filter { it.isNotEmpty() }
+
+            val init = out.firstOrNull()?.takeIf { it in INIT_SYSTEMS } ?: return@withContext null
+            val users = out.drop(1)
+            cache[containerName] = users
+            init to users
+        } catch (e: Exception) {
+            Log.e(TAG, "Error probing $containerName", e)
+            null
+        }
+    }
+
     /**
      * Get cached users without fetching (returns null if not cached).
      */

@@ -73,12 +73,6 @@ class PreferencesManager private constructor(context: Context) {
             }
         }
 
-    var cachedContainerCount: Int
-        get() = prefs.getInt(KEY_CONTAINER_COUNT, 0)
-        set(value) {
-            prefs.edit().putInt(KEY_CONTAINER_COUNT, value).apply()
-        }
-
     var cachedRunningCount: Int
         get() = prefs.getInt(KEY_RUNNING_COUNT, 0)
         set(value) {
@@ -148,7 +142,7 @@ class PreferencesManager private constructor(context: Context) {
         }
 
     var themePalette: String
-        get() = prefs.getString(KEY_THEME_PALETTE, "CATPPUCCIN") ?: "CATPPUCCIN"
+        get() = prefs.getString(KEY_THEME_PALETTE, "BROCCOLI") ?: "BROCCOLI"
         set(value) {
             prefs.edit().putString(KEY_THEME_PALETTE, value).apply()
         }
@@ -310,6 +304,24 @@ class PreferencesManager private constructor(context: Context) {
         prefs.edit().remove("${KEY_CONTAINER_LOG_PREFIX}$containerName").commit()
     }
 
+    // Preselected in the terminal's user picker, per container
+    fun getLastTerminalUser(containerName: String): String? =
+        prefs.getString("terminal_last_user_$containerName", null)
+
+    fun setLastTerminalUser(containerName: String, user: String) {
+        prefs.edit().putString("terminal_last_user_$containerName", user).apply()
+    }
+
+    // Uninstall drops everything kept under the name, so a new container that reuses it
+    // starts clean. A new per-container key belongs here too.
+    fun forgetContainer(containerName: String) {
+        prefs.edit()
+            .remove("${KEY_CONTAINER_LOG_PREFIX}$containerName")
+            .remove("${KEY_CONTAINER_OS_INFO_PREFIX}$containerName")
+            .remove("terminal_last_user_$containerName")
+            .commit()
+    }
+
     /**
      * Save container OS info to persistent cache (simple delimiter format).
      * Uses pipe (|) as field separator and newline as record separator.
@@ -446,7 +458,8 @@ class PreferencesManager private constructor(context: Context) {
             return names.mapNotNull { name ->
                 val configContent = prefs.getString("${KEY_CACHED_CONTAINER_CONFIG_PREFIX}$name", null)
                 if (configContent != null) {
-                    ContainerManager.parseConfig(configContent, name)
+                    // Display only until the first fetch, so skip the root read of each .env.
+                    ContainerManager.parseConfig(configContent, name, loadEnvironment = false)
                 } else null
             }
         }
@@ -459,7 +472,6 @@ class PreferencesManager private constructor(context: Context) {
         private const val KEY_ROOT_AVAILABLE = Constants.KEY_ROOT_AVAILABLE
         private const val KEY_ROOT_PROVIDER_VERSION = Constants.KEY_ROOT_PROVIDER_VERSION
         private const val KEY_DROIDSPACES_VERSION = Constants.KEY_DROIDSPACES_VERSION
-        private const val KEY_CONTAINER_COUNT = Constants.KEY_CONTAINER_COUNT
         private const val KEY_RUNNING_COUNT = Constants.KEY_RUNNING_COUNT
         private const val KEY_BACKEND_STATUS = Constants.KEY_BACKEND_STATUS
         private const val KEY_BACKEND_MODE = Constants.KEY_BACKEND_MODE

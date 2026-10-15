@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Pagsugod</string>
-    <string name="root_check_title">Pagsusi sa Root Access</string>
     <string name="checking_root">Gisusi ang root access…</string>
-    <string name="root_granted">Gitugotan ang Root Access</string>
     <string name="root_denied">Gibalibaran ang Root Access</string>
     <string name="root_required_message">Gikinahanglan ang root access aron madumala ang mga container.</string>
     <string name="check_root_access">Susiha ang Root Access</string>
-    <string name="check_root_access_click">I-klik sa ubos aron susihon ang root access</string>
-    <string name="root_available_message">Mahimo na nimo gamiton ang Droidspaces</string>
     <string name="skip">Laktawi</string>
     <string name="continue_button">Padayon</string>
     <string name="home_title">Home</string>
@@ -123,7 +119,6 @@
     <string name="container_name_exists">Aduna nay container nga naggamit niini nga ngalan</string>
     <string name="next_configuration">Sunod: Configuration</string>
     <string name="configuration_title">Configuration</string>
-    <string name="container_options">Mga Opsyon sa Container</string>
     <string name="next_storage">Sunod: Storage</string>
     <string name="installation_complete">Kompleto na ang Pag-install</string>
     <string name="installation_failed">Napakyas ang Pag-install</string>

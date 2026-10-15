@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Comenzar</string>
-    <string name="root_check_title">Verificar Acceso Root</string>
     <string name="checking_root">Verificando acceso root…</string>
-    <string name="root_granted">Acceso Root Permitido</string>
     <string name="root_denied">Acceso Root Denegado</string>
     <string name="root_required_message">Se requiere acceso root para administrar contenedores.</string>
     <string name="check_root_access">Verificar Acceso Root</string>
-    <string name="check_root_access_click">Toca abajo para verificar el acceso root</string>
-    <string name="root_available_message">Ya puedes usar Droidspaces</string>
     <string name="skip">Saltar</string>
     <string name="continue_button">Continuar</string>
     <string name="home_title">Inicio</string>
@@ -123,7 +119,6 @@
     <string name="container_name_exists">Ya existe un contenedor con este nombre</string>
     <string name="next_configuration">Siguiente: Configuración</string>
     <string name="configuration_title">Configuración</string>
-    <string name="container_options">Opciones del contenedor</string>
     <string name="next_storage">Siguiente: Almacenamiento</string>
     <string name="installation_complete">Instalación completada</string>
     <string name="installation_failed">Instalación fallida</string>
@@ -209,7 +204,6 @@
     <string name="requirements_check_completed_successfully">Requisitos comprobados con éxito</string>
     <string name="requirements_check_completed_with_errors">Comprobación de requisitos con errores</string>
     <string name="kernel_requirements_copied">Requisitos del kernel copiados al portapapeles</string>
-    <string name="welcome_tagline">Contenedores de Linux. Nativo. Sin sobrecarga.</string>
     <string name="feat_containers_title">Contenedores de Linux reales</string>
     <string name="feat_containers_desc">La misma tecnología de nombre del núcleo que LXC, Podman y Docker. Sin emulación, sin chroot.</string>
     <string name="feat_overhead_title">Sobrecarga cero</string>
@@ -241,7 +235,6 @@
     <string name="generate_bug_report">Generar un informe de fallo</string>
     <string name="generate_bug_report_description">Recoge informe del sistema y bitácoras para depuración</string>
     <string name="bug_report_title">Informe de fallo</string>
-    <string name="install">Instalar</string>
     <string name="type_container_name_to_confirm">Teclee el nombre del contenedor exactamente para confirmar:</string>
     <string name="gpu_option">GPU</string>
     <string name="x11_option">X11</string>

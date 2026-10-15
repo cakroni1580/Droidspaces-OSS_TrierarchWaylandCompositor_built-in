@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="get_started">Mangrugi</string>
-    <string name="root_check_title">Panang-tsek ti Root Access</string>
     <string name="checking_root">Suksukimaten ti root access…</string>
-    <string name="root_granted">Naipalubos ti Root Access</string>
     <string name="root_denied">Saan a Naipalubos ti Root Access</string>
     <string name="root_required_message">Masapul ti root access tapno maimatonan dagiti container.</string>
     <string name="check_root_access">I-tsek ti Root Access</string>
-    <string name="check_root_access_click">I-klik iti baba tapno ma-tsek ti root access</string>
-    <string name="root_available_message">Mabalinmo nga usaren ti Droidspaces</string>
     <string name="skip">Laktawan</string>
     <string name="continue_button">Ituloy</string>
     <string name="home_title">Home</string>
@@ -123,7 +119,6 @@
     <string name="container_name_exists">Adda container nga agtagikua iti daytoy a nagan</string>
     <string name="next_configuration">Sumaruno: Configuration</string>
     <string name="configuration_title">Configuration</string>
-    <string name="container_options">Dagiti Opsyon ti Container</string>
     <string name="next_storage">Sumaruno: Storage</string>
     <string name="installation_complete">Nalpasen ti Panag-install</string>
     <string name="installation_failed">Napaay ti Panag-install</string>

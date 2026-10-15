@@ -3,14 +3,10 @@
     <!-- Welcome Screen -->
     <string name="get_started">Commencer</string>
     <!-- Root Check Screen -->
-    <string name="root_check_title">Vérification de l\'accès root</string>
     <string name="checking_root">Vérification de l\'accès root…</string>
-    <string name="root_granted">Accès root accordé</string>
     <string name="root_denied">Accès root refusé</string>
     <string name="root_required_message">L\'accès root est requis pour gérer les conteneurs.</string>
     <string name="check_root_access">Vérifier l\'accès root</string>
-    <string name="check_root_access_click">Cliquez ci-dessous pour vérifier l\'accès root</string>
-    <string name="root_available_message">Vous pouvez désormais utiliser Droidspaces</string>
     <string name="skip">Passer</string>
     <string name="continue_button">Continuer</string>
     <!-- Navigation -->
@@ -135,7 +131,6 @@
     <string name="next_configuration">Suivant : Configuration</string>
     <!-- Container Config Screen -->
     <string name="configuration_title">Configuration</string>
-    <string name="container_options">Options du conteneur</string>
     <string name="next_storage">Suivant : Stockage</string>
     <!-- Installation Screen -->
     <string name="installation_complete">Installation terminée</string>

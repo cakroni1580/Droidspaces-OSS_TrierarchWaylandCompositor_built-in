@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.droidspaces.app.ui.util.ClearFocusOnClickOutside
 import com.droidspaces.app.ui.util.FocusUtils
 import com.droidspaces.app.ui.util.rememberClearFocus
 import com.topjohnwu.superuser.Shell
@@ -161,10 +160,7 @@ fun FilePickerDialog(
             )
         }
     ) {
-        ClearFocusOnClickOutside(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -293,7 +289,6 @@ fun FilePickerDialog(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-            }
         }
     }
     }

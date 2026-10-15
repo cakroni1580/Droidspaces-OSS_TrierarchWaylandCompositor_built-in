@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - private backend bridge for droidspaces-socketd
+ * Droidspaces v7 - private backend bridge for droidspaces-socketd
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -222,7 +222,7 @@ static int64_t socketd_container_started_at_epoch(pid_t pid) {
   if (socketd_read_uptime_seconds(&uptime_seconds) < 0)
     return 0;
 
-  long ticks_per_second = sysconf(_SC_CLK_TCK);
+  long ticks_per_second = ds_clk_tck();
   if (ticks_per_second <= 0)
     return 0;
 
@@ -740,8 +740,7 @@ static int socketd_validate_start_config(struct ds_config *cfg) {
   if (check_requirements_hw(cfg->hw_access) < 0)
     return -1;
 
-  if ((cfg->net_mode == DS_NET_NAT || cfg->net_mode == DS_NET_NONE) &&
-      !check_ns(CLONE_NEWNET, "net")) {
+  if (cfg->net_mode != DS_NET_HOST && !check_ns(CLONE_NEWNET, "net")) {
     ds_error("Container '%s' requires network namespaces for its net mode",
              cfg->container_name);
     return -1;

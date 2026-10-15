@@ -2,14 +2,10 @@
 <resources>
     <string name="app_name" translatable="false">Droidspaces</string>
     <string name="get_started">ចាប់ផ្តើម</string>
-    <string name="root_check_title">ការពិនិត្យសិទ្ធិ Root</string>
     <string name="checking_root">កំពុងពិនិត្យសិទ្ធិ Root...</string>
-    <string name="root_granted">ទទួលបានសិទ្ធិ Root</string>
     <string name="root_denied">សិទ្ធិ Root ត្រូវបានបដិសេធ</string>
     <string name="root_required_message">តម្រូវឲ្យមានសិទ្ធិ Root ដើម្បីគ្រប់គ្រងកុងតឺន័រ។</string>
     <string name="check_root_access">ការពិនិត្យសិទ្ធិ Root</string>
-    <string name="check_root_access_click">ចុចខាងក្រោមដើម្បីពិនិត្យសិទ្ធិ Root</string>
-    <string name="root_available_message">ឥឡូវនេះ អ្នកអាចប្រើប្រាស់ Droidspaces បានហើយ</string>
     <string name="skip">រំលង</string>
     <string name="continue_button">បន្ត</string>
     <string name="home_title">ទំព័រដើម</string>
@@ -82,7 +78,6 @@
     <string name="backend_attention_required">ផ្នែកខាងក្រោយ៖ ត្រូវការចំណាត់ការ</string>
     <string name="view_logs">មើលកំណត់ហេតុ</string>
     <string name="feat_hardware_title">ទទួលបានសិទ្ធិប្រើប្រាស់ Hardware និង GPU ទាំងស្រុង</string>
-    <string name="welcome_tagline">កុងតឺន័រ Linux។ ដើម (Native)។ គ្មានការចំណាយបន្ថែម។</string>
     <string name="feat_isolation_desc">រចនាសម្ព័ន្ធ PID ឯកជន, Mount Table, Hostname, IPC, និងឋានានុក្រម Cgroup សម្រាប់កុងតឺន័រនីមួយៗ។</string>
     <string name="feat_containers_title">កុងតឺន័រ Linux ពិតប្រាកដ</string>
     <string name="feat_hardware_desc">បើកសិទ្ធិឱ្យកុងតឺន័ររបស់អ្នក ចូលប្រើប្រាស់ Hardware របស់ម៉ាស៊ីនផ្ទាល់ (GPU, សេនស័រ, USB, ឧបករណ៍ Block) ដោយផ្ទាល់។</string>
@@ -107,7 +102,6 @@
     <string name="feat_unkillable_desc">គាំទ្រការភ្ជាប់ជាមួយ native init.rc និង daemon កម្រិត userspace ចំនួន ២ ជាន់ (2-layer userspace daemons)។ មិនអាចរលត់បានជាដាច់ខាត (Completely unkillable)។</string>
     <string name="edit_container_configuration">កែសម្រួលការកំណត់រចនាសម្ព័ន្ធកុងតឺន័រ</string>
     <string name="feat_autoboot_title">ចាប់ផ្ដើមដំណើរការដោយស្វ័យប្រវត្តិនៅពេលបើកម៉ាស៊ីន</string>
-    <string name="install">តម្លើង</string>
     <string name="symlink_integration_description">បង្កើត Symlink នៅត្រង់ /system/bin ដើម្បីចូលប្រើប្រាស់បញ្ជា (Command) droidspaces នៅក្នុង Android Root Shell។ការព្រមាន៖ ការបើកមុខងារនេះនឹងបង្កឱ្យមានបញ្ហាគាំងបើកឧបករណ៍មិនឡើង (Bootloop) ប្រសិនបើប្រព័ន្ធ Mount របស់អ្នកជាប្រភេទ OverlayFS Meta Modules។ សូមប្រើប្រាស់ជម្រើសនេះ តែក្នុងករណីដែលអ្នកកំពុងប្រើប្រាស់ប្រព័ន្ធ Mount ផ្អែកលើ Magic Mount តែប៉ុណ្ណោះ (តម្រូវឱ្យចាប់ផ្តើមឧបករណ៍ឡើងវិញ)។</string>
     <string name="feat_unkillable_title">រចនាឡើងមិនអាចបំផ្លាញបាន</string>
     <string name="kernel_requirements_nongki">តម្រូវការខឺណែលមិនមែន GKI (&lt;=4.19)</string>
@@ -175,20 +169,11 @@
     <string name="network_mode_host_short">Host</string>
     <string name="network_mode_nat_short">NAT</string>
     <string name="network_mode_none_short">គ្មាន</string>
-    <string name="nat_settings">ការកំណត់ NAT</string>
     <string name="upstream_interface_title">ចំណុចប្រទាក់ខាងលើ (ស្រេចចិត្ត)</string>
     <string name="upstream_interface_hint">ភ្ជាប់អ៊ីនធឺណិតទៅចំណុចប្រទាក់ជាក់លាក់។ ទុកឱ្យនៅទទេ ដើម្បីរកឃើញការតភ្ជាប់សកម្មដោយស្វ័យប្រវត្តិ។</string>
     <string name="add_upstream_interface">បន្ថែមចំណុចប្រទាក់ខាងលើ</string>
-    <string name="available_system_interfaces">ចំណុចប្រទាក់ប្រព័ន្ធដែលអាចប្រើបាន៖</string>
-    <string name="enter_manually">ឬបញ្ចូលវាដោយដៃ (អក្សរជំនួសក៏ត្រូវបានគាំទ្រផងដែរ)៖</string>
-    <string name="interface_name_hint">ឈ្មោះចំណុចប្រទាក់ (ឧ. wlan0, v4-rmnet_data*)</string>
     <string name="port_forwarding">ការបញ្ជូនបន្តច្រក</string>
     <string name="add_port_forward">បន្ថែម​ច្រក​បញ្ជូនបន្ត</string>
-    <string name="host_port_hint">ច្រកម៉ាស៊ីន (1-65535 ឬចន្លោះពី 100-200)</string>
-    <string name="container_port_hint">កំពង់ផែកុងតឺន័រ (1-65535 ឬជួរ)</string>
-    <string name="protocol">ពិធីការ</string>
-    <string name="optional_symmetric_hint">ជាជម្រើស (ឧ. 8080 ឬ 1000-2000)</string>
-    <string name="leave_blank_for_symmetric">ទុកឲ្យទទេសម្រាប់ការគូសផែនទីស៊ីមេទ្រី</string>
     <string name="error_invalid_range_format">ទម្រង់​ជួរ​មិន​ត្រឹមត្រូវ (START-END)</string>
     <string name="error_ports_must_be_numbers">ច្រកត្រូវតែជាលេខ</string>
     <string name="error_port_out_of_range">ច្រកត្រូវតែមានលេខ 1-65535</string>
@@ -196,7 +181,6 @@
     <string name="error_port_must_be_number">ច្រកត្រូវតែជាលេខ</string>
     <string name="error_port_width_mismatch">ភាពមិនស៊ីគ្នានៃទទឹងជួរម៉ាស៊ីន/កុងតឺន័រ</string>
     <string name="error_port_overlap">ត្រួតស៊ីគ្នាជាមួយច្បាប់បញ្ជូនបន្តច្រកដែលមានស្រាប់</string>
-    <string name="symmetric_label">(ស៊ីមេទ្រី)</string>
     <string name="port_forward_examples">ឧទាហរណ៍៖ 8080 (តែមួយ), 8000-8010 (ជួរ)។ ទុកគោលដៅឱ្យនៅទទេសម្រាប់ការគូសផែនទីស៊ីមេទ្រី។</string>
     <string name="saved">បានរក្សាទុក</string>
     <string name="saving">កំពុងរក្សាទុក...</string>
@@ -212,10 +196,7 @@
     <string name="bind_mounts">ភ្ជាប់ម៉ោន</string>
     <string name="add">បន្ថែម</string>
     <string name="add_bind_mount">បន្ថែម​ការ​ភ្ជាប់​ម៉ោន</string>
-    <string name="enter_container_path">បញ្ចូលផ្លូវកុងតឺន័រ</string>
     <string name="container_path_placeholder">ឧ. /mnt/sdcard</string>
-    <string name="host_path">ផ្លូវម៉ាស៊ីន៖ %1$s</string>
-    <string name="container_path">ផ្លូវកុងតឺន័រ៖ %1$s</string>
     <string name="dns_servers_label">ម៉ាស៊ីនបម្រើ DNS</string>
     <string name="dns_servers_placeholder">ឧ. 1.1.1.1,8.8.8.8 (ស្រេចចិត្ត)</string>
     <string name="dns_servers_hint">លេខ ចំណុច និងសញ្ញាក្បៀសតែប៉ុណ្ណោះ</string>
@@ -236,7 +217,6 @@
     <string name="container_name_exists">កុងតឺន័រដែលមានឈ្មោះនេះមានរួចហើយ</string>
     <string name="next_configuration">បន្ទាប់៖ ការកំណត់រចនាសម្ព័ន្ធ</string>
     <string name="configuration_title">ការកំណត់រចនាសម្ព័ន្ធ</string>
-    <string name="container_options">ជម្រើសកុងតឺន័រ</string>
     <string name="next_storage">បន្ទាប់៖ កន្លែងផ្ទុក</string>
     <string name="installing_container">កំពុងដំឡើងកុងតឺន័រ</string>
     <string name="installation_complete">ការដំឡើងបានបញ្ចប់</string>
@@ -370,7 +350,6 @@
     <string name="help_card_message">ចុចទីនេះ ដើម្បីស្វែងយល់ពីរបៀបដំឡើងកុងតឺន័រ Linux ដំបូងរបស់អ្នក!</string>
     <string name="help_card_url" translatable="false">https://github.com/ravindu644/Droidspaces-OSS/blob/main/Documentation/Installation-Android.md</string>
     <string name="privileged_mode">របៀប Privileged</string>
-    <string name="privileged_mode_description">កំណត់រចនាសម្ព័ន្ធបន្ធូរបន្ថយសន្តិសុខតាមកម្រិតលម្អិត សម្រាប់ការធ្វើនិម្មិតកម្មត្រួតគ្នា (Nested Virtualization) ឬការចូលប្រើប្រាស់ Hardware កម្រិតខ្ពស់។</string>
     <string name="privileged_nomask_desc">បិទ Jail Masks ដើម្បីអនុញ្ញាតឱ្យមានសិទ្ធិកែប្រែ (Write Access) ទៅលើ /proc និង /sys។ សម្គាល់៖ /sys នៅតែរក្សាស្ថានភាពសម្រាប់តែអានប៉ុណ្ណោះ (Read-only) លុះត្រាតែមុខងារចូលប្រើប្រាស់ Hardware ត្រូវបានបើកដំណើរការផងដែរ។</string>
     <string name="privileged_nocaps_desc">មិនលុបបំបាត់សមត្ថភាព Linux ណាមួយឡើយ (ទទួលបានអំណាច root ពេញលេញ)។</string>
     <string name="privileged_noseccomp_desc">បិទការច្រោះ Seccomp Syscall។ មុខងារនេះនឹងបើកដំណើរការលក្ខណៈពិសេសកម្រិតខ្ពស់របស់ Kernel ដូចជា Unprivileged User Namespaces ដែលជាលក្ខខណ្ឌតម្រូវដាច់ខាតសម្រាប់ Nested Sandboxing (Bubblewrap, Flatpak) ហើយវាក៏អនុញ្ញាតឱ្យផ្ទុក Out-of-tree Kernel Modules ផងដែរ។</string>
@@ -440,8 +419,7 @@
     <string name="reorder_handle">អូសដើម្បីប្ដូរលំដាប់</string>
     <string name="network_mode_gateway">ច្រកទ្វារ (រ៉ោតទ័រនិម្មិត)</string>
     <string name="network_mode_gateway_short">ច្រកទ្វារ (Gateway)</string>
-    <string name="gateway_settings">ការកំណត់ច្រកទ្វារ</string>
-    <string name="gateway_settings_description">បញ្ជូនបណ្តាញរបស់ខនតឺន័រនេះឆ្លងកាត់ខនតឺន័រផ្សេងទៀតដែលធ្វើជាតួអង្គរ៉ោតទ័រ (ឧ. OpenWRT)។ ខនតឺន័រច្រកទ្វារនោះត្រូវតែដំណើរការមុន។</string>
+    <string name="gateway_settings_description">បញ្ជូនបណ្តាញរបស់ខនតឺន័រនេះឆ្លងកាត់ខនតឺន័រផ្សេងទៀតដែលធ្វើជាតួអង្គរ៉ោតទ័រ (ឧ. OpenWRT)។</string>
     <string name="gateway_container">ខនតឺន័រច្រកទ្វារ</string>
     <string name="gateway_net">ឈ្មោះបណ្តាញ LAN</string>
     <string name="gateway_net_hint">បណ្តាញ lan</string>
@@ -449,8 +427,6 @@
     <string name="gateway_iface_hint">eth1</string>
     <string name="gateway_bridge">ស្ពានតភ្ជាប់ប្រព័ន្ធគោល (Host Bridge)</string>
     <string name="gateway_bridge_hint">ds-lan</string>
-    <string name="gateway_configure">កំណត់រចនាសម្ព័ន្ធច្រកទ្វារ</string>
-    <string name="gateway_configure_title">កំណត់រចនាសម្ព័ន្ធច្រកទ្វារ</string>
     <string name="gateway_configure_intro">ការកំណត់ទាំងនេះគ្រប់គ្រងពីរបៀបដែលខនតឺន័រនេះភ្ជាប់ទៅនឹងបណ្តាញ LAN និម្មិតរបស់ច្រកទ្វារ។ តម្លៃលំនាំដើមគឺសាកសមសម្រាប់បណ្តាញ LAN តែមួយនៅពីក្រោយច្រកទ្វារតែមួយ - សូមផ្លាស់ប្តូរវាលុះត្រាតែអ្នកដំណើរការបណ្តាញ LAN ច្រើន ឬមានច្រកទ្វារច្រើនជាងមួយ។</string>
     <string name="gateway_iface_explain">ឈ្មោះចំណុចប្រទាក់ដែលការតភ្ជាប់នេះបង្ហាញ ខាងក្នុង ខនតឺន័រច្រកទ្វារ (ឧ. eth1 ក្នុង OpenWRT)។ វាត្រូវតែត្រូវគ្នាទៅនឹងចំណុចប្រទាក់ដែលច្រកទ្វាររបស់អ្នកត្រូវបានកំណត់ឱ្យផ្ដល់សេវា DHCP។ សេនហ្កាម (Segment) នីមួយៗនៅលើច្រកទ្វារតែមួយ ត្រូវការឈ្មោះផ្ទាល់ខ្លួនដែលមិនត្រួតស៊ីគ្នា។ លំនាំដើម៖ eth1។</string>
     <string name="gateway_net_explain">ស្លាកសម្រាប់បណ្តាញ LAN នេះ។ ខនតឺន័រដែលប្រើប្រាស់ច្រកទ្វារ និងឈ្មោះបណ្តាញ LAN ដូចគ្នា នឹងចូលរួមក្នុងស្វ៊ីចនិម្មិត (virtual switch) តែមួយ និងអាចមើលឃើញគ្នាទៅវិញទៅមក។ សូមប្រើប្រាស់ឈ្មោះផ្សេងដើម្បីបង្កើតបណ្តាញដាច់ដោយឡែកទីពីរ។ លំនាំដើម៖ lan។</string>

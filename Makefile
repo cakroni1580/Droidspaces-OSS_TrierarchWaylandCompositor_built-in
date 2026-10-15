@@ -1,4 +1,4 @@
-# Droidspaces v6 - Build system
+# Droidspaces v7 - Build system
 # Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -63,6 +63,8 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/android/x11.c \
        $(SRC_DIR)/android/virgl.c \
        $(SRC_DIR)/android/pulseaudio.c \
+       $(SRC_DIR)/anland/anland.c \
+       $(SRC_DIR)/anland/display_daemon.c \
        $(SRC_DIR)/android/wayland.c \
        $(SRC_DIR)/virtualize.c
 

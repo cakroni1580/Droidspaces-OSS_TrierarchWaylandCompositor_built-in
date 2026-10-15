@@ -3,14 +3,10 @@
     <!-- Welcome Screen -->
     <string name="get_started">शुरू करें</string>
     <!-- Root Check Screen -->
-    <string name="root_check_title">रूट एक्सेस जांच</string>
     <string name="checking_root">रूट एक्सेस की जांच की जा रही है…</string>
-    <string name="root_granted">रूट एक्सेस प्राप्त</string>
     <string name="root_denied">रूट एक्सेस अस्वीकृत</string>
     <string name="root_required_message">कंटेनरों को प्रबंधित करने के लिए रूट एक्सेस आवश्यक है।</string>
     <string name="check_root_access">रूट एक्सेस जांचें</string>
-    <string name="check_root_access_click">रूट एक्सेस जांचने के लिए नीचे क्लिक करें</string>
-    <string name="root_available_message">अब आप Droidspaces का उपयोग कर सकते हैं</string>
     <string name="skip">छोड़ें</string>
     <string name="continue_button">जारी रखें</string>
     <!-- Navigation -->
@@ -135,7 +131,6 @@
     <string name="next_configuration">अगला: कॉन्फ़िगरेशन</string>
     <!-- Container Config Screen -->
     <string name="configuration_title">कॉन्फ़िगरेशन</string>
-    <string name="container_options">कंटेनर विकल्प</string>
     <string name="next_storage">अगला: स्टोरेज</string>
     <!-- Installation Screen -->
     <string name="installation_complete">इंस्टॉलेशन पूर्ण</string>
@@ -236,7 +231,6 @@
     <string name="requirements_check_completed_successfully">आवश्यकता जांच सफलतापूर्वक पूर्ण हुई</string>
     <string name="requirements_check_completed_with_errors">आवश्यकता जांच त्रुटियों के साथ पूर्ण हुई</string>
     <string name="kernel_requirements_copied">कर्नेल आवश्यकताएँ क्लिपबोर्ड में कॉपी की गईं</string>
-    <string name="welcome_tagline">Linux कंटेनर। नेटिव। बिना किसी ओवरहेड के।</string>
     <string name="feat_containers_title">असली Linux कंटेनर</string>
     <string name="feat_containers_desc">LXC, Podman और Docker के समान kernel namespace तकनीक। कोई emulation नहीं, कोई chroot नहीं।</string>
     <string name="feat_overhead_title">शून्य ओवरहेड</string>

@@ -1,277 +1,193 @@
 <!--
-title: Cool things you can do
+title: Recipes
 section: Recipes
 order: 1
-desc: Two recipes: a mobile server behind Tailscale, UFW and Fail2Ban, and Docker running nested inside a Droidspaces container.
-keywords: droidspaces, projects, android, server, tailscale, ufw, failban, container, nested, docker
+desc: Things to build with Droidspaces on a phone: a home server reachable through Tailscale and locked down with UFW and Fail2Ban, Docker inside a container, and a watchdog that keeps Wi-Fi awake.
+keywords: droidspaces, recipes, android, server, tailscale, ufw, fail2ban, docker, nested, container, wifi, power, save
 -->
 
-# Cool things you can do with Droidspaces
+# Recipes
 
-> [!IMPORTANT]
-> This guide is for **Android devices**. Droidspaces also runs on desktop Linux, but these instructions deal with the networking, storage and kernel requirements specific to Android.
+Three things people build with Droidspaces on a phone. Each one assumes a container that already starts and has internet, which the [installation guide](Installation-Android.md) gets you to. The commands are for Debian and Ubuntu; other distributions have the same packages under other names.
 
-### Quick navigation
+## A phone as a home server, reachable from anywhere
 
-- [1. Setting up a secure "mobile server" (Tailscale + UFW + Fail2Ban)](#1-setting-up-a-secure-mobile-server-tailscale--ufw--fail2ban)  
-    - [Prerequisites](#prerequisites)  
-    - [Step 1: Install networking tools & compatibility layer](#step-1-install-networking-tools--compatibility-layer)  
-    - [Step 2: Personal user setup & SSH hardening](#step-2-personal-user-setup--ssh-hardening)  
-    - [Step 3: Set up Tailscale](#step-3-set-up-tailscale)  
-    - [Step 4: Secure the container with UFW (firewall)](#step-4-secure-the-container-with-ufw-firewall)  
-    - [Step 5: Add brute-force protection with Fail2Ban](#step-5-add-brute-force-protection-with-fail2ban)  
-- [2. Running Docker containers (nested containerization)](#2-running-docker-containers-nested-containerization)  
-    - [Prerequisites](#prerequisites-1)  
-    - [Step 1: Ensure NAT networking](#step-1-ensure-nat-networking)  
-    - [Step 2: Compatibility Layer (iptables-legacy)](#step-2-compatibility-layer-iptables-legacy)  
-    - [Step 3: Install Docker](#step-3-install-docker)  
-    - [Step 4: Non-root user setup](#step-4-non-root-user-setup)  
-    - [Step 5: Verify installation](#step-5-verify-installation)  
-    - ["Last resort" for host mode or legacy kernels (old kernels only)](#last-resort-for-host-mode-or-legacy-kernels-old-kernels-only)  
+A container with SSH, reachable from your laptop wherever you are through Tailscale, with nothing open to the internet. Tailscale gives every device on your account a private address and an encrypted tunnel between them, so you never forward a port on your router.
 
----
+**Before you start.** The container must be in NAT mode, the default, or gateway mode. In host mode a firewall inside the container fights the phone's own networking. UFW and Fail2Ban need a few extra netfilter options in the kernel; the [kernel guide](Kernel-Configuration.md#step-2-firewall-support-optional) lists them. Run everything below as root inside the container.
 
-## 1. Setting up a secure "mobile server" (Tailscale + UFW + Fail2Ban)
+**1. A user of your own.** Distributions ship with a default user on UID 1000. Replace it with yours, give it `sudo`, and set a password:
 
-Droidspaces, Tailscale and the standard Linux security tools together turn an Android device into a Linux server you can reach from anywhere, with nothing exposed to the open internet.
+```bash
+DEFAULT_USER=$(getent passwd 1000 | cut -d: -f1)
+[ -n "$DEFAULT_USER" ] && userdel -r "$DEFAULT_USER"
+useradd -m -u 1000 -s /bin/bash alice
+usermod -aG sudo alice
+passwd alice
+```
 
-### Prerequisites
+**2. SSH, with root login off:**
 
-- **Kernel support**: this setup needs several Netfilter and IPSet modules. See [Additional Kernel Configuration for UFW/Fail2ban](./Kernel-Configuration.md#step-2-firewall-support-ufwfail2ban---optional) for the full list of required options.
-- **LTS distribution**: use a long-term support (LTS) distribution such as **Ubuntu 24.04 LTS** or **Debian 12** for stability and package support.
-- **Root user**: run every step in this guide as the **root** user inside the container.
-- **Package manager**: the commands below use `apt`, which is only available on Debian and Ubuntu-based distributions.
-- **NAT mode**: **mandatory.** Run the container in NAT mode (`--net=nat`). With host networking, a firewall like UFW either interferes with the Android host's connectivity or does not work at all.
+```bash
+apt update && apt install -y openssh-server
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+systemctl restart ssh
+```
 
----
+**3. Tailscale.** Install it and sign in; the command prints a link to open on any device:
 
-### Step 1: Install networking tools & compatibility layer
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
+```
 
-Install the networking tools needed for firewall rules and debugging, then make iptables work with the Android kernel.
+From then on `ssh alice@<container name>` works from any other device on your Tailscale account, by the name shown in the Tailscale admin console.
 
-1. **Install the tools**:
-   ```bash
-   apt update && apt install -y net-tools iptables
-   ```
+**4. UFW.** Refuse everything that does not arrive through Tailscale:
 
-2. **Switch to legacy iptables**:
-   Current Ubuntu and Debian releases default to the `nftables` backend, which often fails in Droidspaces containers on Android kernels. You **must** switch to the legacy `iptables` backend for the firewall to work:
-   ```bash
-   update-alternatives --set iptables /usr/sbin/iptables-legacy
-   update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
-   ```
+```bash
+apt install -y ufw
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow in on tailscale0
+ufw --force enable
+```
 
----
+If the container runs with IPv6 disabled, set `IPV6=no` in `/etc/default/ufw` first, or UFW fails to start.
 
-### Step 2: Personal user setup & SSH hardening
+**5. Fail2Ban**, which bans an address after repeated failed logins. Put this in `/etc/fail2ban/jail.local`, with your Tailscale address and LAN subnet filled in so you cannot lock yourself out:
 
-Create a dedicated user with `sudo` privileges and turn off direct root login over SSH.
+```ini
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+banaction = ufw
+ignoreip = 100.x.y.z 172.28.0.0/16 192.168.1.0/24
 
-1. **Reclaim UID 1000**: distributions usually give UID `1000` to the first non-root user (such as `ubuntu`). To use this ID for your own user, first find and remove whichever user already has UID 1000:
-   ```bash
-   # Identify and delete the default user associated with UID 1000
-   DEFAULT_USER=$(getent passwd 1000 | cut -d: -f 1)
-   userdel -r "$DEFAULT_USER"
-   groupdel "$DEFAULT_USER" 2>/dev/null
-   ```
+[sshd]
+enabled = true
+port    = ssh
+backend = systemd
+```
 
-2. **Create your user as UID 1000** (replace `YOUR_USER` with the username you want):
-   ```bash
-   useradd -m -u 1000 -s /bin/bash YOUR_USER
-   usermod -aG sudo YOUR_USER
-   passwd YOUR_USER
-   ```
+```bash
+apt install -y fail2ban
+systemctl restart fail2ban
+fail2ban-client status sshd
+```
 
-3. **Install the OpenSSH server**:
-   ```bash
-   apt install -y openssh-server
-   ```
+Turn on **Run at Boot** in the container's settings, and the server comes up with the phone.
 
-4. **Disable root login**:
-   Edit `/etc/ssh/sshd_config` to refuse direct root logins:
-   ```bash
-   sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config
-   sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-   systemctl restart ssh
-   ```
+## Docker inside a container
 
----
+Docker runs inside a Droidspaces container on every supported kernel, so Portainer, Home Assistant, Pi-hole or anything else packaged for Docker runs on the phone.
 
-### Step 3: Set up Tailscale
+The Base and desktop images in the repository, the ones named Base, XFCE or bspwm, ship with Docker installed and configured. Install one, start it, and this works straight away:
 
-Tailscale gives you an encrypted P2P tunnel to the container, so any device in your Tailnet can reach it without opening ports on your router.
+```bash
+docker run --rm hello-world
+```
 
-1. **Install Tailscale**:
-   ```bash
-   curl -fsSL https://tailscale.com/install.sh | sh
-   ```
+The Minimal images and OpenWrt do not include it. The rest of this recipe is for those, and for a rootfs you prepared yourself.
 
-2. **Authenticate**:
-   ```bash
-   tailscale up
-   ```
-
----
-
-### Step 4: Secure the container with UFW (firewall)
-
-NAT mode is dual-stack, so UFW can manage IPv6 as well. Skip the first step unless the container runs with `--disable-ipv6`, in which case UFW fails to initialise its IPv6 rules.
-
-1. **Disable IPv6 in UFW** (only with `--disable-ipv6`):
-   ```bash
-   sed -i 's/IPV6=yes/IPV6=no/' /etc/default/ufw
-   ```
-
-2. **Set the default policies**:
-   ```bash
-   ufw default deny incoming
-   ufw default allow outgoing
-   ```
-
-3. **Allow the Tailscale interface**:
-   Rather than listing IP addresses, tell UFW to trust anything that arrives through your private Tailscale tunnel:
-   ```bash
-   ufw allow in on tailscale0
-   ```
-
-4. **Enable the firewall**:
-   ```bash
-   ufw --force enable
-   ```
-
----
-
-### Step 5: Add brute-force protection with Fail2Ban
-
-Fail2Ban reads the system logs and blocks IP addresses that behave maliciously, such as repeated failed logins.
-
-1. **Install Fail2Ban**:
-   ```bash
-   apt install -y fail2ban
-   ```
-
-2. **Create a local configuration**:
-   Create `/etc/fail2ban/jail.local` to protect SSH and ban through UFW:
-
-   ```ini
-   [DEFAULT]
-   # Ban for 1 hour after 5 failed attempts within 10 minutes
-   bantime  = 1h
-   findtime = 10m
-   maxretry = 5
-
-   # Use UFW as the banning action
-   banaction = ufw
-
-   # Whitelist to prevent accidental lockouts:
-   # 1. YOUR_TAILSCALE_IP: Your private tunnel address (e.g. 100.74.132.81)
-   # 2. 172.28.0.0/16: The internal Droidspaces NAT bridge (covers all containers)
-   # 3. YOUR_LAN_SUBNET: Your local Wi-Fi range if using port forwarding (e.g. if your LAN IP is 192.168.1.15, use 192.168.1.0/24)
-   ignoreip = YOUR_TAILSCALE_IP 172.28.0.0/16 YOUR_LAN_SUBNET
-
-   [sshd]
-   enabled = true
-   port    = ssh
-   backend = systemd
-   ```
-
-3. **Start and verify**:
-   ```bash
-   systemctl restart fail2ban
-   fail2ban-client status sshd
-   ```
-
-The server now refuses incoming connections from the open internet, and you keep full access through your private Tailscale network.
-
----
-
-## 2. Running Docker containers (nested containerization)
-
-Docker runs natively inside Droidspaces containers on every supported kernel version, so you can run containerized services such as Portainer or Home Assistant on the phone itself.
-
-### Prerequisites
-
-- **LTS distribution**: if your kernel is older than **5.x.x**, use an LTS distribution such as **Ubuntu 24.04 LTS** for the best compatibility.
-- **Kernel configuration**: your kernel needs the required Droidspaces options enabled. See [Required Kernel Configuration](./Kernel-Configuration.md#step-1-mandatory-configuration).
-- **Storage mode**: you **must** use either **ext4 /data** or **rootfs.img mode** (recommended).
-    - *Why?* Android's default `f2fs` filesystem does not support the overlay features that Docker's `overlay2` storage driver needs. A `rootfs.img` puts the container on a native ext4 filesystem.
-- **NAT mode**: **mandatory.** Docker needs NAT networking to create its internal `docker0` bridge and give nested containers internet access.
-
----
-
-### Step 1: Ensure NAT networking
-
-In host networking mode, Docker fails when it tries to create the `docker0` interface. Use NAT mode for this container.
-
-To switch to NAT mode, edit the container configuration in the Android app.
-
-### Step 2: Compatibility layer (iptables-legacy)
-
-Docker's networking is built on `iptables`. Current distributions often default to the `nftables` backend, which can cause "chain not found" errors in containers. Switch to the legacy backend before installing Docker:
+**Before you start.** The container needs its own network stack, so NAT mode, the default, or gateway mode; in host mode Docker cannot create its bridge. It needs an ext4 filesystem for Docker's `overlay2` storage, which a sparse image rootfs gives you. On Debian and Ubuntu the app's installer has already switched `iptables` to the legacy backend, which the Android kernel requires; on a rootfs you prepared yourself, do it by hand:
 
 ```bash
 update-alternatives --set iptables /usr/sbin/iptables-legacy
 update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 ```
 
-### Step 3: Install Docker
-
-Use the official Docker install script or the distribution's package manager:
+**1. Install Docker** with its own script, then let your user run it without `sudo`:
 
 ```bash
-# Using the official convenience script
-curl -fsSL https://get.docker.com -o get-docker.sh
-sh get-docker.sh
+curl -fsSL https://get.docker.com | sh
+usermod -aG docker alice
 ```
 
-### Step 4: Non-root user setup
-
-To run Docker commands without `sudo`, add your user to the `docker` group:
-
-```bash
-# Replace YOUR_USER with your username
-usermod -aG docker YOUR_USER
-
-# Apply the group change without logging out
-newgrp docker
-```
-
-### Step 5: Verify installation
-
-Check that Docker can pull and run a nested container:
+**2. Check it:**
 
 ```bash
 docker run --rm hello-world
 ```
 
-If you see "Hello from Docker!", nested containers are working on Android.
+**3. Optional: user namespace remapping.** With **Allow Sandboxing** on in the container's settings, Docker can run its containers under a remapped user range so that root inside a Docker container is not root inside the Droidspaces container. Put this in `/etc/docker/daemon.json` and restart Docker:
 
-> [!TIP]
->
-> **Troubleshooting Docker**: if the Docker daemon does not start on its own or `docker run` fails, run `sudo dockerd` by hand in your terminal. It prints logs as it goes, which show missing kernel modules, filesystem conflicts or network bridge problems.
-
-### "Last resort" for host mode or legacy kernels (old kernels only)
-
-If you have to run Docker in **host networking mode**, or your kernel is too old for `iptables-legacy` and NAT networking, you can turn off Docker's own network management as a last resort.
-
-Configure the daemon:
-
-```bash
-mkdir -p /etc/docker
-cat <<EOF > /etc/docker/daemon.json
-{
-  "iptables": false,
-  "ip6tables": false,
-  "bridge": "none"
-}
-EOF
-systemctl restart docker
+```json
+{ "userns-remap": "default" }
 ```
 
-> [!WARNING]
->
-> This `daemon.json` turns off Docker's internal bridge (`docker0`) and all automatic port forwarding. Docker containers then only get internet access when started with `--network host`.
->
-> For example: `docker run -it --network host ubuntu`
+This is the setup on the maintainer's phone: Ubuntu 24.04 in a sparse image, gateway mode, Docker 29 with `overlay2` and `userns-remap`, on a 5.15 kernel.
+
+If the Docker daemon will not start, run `dockerd` by hand in a terminal. Its output names the missing kernel option or the network step that failed.
+
+**On kernels older than 5.x** two things can still bite. Docker's device management uses BPF attach types those kernels lack, which shows up as `Invalid argument`; put `"exec-opts": ["native.cgroupdriver=cgroupfs"]` and `"storage-driver": "vfs"` in `daemon.json`. And if NAT mode is impossible and the container must run in host mode, turn Docker's own networking off as a last resort. Docker containers then need `--network host` to reach the internet:
+
+```json
+{ "iptables": false, "ip6tables": false, "bridge": "none" }
+```
+
+## Keeping Wi-Fi awake
+
+Android puts the Wi-Fi radio into power saving when the screen is off, and a server in a container becomes sluggish or drops connections. There is no setting for it, so a small container turns it off every minute.
+
+The container must be in host mode: the phone's `wlan0` is not visible from any other mode. Use a minimal Alpine container for nothing but this.
+
+**1. Install `iw`** inside it: `apk add iw` on Alpine, `apt install iw` on Debian and Ubuntu.
+
+**2. The watchdog**, at `/usr/local/bin/wifi-watchdog.sh`, made executable with `chmod +x`:
+
+```sh
+#!/bin/sh
+while true; do
+    if iw dev wlan0 get power_save 2>/dev/null | grep -q on; then
+        iw dev wlan0 set power_save off
+    fi
+    sleep 60
+done
+```
+
+**3. A service to keep it running.** On Alpine, `/etc/init.d/wifi-watchdog`:
+
+```sh
+#!/sbin/openrc-run
+name="Wi-Fi power save watchdog"
+command="/usr/local/bin/wifi-watchdog.sh"
+command_background=true
+pidfile="/run/${RC_SVCNAME}.pid"
+depend() {
+    need networking
+}
+```
+
+```bash
+chmod +x /etc/init.d/wifi-watchdog
+rc-update add wifi-watchdog default
+rc-service wifi-watchdog start
+```
+
+On a systemd distribution, `/etc/systemd/system/wifi-watchdog.service`:
+
+```ini
+[Unit]
+Description=Wi-Fi power save watchdog
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/wifi-watchdog.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl enable --now wifi-watchdog
+```
+
+Turn on **Run at Boot** for this container too.
 
 ---
+
+Previous: [Kernel configuration](Kernel-Configuration.md) | Next: [Troubleshooting](Troubleshooting.md)

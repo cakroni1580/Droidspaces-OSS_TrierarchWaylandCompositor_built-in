@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * ds_dhcp.c - Embedded single-lease DHCP server for NAT containers.
  *
@@ -7,7 +7,7 @@
  * the container's veth_host interface via SO_BINDTODEVICE + sll_ifindex so it
  * never interferes with sibling containers sharing the same bridge.
  *
- * Serves a single static lease (the deterministic IP from veth_peer_ip()) in
+ * Serves a single static lease (the container's persisted static_nat_ip) in
  * response to DHCPDISCOVER and DHCPREQUEST. Handles lease renewals for the
  * full container lifetime.
  *
@@ -610,27 +610,26 @@ void ds_dhcp_server_start(struct ds_config *cfg, const char *veth_host,
         strerror(errno));
   }
 
-  /* Resolve DNS to advertise in the DHCP lease.
-   * Always use the explicit --dns servers if given, otherwise fall back to
-   * the compiled-in defaults (1.1.1.1 / 8.8.8.8). */
+  /* DNS to advertise in the lease: the first two IPv4 entries of --dns, or
+   * the compiled-in defaults. Option 6 can only carry IPv4, so an IPv6 entry
+   * is skipped rather than allowed to cost the user one of their servers. */
   g_dhcp.dns1_be = inet_addr(DS_DNS_DEFAULT_1);
   g_dhcp.dns2_be = inet_addr(DS_DNS_DEFAULT_2);
   if (cfg && cfg->dns_servers[0]) {
-    char tmp[256];
-    strncpy(tmp, cfg->dns_servers, sizeof(tmp) - 1);
-    tmp[sizeof(tmp) - 1] = '\0';
+    char tmp[sizeof(cfg->dns_servers)];
+    safe_strncpy(tmp, cfg->dns_servers, sizeof(tmp));
+    uint32_t found[2];
+    int n = 0;
     char *saveptr = NULL;
-    char *tok = strtok_r(tmp, ", ", &saveptr);
-    if (tok) {
-      in_addr_t a = inet_addr(tok);
-      if (a != (in_addr_t)(-1))
-        g_dhcp.dns1_be = (uint32_t)a;
+    for (char *tok = strtok_r(tmp, ", ", &saveptr); tok && n < 2;
+         tok = strtok_r(NULL, ", ", &saveptr)) {
+      struct in_addr a;
+      if (inet_pton(AF_INET, tok, &a) == 1)
+        found[n++] = a.s_addr;
     }
-    tok = strtok_r(NULL, ", ", &saveptr);
-    if (tok) {
-      in_addr_t a = inet_addr(tok);
-      if (a != (in_addr_t)(-1))
-        g_dhcp.dns2_be = (uint32_t)a;
+    if (n > 0) {
+      g_dhcp.dns1_be = found[0];
+      g_dhcp.dns2_be = n > 1 ? found[1] : 0;
     }
   }
 

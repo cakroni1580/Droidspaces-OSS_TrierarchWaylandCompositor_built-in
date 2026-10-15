@@ -39,6 +39,7 @@ object ContainerInstaller {
         val isExternal = rootfsParent != containerPath
         val configFilePath = "$containerPath/${Constants.CONTAINER_CONFIG_FILE}"
         var createdPaths = mutableListOf<String>()
+        var tempTarball: File? = null
 
         try {
             // Reject control chars in single-line config values.
@@ -106,27 +107,28 @@ object ContainerInstaller {
                 createdPaths.add(rootfsParent)
             }
 
-            // Step 4: Copy tarball to temp location
-            logger.i("Copying tarball to temporary location...")
-            val tarballExtension = getTarballExtension(context, tarballUri)
-            val tempTarball = File("${context.cacheDir}/container_${sanitizedName}.tar$tarballExtension")
-            context.contentResolver.openInputStream(tarballUri)?.use { inputStream ->
-                FileOutputStream(tempTarball).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            } ?: throw Exception("Failed to open tarball input stream")
-
-            logger.i("Tarball copied: ${tempTarball.absolutePath}")
+            // Step 4: Read the tarball where it lies. Only a provider that hands out a
+            // pipe (cloud storage) still costs a full copy through cacheDir.
+            val archive = FilePickerUtils.realPath(context, tarballUri) ?: run {
+                logger.i("Copying tarball to temporary location...")
+                val copy = File("${context.cacheDir}/container_${sanitizedName}.tar${getTarballExtension(context, tarballUri)}")
+                tempTarball = copy
+                context.contentResolver.openInputStream(tarballUri)?.use { input ->
+                    FileOutputStream(copy).use { input.copyTo(it) }
+                } ?: throw Exception("Failed to open tarball input stream")
+                copy.absolutePath
+            }
+            logger.i("Tarball: $archive")
 
             // Step 4.5: Verify the tarball is actually a Linux rootfs before we
             // extract anything, so users can't install arbitrary archives.
-            validateRootfsTarball(context, tempTarball, logger)
+            validateRootfsTarball(context, archive, logger)
 
             // Step 5: Extract tarball (either to directory or sparse image)
             if (config.useSparseImage) {
                 SparseImageInstaller.extract(
                     context = context,
-                    tarball = tempTarball,
+                    tarball = archive,
                     imgPath = rootfsPath,
                     mountPoint = "${containerPath}/rootfs",
                     sizeGB = config.sparseImageSizeGB ?: 8,
@@ -142,14 +144,7 @@ object ContainerInstaller {
                 }
 
                 logger.i("Extracting tarball to $rootfsPath...")
-                val isXz = tempTarball.name.lowercase().endsWith(".xz")
-                val extractCmd = if (isXz) {
-                    "cd ${quote(rootfsPath)} && $BUSYBOX_PATH xzcat ${quote(tempTarball.absolutePath)} | $BUSYBOX_PATH tar -xpf - 2>&1"
-                } else {
-                    "cd ${quote(rootfsPath)} && $BUSYBOX_PATH tar -xzpf ${quote(tempTarball.absolutePath)} 2>&1"
-                }
-
-                val extractResult = Shell.cmd(extractCmd).exec()
+                val extractResult = Shell.cmd(extractCommand(archive, rootfsPath)).exec()
                 if (!extractResult.isSuccess) {
                     val errorMsg = extractResult.err.joinToString("\n")
                     logger.e("Extraction failed: $errorMsg")
@@ -247,10 +242,9 @@ object ContainerInstaller {
 
             Result.failure(e)
         } finally {
-            // Clean up temp tarball
+            // Clean up temp tarball, never the user's own file
             try {
-                File("${context.cacheDir}/container_${sanitizedName}.tar.xz").delete()
-                File("${context.cacheDir}/container_${sanitizedName}.tar.gz").delete()
+                tempTarball?.delete()
             } catch (e: Exception) {
                 // Ignore cleanup errors
             }
@@ -286,6 +280,23 @@ object ContainerInstaller {
         }
     }
 
+    /**
+     * Shell command that unpacks [tarball] into [destination]. An exported archive
+     * carries its host config, and maybe its .env, as the first members. Those are for
+     * the wizard, and extracting them would leave the old host's settings and secrets
+     * lying in the guest's root.
+     */
+    internal fun extractCommand(tarball: String, destination: String): String {
+        val skip = listOf(Constants.CONTAINER_CONFIG_FILE, RootfsConfig.ENV_MEMBER)
+            .joinToString(" ") { "--exclude=$it --exclude=./$it" }
+        val unpack = if (tarball.lowercase().endsWith(".xz")) {
+            "$BUSYBOX_PATH xzcat ${quote(tarball)} | $BUSYBOX_PATH tar -xpf - $skip"
+        } else {
+            "$BUSYBOX_PATH tar -xzpf ${quote(tarball)} $skip"
+        }
+        return "cd ${quote(destination)} && $unpack 2>&1"
+    }
+
 
 
     /**
@@ -296,7 +307,7 @@ object ContainerInstaller {
      */
     private suspend fun validateRootfsTarball(
         context: Context,
-        tarball: File,
+        tarball: String,
         logger: ContainerLogger
     ) {
         logger.i("Inspecting tarball to verify it is a Linux rootfs...")
@@ -326,7 +337,7 @@ object ContainerInstaller {
             }
 
             val result = Shell.cmd(
-                "BUSYBOX_PATH=$BUSYBOX_PATH ${quote(scriptFile.absolutePath)} ${quote(tarball.absolutePath)} 2>&1"
+                "BUSYBOX_PATH=$BUSYBOX_PATH ${quote(scriptFile.absolutePath)} ${quote(tarball)} 2>&1"
             ).exec()
 
             if (!result.isSuccess) {

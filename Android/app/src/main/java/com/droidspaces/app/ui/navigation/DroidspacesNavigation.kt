@@ -29,6 +29,7 @@ import com.droidspaces.app.ui.screen.AutoBootPriorityScreen
 import com.droidspaces.app.ui.screen.TerminalAppearanceScreen
 import com.droidspaces.app.ui.screen.WelcomeScreen
 import com.droidspaces.app.ui.screen.ContainerNameScreen
+import com.droidspaces.app.ui.screen.RecommendedConfigScreen
 import com.droidspaces.app.ui.screen.SparseImageConfigScreen
 import com.droidspaces.app.ui.screen.ContainerConfigScreen
 import com.droidspaces.app.ui.screen.InstallationSummaryScreen
@@ -53,6 +54,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import com.droidspaces.app.ui.util.LoadingIndicator
 import com.droidspaces.app.ui.util.LoadingSize
+import com.droidspaces.app.ui.util.FullScreenLoading
+import com.droidspaces.app.R
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.droidspaces.app.ui.viewmodel.AppStateViewModel
 import androidx.activity.ComponentActivity
@@ -85,6 +88,7 @@ sealed class Screen(val route: String) {
         fun createRoute(tarballUri: String) = "container_name/${Uri.encode(tarballUri)}"
     }
     data object SparseImageConfig : Screen("sparse_image_config")
+    data object RecommendedConfig : Screen("recommended_config")
     data object ContainerConfig : Screen("container_config")
     data object InstallationSummary : Screen("installation_summary")
     data object InstallationProgress : Screen("installation_progress")
@@ -234,6 +238,18 @@ fun DroidspacesNavigation(
         fadeOut(animationSpec = AnimationUtils.mediumSpec())
     }
 
+    // Home grows in over a finished installer, backend or container, so landing there
+    // reads as arriving somewhere rather than the installer being torn away.
+    val installers = setOf(Screen.Installation.route, Screen.InstallationProgress.route)
+    val homeEnterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
+        if (initialState.destination.route in installers) {
+            scaleIn(initialScale = 0.9f, animationSpec = AnimationUtils.mediumSpec()) +
+                fadeIn(animationSpec = AnimationUtils.mediumSpec())
+        } else {
+            fadeIn(animationSpec = AnimationUtils.fastSpec())
+        }
+    }
+
     NavHost(
         navController = navController,
         startDestination = initialDestination
@@ -277,9 +293,9 @@ fun DroidspacesNavigation(
         composable(
             route = Screen.Installation.route,
             enterTransition = setupEnterTransition,
-            // Continue must drop straight to Home. A fade here cross-paints the
-            // finished installer over the Home tab for 200 ms.
-            exitTransition = { ExitTransition.None }
+            // Home scales in over this screen, so the result hero has to be gone before
+            // the new screen has settled or the two cross-paint; the fast spec does that.
+            exitTransition = { fadeOut(animationSpec = AnimationUtils.fastSpec()) }
         ) {
             InstallationScreen(
                 appStateViewModel = sharedAppStateViewModel,
@@ -307,9 +323,9 @@ fun DroidspacesNavigation(
                     defaultValue = false
                 }
             ),
-            enterTransition = defaultEnterTransition,
+            enterTransition = homeEnterTransition,
             exitTransition = defaultExitTransition,
-            popEnterTransition = defaultEnterTransition,
+            popEnterTransition = homeEnterTransition,
             popExitTransition = defaultExitTransition
         ) { backStackEntry ->
             val fromInstallation = backStackEntry.arguments?.getBoolean("fromInstallation") ?: false
@@ -363,20 +379,41 @@ fun DroidspacesNavigation(
             val tarballUri = Uri.parse(tarballUriString)
 
             LaunchedEffect(tarballUri) {
-                viewModel.setTarball(tarballUri)
+                viewModel.setTarball(context, tarballUri)
             }
 
-            ContainerNameScreen(
-                initialName = viewModel.containerName,
-                initialHostname = viewModel.hostname,
-                existingContainerNames = sharedContainerViewModel.containerList.map { it.name },
-                onNext = { name, hostname ->
-                    viewModel.setName(name, hostname)
-                    navController.navigate(Screen.ContainerConfig.route)
-                },
-                onClose = {
-                    navController.popBackStack()
-                }
+            // ContainerNameScreen only reads its initial values once, so hold it until
+            // the archive has been checked for settings to prefill.
+            if (viewModel.readingRecommendation) {
+                FullScreenLoading(context.getString(R.string.rootfs_config_loading))
+            } else {
+                ContainerNameScreen(
+                    initialName = viewModel.containerName,
+                    initialHostname = viewModel.hostname,
+                    recommendationNotice = viewModel.recommendationNotice,
+                    existingContainerNames = sharedContainerViewModel.containerList.map { it.name },
+                    onNext = { name, hostname ->
+                        viewModel.setName(name, hostname)
+                        navController.navigate(
+                            if (viewModel.recommendationLoaded) Screen.RecommendedConfig.route
+                            else Screen.ContainerConfig.route
+                        )
+                    },
+                    onClose = {
+                        navController.popBackStack()
+                    }
+                )
+            }
+        }
+
+        composable(
+            route = Screen.RecommendedConfig.route,
+            enterTransition = defaultEnterTransition,
+            exitTransition = defaultExitTransition
+        ) {
+            RecommendedConfigScreen(
+                onNext = { navController.navigate(Screen.ContainerConfig.route) },
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -770,14 +807,8 @@ fun DroidspacesNavigation(
             popExitTransition = defaultExitTransition
         ) { backStackEntry ->
             val containerName = backStackEntry.arguments?.getString("containerName") ?: ""
-            // Resolve cached users for the user picker dialog
-            val users = remember(containerName) {
-                com.droidspaces.app.util.ContainerUsersManager.getCachedUsers(containerName)
-                    ?: listOf("root")
-            }
             ContainerTerminalScreen(
                 containerName = containerName,
-                initialUsers = users,
                 onNavigateBack = {
                     navController.popBackStack()
                     sharedContainerViewModel.refresh()

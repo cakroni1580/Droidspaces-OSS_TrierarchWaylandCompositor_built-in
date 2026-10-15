@@ -6,6 +6,9 @@ desc: Droidspaces Linux CLI 完整参考手册。涵盖每个命令、参数和�
 keywords: droidspaces, cli, linux, container, command, line, reference, bind, mount, nat, networking
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Linux-CLI.md)。
+
 # Linux CLI 指南
 
 在 Linux 上通过命令行使用 Droidspaces 的完整指南。

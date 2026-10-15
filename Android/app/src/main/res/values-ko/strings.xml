@@ -3,7 +3,6 @@
     <!-- App Info -->
     <string name="app_name" translatable="false">Droidspaces</string>
     <!-- Welcome Screen -->
-    <string name="welcome_tagline">리눅스 컨테이너. 네이티브. 오버헤드 없음.</string>
     <string name="get_started">시작하기</string>
     <!-- Welcome feature cards -->
     <string name="feat_containers_title">진짜 리눅스 컨테이너</string>
@@ -23,14 +22,10 @@
     <string name="feat_autoboot_title">전원 켜짐 시 자동 부팅</string>
     <string name="feat_autoboot_desc">화면이 잠겨 있고 데이터가 암호화된 상태에서도 부팅 시 컨테이너를 자동으로 시작합니다.</string>
     <!-- Root Check Screen -->
-    <string name="root_check_title">루트 액세스 확인</string>
     <string name="checking_root">루트 액세스 확인 중...</string>
-    <string name="root_granted">루트 액세스 허용됨</string>
     <string name="root_denied">루트 액세스 거부됨</string>
     <string name="root_required_message">컨테이너를 관리하려면 루트 액세스가 필요합니다.</string>
     <string name="check_root_access">루트 액세스 확인</string>
-    <string name="check_root_access_click">아래를 클릭하여 루트 액세스를 확인하세요</string>
-    <string name="root_available_message">이제 Droidspaces를 사용할 수 있습니다</string>
     <string name="skip">건너뛰기</string>
     <string name="continue_button">계속</string>
     <!-- Navigation -->
@@ -102,7 +97,6 @@
     <string name="no_containers_installed">설치된 컨테이너가 없습니다</string>
     <string name="install_container_description">아래 버튼을 사용하여 컨테이너를 설치하세요</string>
     <string name="install_container">컨테이너 설치</string>
-    <string name="install">설치</string>
     <string name="file_picker_error">.tar.xz 또는 .tar.gz 파일을 선택하세요. 선택됨: %1$s</string>
     <string name="file_picker_error_unknown">.tar.xz 또는 .tar.gz 파일을 선택하세요. 파일 형식을 확인할 수 없습니다.</string>
     <string name="stopping_container">컨테이너 중지 중...</string>
@@ -217,8 +211,7 @@
     <string name="network_mode_gateway">게이트웨이(가상 라우터)</string>
     <string name="network_mode_gateway_short">게이트웨이</string>
     <!-- Gateway networking mode -->
-    <string name="gateway_settings">게이트웨이 설정</string>
-    <string name="gateway_settings_description">라우터 역할을 하는 다른 컨테이너(예: OpenWRT)를 통해 이 컨테이너를 라우팅합니다. 해당 게이트웨이가 먼저 실행 중이어야 합니다.</string>
+    <string name="gateway_settings_description">라우터 역할을 하는 다른 컨테이너(예: OpenWRT)를 통해 이 컨테이너를 라우팅합니다.</string>
     <string name="gateway_container">게이트웨이 컨테이너</string>
     <string name="gateway_net">LAN 이름</string>
     <string name="gateway_net_hint">lan</string>
@@ -226,8 +219,6 @@
     <string name="gateway_iface_hint">eth1</string>
     <string name="gateway_bridge">호스트 브리지</string>
     <string name="gateway_bridge_hint">ds-lan</string>
-    <string name="gateway_configure">게이트웨이 구성</string>
-    <string name="gateway_configure_title">게이트웨이 구성</string>
     <string name="gateway_configure_intro">이 설정은 이 컨테이너가 게이트웨이의 가상 LAN에 연결되는 방식을 제어합니다. 기본값은 단일 게이트웨이 뒤의 단일 LAN에 적합합니다 - 여러 LAN 세그먼트 또는 둘 이상의 게이트웨이를 실행하는 경우에만 변경하세요.</string>
     <string name="gateway_iface_explain">이 연결이 게이트웨이 컨테이너 내부에 표시되는 인터페이스 이름입니다(예: OpenWRT의 eth1). 게이트웨이가 DHCP를 제공하도록 설정된 인터페이스와 일치해야 합니다. 동일한 게이트웨이의 각 세그먼트는 고유한 이름이 필요합니다. 기본값: eth1.</string>
     <string name="gateway_net_explain">이 LAN 세그먼트의 라벨입니다. 동일한 게이트웨이와 LAN 이름을 공유하는 컨테이너는 동일한 가상 스위치에 참여하며 서로를 볼 수 있습니다. 격리된 두 번째 세그먼트를 만들려면 다른 이름을 사용하세요. 기본값: lan.</string>
@@ -240,20 +231,11 @@
     <string name="error_iface_too_long">너무 깁니다 - 최대 15자</string>
     <string name="error_gateway_bridge_taken">브리지가 이미 \'%1$s\'에서 사용 중입니다. 다른 LAN 이름을 사용하세요.</string>
     <string name="error_gateway_iface_taken">인터페이스가 이미 다른 세그먼트(\'%1$s\')에서 사용 중입니다. 다른 것을 사용하세요.</string>
-    <string name="nat_settings">NAT 설정</string>
     <string name="upstream_interface_title">업스트림 인터페이스(선택 사항)</string>
     <string name="upstream_interface_hint">인터넷 액세스를 특정 인터페이스에 고정합니다. 활성 업링크를 자동 감지하려면 비워두세요.</string>
     <string name="add_upstream_interface">업스트림 인터페이스 추가</string>
-    <string name="available_system_interfaces">사용 가능한 시스템 인터페이스:</string>
-    <string name="enter_manually">또는 직접 입력하세요(와일드카드도 지원됩니다):</string>
-    <string name="interface_name_hint">인터페이스 이름(예: wlan0, v4-rmnet_data*)</string>
     <string name="port_forwarding">포트 포워딩</string>
     <string name="add_port_forward">포트 포워딩 추가</string>
-    <string name="host_port_hint">호스트 포트(1-65535 또는 범위 100-200)</string>
-    <string name="container_port_hint">컨테이너 포트(1-65535 또는 범위)</string>
-    <string name="protocol">프로토콜</string>
-    <string name="optional_symmetric_hint">선택 사항(예: 8080 또는 1000-2000)</string>
-    <string name="leave_blank_for_symmetric">대칭 매핑을 원하면 비워두세요</string>
     <string name="error_invalid_range_format">잘못된 범위 형식(시작-끝)</string>
     <string name="error_ports_must_be_numbers">포트는 숫자여야 합니다</string>
     <string name="error_port_out_of_range">포트는 1-65535 사이여야 합니다</string>
@@ -261,7 +243,6 @@
     <string name="error_port_must_be_number">포트는 숫자여야 합니다</string>
     <string name="error_port_width_mismatch">호스트/컨테이너 범위 폭이 일치하지 않습니다</string>
     <string name="error_port_overlap">기존 포트 포워딩 규칙과 겹칩니다</string>
-    <string name="symmetric_label">(대칭)</string>
     <string name="port_forward_examples">예: 8080(단일), 8000-8010(범위). 대칭 매핑을 원하면 대상을 비워두세요.</string>
     <string name="saved">저장됨</string>
     <string name="saving">저장 중...</string>
@@ -277,10 +258,7 @@
     <string name="bind_mounts">바인드 마운트</string>
     <string name="add">추가</string>
     <string name="add_bind_mount">바인드 마운트 추가</string>
-    <string name="enter_container_path">컨테이너 경로 입력</string>
     <string name="container_path_placeholder">예: /mnt/sdcard</string>
-    <string name="host_path">호스트 경로: %1$s</string>
-    <string name="container_path">컨테이너 경로: %1$s</string>
     <string name="read_only">읽기 전용</string>
     <string name="dns_servers_label">DNS 서버</string>
     <string name="dns_servers_placeholder">예: 1.1.1.1,8.8.8.8(선택 사항)</string>
@@ -306,7 +284,6 @@
     <string name="next_configuration">다음: 구성</string>
     <!-- Container Config Screen -->
     <string name="configuration_title">구성</string>
-    <string name="container_options">컨테이너 옵션</string>
     <string name="next_storage">다음: 저장소</string>
     <!-- Installation Screen -->
     <string name="installing_container">컨테이너 설치 중</string>
@@ -498,7 +475,6 @@
     <string name="help_card_message">첫 번째 리눅스 컨테이너를 설정하는 방법을 알아보려면 여기를 누르세요!</string>
     <string name="help_card_url" translatable="false">https://github.com/ravindu644/Droidspaces-OSS/blob/main/Documentation/Installation-Android.md</string>
     <string name="privileged_mode">특권 모드</string>
-    <string name="privileged_mode_description">중첩 가상화 또는 고급 하드웨어 액세스를 위한 세밀한 보안 완화를 구성합니다.</string>
     <string name="privileged_nomask_desc">jail 마스크를 비활성화하여 /proc 및 /sys에 쓰기 액세스를 허용합니다. 참고: 하드웨어 액세스도 활성화되지 않는 한 /sys는 읽기 전용으로 유지됩니다.</string>
     <string name="privileged_nocaps_desc">어떠한 리눅스 권한(capability)도 제거하지 않습니다(완전한 루트 권한).</string>
     <string name="privileged_noseccomp_desc">Seccomp 시스템 콜 필터링을 비활성화합니다. 이를 통해 비특권 사용자 네임스페이스와 같은 고급 커널 기능을 사용할 수 있으며, 이는 중첩 샌드박싱(Bubblewrap, Flatpak)에 반드시 필요하고 트리 외부 커널 모듈 로드도 가능하게 합니다.</string>

@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Pure-C RTNETLINK client: link, address, route, and policy-rule management.
  * Replaces all `ip link/addr/route/rule` shell invocations.
@@ -202,12 +202,32 @@ static int ds_nl_talk(ds_nl_ctx_t *ctx, struct nlmsghdr *req) {
 int ds_nl_probe_nat_capability(char *reason, size_t rsz) {
   int ret;
   /* Step 1: CONFIG_NET_NS */
-  if (access("/proc/self/ns/net", F_OK) != 0) {
+  if (!check_ns(CLONE_NEWNET, "net")) {
     snprintf(reason, rsz,
              "CONFIG_NET_NS not compiled in. "
              "Network namespaces are required for --net=nat. "
              "Rebuild your kernel with CONFIG_NET_NS=y.");
     return -1;
+  }
+
+  /* A full pass creates a bridge and a veth pair and deletes all three, and
+   * every netdev unregister waits out RCU grace periods: 170 ms on a
+   * mid-range phone, on every start. The kernel does not change between
+   * starts, so a pass is remembered for the boot it was made in, by the
+   * boot_id the kernel mints at boot. Only the full verdict is kept: a
+   * degraded or failed one is asked again, so a module loaded later in the
+   * same boot is picked up. One unloaded later in the boot is not: the real
+   * bridge or veth creation in setup_veth_host_side() reports that instead,
+   * with a warning where the probe would have failed or gone bridgeless. */
+  char boot_id[64] = "", seen[64] = "", stamp[PATH_MAX];
+  read_file("/proc/sys/kernel/random/boot_id", boot_id, sizeof(boot_id));
+  snprintf(stamp, sizeof(stamp), "%s/nat_caps", get_net_dir());
+  if (boot_id[0] && read_file(stamp, seen, sizeof(seen)) > 0 &&
+      strcmp(seen, boot_id) == 0) {
+    ds_log("[NET] Kernel capability probe passed: NET_NS + BRIDGE + VETH OK.");
+    if (reason)
+      snprintf(reason, rsz, "OK (Full NAT)");
+    return 0;
   }
 
   ds_nl_ctx_t *ctx = ds_nl_open();
@@ -271,6 +291,8 @@ int ds_nl_probe_nat_capability(char *reason, size_t rsz) {
     ds_log("[NET] Kernel capability probe passed: NET_NS + BRIDGE + VETH OK.");
     if (reason)
       snprintf(reason, rsz, "OK (Full NAT)");
+    if (boot_id[0])
+      write_file(stamp, boot_id);
     return 0;
   } else {
     ds_log(
@@ -279,6 +301,39 @@ int ds_nl_probe_nat_capability(char *reason, size_t rsz) {
       snprintf(reason, rsz, "OK (Bridgeless NAT Fallback)");
     return 1;
   }
+}
+
+/* Can this kernel make a macvlan? It needs an Ethernet parent and the phone
+ * may have none plugged in, so the probe brings its own: a veth, which the NAT
+ * probe already requires. A veth left behind by a probe that crashed is still a
+ * fine parent, and a macvlan left on it is proof enough. A pass is remembered
+ * for the boot, like the NAT probe's, since every start asks. */
+int ds_nl_probe_macvlan(void) {
+  char boot_id[64] = "", seen[64] = "", stamp[PATH_MAX];
+  read_file("/proc/sys/kernel/random/boot_id", boot_id, sizeof(boot_id));
+  snprintf(stamp, sizeof(stamp), "%s/macvlan_caps", get_net_dir());
+  if (boot_id[0] && read_file(stamp, seen, sizeof(seen)) > 0 &&
+      strcmp(seen, boot_id) == 0)
+    return 1;
+
+  ds_nl_ctx_t *ctx = ds_nl_open();
+  if (!ctx)
+    return 0;
+  static const uint8_t mac[6] = {0x02, 0, 0, 0, 0, 0x01};
+  int own = ds_nl_create_veth(ctx, "ds-cap-mh0", "ds-cap-mp0") == 0;
+  int ret = ds_nl_create_macvlan(ctx, "ds-cap-mv0",
+                                 ds_nl_get_ifindex(ctx, "ds-cap-mh0"), -1,
+                                 MACVLAN_MODE_BRIDGE, mac);
+  if (ret == 0)
+    ds_nl_del_link(ctx, "ds-cap-mv0");
+  if (own)
+    ds_nl_del_link(ctx, "ds-cap-mh0"); /* takes the peer with it */
+  ds_nl_close(ctx);
+
+  int ok = (ret == 0 || ret == -EEXIST);
+  if (ok && boot_id[0])
+    write_file(stamp, boot_id);
+  return ok;
 }
 
 /* Link existence check */
@@ -412,6 +467,48 @@ int ds_nl_create_veth(ds_nl_ctx_t *ctx, const char *host, const char *peer) {
   return ds_nl_create_veth_in(ctx, host, peer, -1, NULL);
 }
 
+/* Create a macvlan on the NIC parent_index of the namespace ctx lives in.
+ * With netns_fd >= 0 it is born inside that namespace, under `name` and with
+ * `mac`, in one request, exactly like the far end of a veth.
+ *
+ * It cannot be born as eth0 when its parent is called eth0, whichever
+ * namespace asks: the kernel checks the name, and with IFLA_LINK_NETNSID even
+ * registers the device, in the parent's namespace before moving it. So the
+ * caller creates it under a name the host does not have and renames it. */
+int ds_nl_create_macvlan(ds_nl_ctx_t *ctx, const char *name, int parent_index,
+                         int netns_fd, uint32_t mode, const uint8_t mac[6]) {
+  struct {
+    struct nlmsghdr n;
+    struct ifinfomsg i;
+    char buf[512];
+  } req;
+  uint32_t link = (uint32_t)parent_index;
+
+  memset(&req, 0, sizeof(req));
+  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  req.n.nlmsg_type = RTM_NEWLINK;
+  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK;
+  req.i.ifi_family = AF_UNSPEC;
+
+  nl_addattr(&req.n, (int)sizeof(req), IFLA_IFNAME, name,
+             (int)strlen(name) + 1);
+  nl_addattr(&req.n, (int)sizeof(req), IFLA_LINK, &link, sizeof(link));
+  if (netns_fd >= 0)
+    nl_addattr(&req.n, (int)sizeof(req), IFLA_NET_NS_FD, &netns_fd,
+               (int)sizeof(int));
+  nl_addattr(&req.n, (int)sizeof(req), IFLA_ADDRESS, mac, 6);
+
+  struct rtattr *linfo = nl_nest_begin(&req.n, (int)sizeof(req), IFLA_LINKINFO);
+  nl_addattr(&req.n, (int)sizeof(req), IFLA_INFO_KIND, "macvlan", 8);
+  struct rtattr *ldata =
+      nl_nest_begin(&req.n, (int)sizeof(req), IFLA_INFO_DATA);
+  nl_addattr(&req.n, (int)sizeof(req), IFLA_MACVLAN_MODE, &mode, sizeof(mode));
+  nl_nest_end(&req.n, ldata);
+  nl_nest_end(&req.n, linfo);
+
+  return ds_nl_talk(ctx, &req.n);
+}
+
 /* Attach an interface to a bridge (IFLA_MASTER) */
 
 int ds_nl_set_master(ds_nl_ctx_t *ctx, const char *ifname, const char *master) {
@@ -471,12 +568,14 @@ int ds_nl_link_down(ds_nl_ctx_t *ctx, const char *ifname) {
   return ds_nl_link_set_up(ctx, ifname, 0);
 }
 
-/* Delete a link by name (idempotent - ENODEV/ENOENT treated as success) */
+/* Delete a link by name. Returns 1 when this call removed it, 0 when it was
+ * already gone (so callers can log only what they actually did), negative on
+ * any other error. */
 
 int ds_nl_del_link(ds_nl_ctx_t *ctx, const char *ifname) {
   int idx = ds_nl_get_ifindex(ctx, ifname);
   if (idx <= 0)
-    return 0; /* already gone */
+    return 0;
 
   struct {
     struct nlmsghdr n;
@@ -490,7 +589,9 @@ int ds_nl_del_link(ds_nl_ctx_t *ctx, const char *ifname) {
   req.i.ifi_index = idx;
 
   int ret = ds_nl_talk(ctx, &req.n);
-  return (ret == 0 || ret == -ENODEV || ret == -ENOENT) ? 0 : ret;
+  if (ret == 0)
+    return 1;
+  return (ret == -ENODEV || ret == -ENOENT) ? 0 : ret;
 }
 
 /* Rename an interface
@@ -668,137 +769,6 @@ int ds_nl_add_route6(ds_nl_ctx_t *ctx, const struct in6_addr *dst,
   nl_addattr(&req.n, (int)sizeof(req), RTA_DST, dst, sizeof(*dst));
   nl_addattr(&req.n, (int)sizeof(req), RTA_OIF, &oif_idx, (int)sizeof(int));
   return ds_nl_talk(ctx, &req.n);
-}
-
-/* Move an interface into a network namespace (by fd) */
-
-int ds_nl_move_to_netns(ds_nl_ctx_t *ctx, const char *ifname, int netns_fd) {
-  int idx = ds_nl_get_ifindex(ctx, ifname);
-  if (idx <= 0)
-    return -ENODEV;
-
-  struct {
-    struct nlmsghdr n;
-    struct ifinfomsg i;
-    char buf[256];
-  } req;
-  memset(&req, 0, sizeof(req));
-  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
-  req.n.nlmsg_type = RTM_NEWLINK;
-  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  req.i.ifi_family = AF_UNSPEC;
-  req.i.ifi_index = idx;
-
-  nl_addattr(&req.n, (int)sizeof(req), IFLA_NET_NS_FD, &netns_fd,
-             (int)sizeof(int));
-  return ds_nl_talk(ctx, &req.n);
-}
-
-/* Move an interface into another network namespace AND rename it in the same
- * RTM_NEWLINK request (IFLA_NET_NS_FD + IFLA_IFNAME).  The kernel applies both
- * in a single op, so the device appears in the target netns already carrying
- * its final name - there is no transient "raw name then rename" window for a
- * daemon (e.g. OpenWrt netifd) in that netns to race against.
- *
- * The link is brought DOWN first: renaming a running device returns EBUSY on
- * some drivers, and a freshly created veth peer is down anyway.  The device
- * arrives DOWN in the target netns; the caller brings it up there.
- *
- * Returns 0 on success.  On failure (e.g. newname already exists in the target
- * netns) nothing is guaranteed to have moved; callers should fall back to a
- * plain move + in-netns rename. */
-int ds_nl_move_to_netns_named(ds_nl_ctx_t *ctx, const char *ifname,
-                              int netns_fd, const char *newname) {
-  if (!newname || !newname[0])
-    return ds_nl_move_to_netns(ctx, ifname, netns_fd);
-
-  ds_nl_link_down(ctx, ifname); /* allow rename during the move */
-
-  int idx = ds_nl_get_ifindex(ctx, ifname);
-  if (idx <= 0)
-    return -ENODEV;
-
-  struct {
-    struct nlmsghdr n;
-    struct ifinfomsg i;
-    char buf[256];
-  } req;
-  memset(&req, 0, sizeof(req));
-  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
-  req.n.nlmsg_type = RTM_NEWLINK;
-  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-  req.i.ifi_family = AF_UNSPEC;
-  req.i.ifi_index = idx;
-
-  nl_addattr(&req.n, (int)sizeof(req), IFLA_NET_NS_FD, &netns_fd,
-             (int)sizeof(int));
-  nl_addattr(&req.n, (int)sizeof(req), IFLA_IFNAME, newname,
-             (int)strlen(newname) + 1);
-  return ds_nl_talk(ctx, &req.n);
-}
-
-/* Flush stale Droidspaces veth interfaces via RTM_GETLINK dump
- *
- * Collects all matching interfaces first, then deletes in a second pass to
- * avoid corrupting the dump mid-iteration. */
-
-void ds_nl_flush_stale_veths(ds_nl_ctx_t *ctx, const char *prefix) {
-  struct {
-    struct nlmsghdr n;
-    struct ifinfomsg i;
-  } req;
-  memset(&req, 0, sizeof(req));
-  req.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
-  req.n.nlmsg_type = RTM_GETLINK;
-  req.n.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-  req.i.ifi_family = AF_UNSPEC;
-
-  /* Manual send (not ds_nl_talk) - DUMP responses don't have ACK semantics */
-  req.n.nlmsg_seq = ++ctx->seq;
-  req.n.nlmsg_pid = (uint32_t)ctx->pid;
-  if (send(ctx->fd, &req, req.n.nlmsg_len, 0) < 0)
-    return;
-
-  char stale[64][IFNAMSIZ];
-  int stale_count = 0;
-  size_t prefix_len = strlen(prefix);
-  uint8_t buf[NL_BUFSIZE];
-
-  for (;;) {
-    ssize_t n = recv(ctx->fd, buf, sizeof(buf), 0);
-    if (n <= 0)
-      break;
-
-    struct nlmsghdr *h = (struct nlmsghdr *)buf;
-    for (; NLMSG_OK(h, (uint32_t)n); h = NLMSG_NEXT(h, n)) {
-      if (h->nlmsg_type == NLMSG_DONE)
-        goto flush_collected;
-      if (h->nlmsg_type != RTM_NEWLINK)
-        continue;
-
-      struct ifinfomsg *ifi = NLMSG_DATA(h);
-      struct rtattr *rta = IFLA_RTA(ifi);
-      int rlen = (int)IFLA_PAYLOAD(h);
-      char ifname[IFNAMSIZ] = {0};
-
-      for (; RTA_OK(rta, rlen); rta = RTA_NEXT(rta, rlen)) {
-        if (rta->rta_type == IFLA_IFNAME) {
-          safe_strncpy(ifname, RTA_DATA(rta), IFNAMSIZ);
-          break;
-        }
-      }
-      if (ifname[0] && strncmp(ifname, prefix, prefix_len) == 0 &&
-          stale_count < 64) {
-        safe_strncpy(stale[stale_count++], ifname, IFNAMSIZ);
-      }
-    }
-  }
-
-flush_collected:
-  for (int i = 0; i < stale_count; i++) {
-    ds_log("[NET] Flushing stale veth: %s", stale[i]);
-    ds_nl_del_link(ctx, stale[i]);
-  }
 }
 
 /* Enumerate all network interfaces via RTM_GETLINK dump.
@@ -1259,9 +1229,16 @@ int ds_nl_get_android_default(ds_nl_ctx_t *ctx, int family, char *ifname_out,
         case FRA_IIFNAME:
           safe_strncpy(iifname, RTA_DATA(rta), IFNAMSIZ);
           break;
-        case FRA_UID_RANGE:
-          have_uidrange = 1;
+        case FRA_UID_RANGE: {
+          /* {start, end} as two u32. Android 15+ netd writes the default
+           * network as a range over every uid, 0-2147483647, instead of a
+           * bare rule; only a narrower range is a per-app preference. */
+          const uint32_t *ur = RTA_DATA(rta);
+          if (RTA_PAYLOAD(rta) < 2 * sizeof(*ur) || ur[0] != 0 ||
+              ur[1] < 0x7fffffffu)
+            have_uidrange = 1;
           break;
+        }
         }
       }
 
@@ -1278,10 +1255,10 @@ int ds_nl_get_android_default(ds_nl_ctx_t *ctx, int family, char *ifname_out,
         continue;
       if (strcmp(iifname, "lo") != 0)
         continue;
-      /* Skip uid-scoped rules (Android 12+ per-app / work-profile network
-       * preference).  They share the default-network signature at higher
-       * precedence but only apply to specific uids - we want the global
-       * default network, which is the rule without a uid range. */
+      /* Skip per-app and work-profile rules (Android 12+ network
+       * preference). They share the default-network signature at higher
+       * precedence but only apply to some uids. A range over every uid is
+       * the global default network itself, see above. */
       if (have_uidrange)
         continue;
       if (r_table <= 0)

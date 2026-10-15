@@ -6,6 +6,9 @@ desc: Droidspaces Android 应用的完整指南。管理容器、配置网络、
 keywords: Droidspaces Android app, container manager Android, NAT mode, systemd networkd, terminal usage, kernel settings
 -->
 
+> [!NOTE]
+> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Usage-Android-App.md)。
+
 # Android 应用使用指南
 
 Droidspaces 的 Android 应用为管理 Linux 容器提供了精美的图形界面。它抽象化了 namespace 和挂载的复杂性，同时让你对环境拥有高层次的控制。

@@ -149,21 +149,6 @@ _mkfs_ext4() {
     return 1
 }
 
-# awk wrapper (integer-safe float math)
-_awk_calc() {
-    # _awk_calc <expression>  - prints integer result
-    local expr="$1"
-    if command -v awk >/dev/null 2>&1; then
-        awk "BEGIN { printf \"%.0f\", $expr }"
-    elif [ -n "$BB" ] && "$BB" awk 'BEGIN{}' /dev/null 2>/dev/null; then
-        "$BB" awk "BEGIN { printf \"%.0f\", $expr }"
-    else
-        # pure shell integer fallback (loses decimal precision)
-        echo $(( expr ))
-    fi
-}
-
-
 # Requirement Checks
 check_migrate_requirements() {
     log "Checking tools for migrate..."
@@ -350,21 +335,6 @@ cmd_migrate() {
     log "   Rootfs dir   : $ROOTFS_DIR"
 }
 
-# _to_mb: convert human readable size (du -h) to MB integer
-_to_mb() {
-    local str="$1"
-    local val unit
-    val=$(echo "$str" | sed 's/[^0-9.]//g')
-    unit=$(echo "$str" | sed 's/[0-9.]//g' | tr '[:lower:]' '[:upper:]')
-    case "$unit" in
-        G*|TICKS) _awk_calc "$val * 1024" ;;
-        M*) echo "${val%.*}" ;;
-        K*) _awk_calc "$val / 1024" ;;
-        B*) _awk_calc "$val / 1048576" ;;
-        *) echo "${val%.*}" ;;
-    esac
-}
-
 # CMD: resize
 cmd_resize() {
     local new_size_gb="$1"
@@ -413,39 +383,14 @@ cmd_resize() {
     sparse_size=$(ls -lh "$RESIZE_IMG" 2>/dev/null | tr -s ' ' | cut -d' ' -f5)
     [ -z "$sparse_size" ] && sparse_size="unknown"
 
-    if [ "$actual_size" = "unknown" ]; then
-        error "Cannot determine actual size of $RESIZE_IMG"
-        exit 1
-    fi
-
-    # Calculate minimum safe size in MB: actual content + 15% overhead + 512MB buffer
-    local actual_mb min_safe_mb min_safe_gb
-    actual_mb=$(_to_mb "$actual_size")
-    min_safe_mb=$(_awk_calc "($actual_mb * 1.15) + 512")
-    min_safe_gb=$(_awk_calc "$min_safe_mb / 1024")
-
-    # Ensure at minimum 4GB
-    [ "$min_safe_gb" -lt 4 ] && min_safe_gb=4
-
-    # Determine shrink vs grow
-    local sparse_mb operation
-    sparse_mb=$(_to_mb "$sparse_size")
-    operation="GROWING"
-    [ "$(( new_size_gb * 1024 ))" -lt "$sparse_mb" ] && operation="SHRINKING"
+    # No minimum or truncate of our own. resize2fs computes the real minimum from
+    # the fs metadata and refuses below it (we never pass -f), and on an image
+    # file it extends or ftruncates the file itself.
 
     log " Resize: $RESIZE_IMG"
-    echo "   Reported sparse size : $sparse_size"
-    echo "   Actual content size  : $actual_size"
-    echo "   Safe minimum (+15%)  : ${min_safe_gb}G"
+    echo "   Image size           : $sparse_size"
+    echo "   Allocated on disk    : $actual_size"
     echo "   Requested size       : ${new_size_gb}G"
-    echo "   Operation            : $operation"
-
-    # Reject if below minimum
-    if [ "$new_size_gb" -lt "$min_safe_gb" ]; then
-        error "Cannot resize below minimum safe size of ${min_safe_gb}G"
-        error "  (content: $actual_size + 15% overhead = ${min_safe_gb}G)"
-        exit 1
-    fi
 
     # Confirmation (skipped with -y / --yes)
     if [ "$YES_FLAG" -eq 0 ]; then
@@ -453,14 +398,14 @@ cmd_resize() {
         warn "  that CAN CORRUPT your filesystem if interrupted."
         warn "  Make a FULL BACKUP before proceeding."
         warn ""
-        warn "  Operation : $operation  ($sparse_size -> ${new_size_gb}G)"
+        warn "  Resize : $sparse_size -> ${new_size_gb}G"
         printf "  Type 'YES' to confirm: "
         read -r _confirm
         [ "$_confirm" != "YES" ] && { log "Resize cancelled"; exit 0; }
     fi
 
     # Filesystem check
-    log "[1/4] Checking filesystem integrity..."
+    log "[1/3] Checking filesystem integrity..."
     local fsck_out fsck_exit
     fsck_out=$(e2fsck -f -y "$RESIZE_IMG" 2>&1 >/dev/null)
     fsck_exit=$?
@@ -475,7 +420,7 @@ cmd_resize() {
     [ $fsck_exit -eq 0 ] && log "    Filesystem clean ✓"
 
     # Resize filesystem
-    log "[2/4] Resizing filesystem to ${new_size_gb}G..."
+    log "[2/3] Resizing filesystem to ${new_size_gb}G..."
     local resize_out resize_exit
     resize_out=$(resize2fs "$RESIZE_IMG" "${new_size_gb}G" 2>&1 >/dev/null)
     resize_exit=$?
@@ -483,27 +428,19 @@ cmd_resize() {
     if [ $resize_exit -ne 0 ] && ! echo "$resize_out" | grep -q "is now.*blocks long"; then
         error "resize2fs FAILED (exit: $resize_exit)"
         error "$resize_out"
+        # resize2fs checks its minimum before touching anything, so this one is harmless
+        if echo "$resize_out" | grep -q "smaller than minimum"; then
+            error "Too small for the data in this image. Nothing was changed, pick a larger size."
+            exit 1
+        fi
         error "Restore from backup immediately!"
         exit 1
     fi
     [ $resize_exit -ne 0 ] && warn "resize2fs exited $resize_exit but reported success - continuing"
     log "    Filesystem resized ✓"
 
-    # Truncate file on shrink
-    if [ "$operation" = "SHRINKING" ]; then
-        log "[3/4] Truncating file to ${new_size_gb}G..."
-        if ! _truncate "${new_size_gb}G" "$RESIZE_IMG"; then
-            error "Failed to truncate sparse file"
-            error "Restore from backup immediately!"
-            exit 1
-        fi
-        log "    File truncated ✓"
-    else
-        log "[3/4] Growing - no truncation needed ✓"
-    fi
-
     # Verify by test-mounting to a temp directory
-    log "[4/4] Verifying resized filesystem..."
+    log "[3/3] Verifying resized filesystem..."
     local verify_dir
     verify_dir="$(dirname "$RESIZE_IMG")/.resize_verify_$$"
     _mkdir "$verify_dir"
@@ -524,7 +461,7 @@ cmd_resize() {
 
     log ""
     log "Resize complete!"
-    log "   $sparse_size -> ${new_sparse}  ($operation)"
+    log "   $sparse_size -> ${new_sparse}"
     log "   Image: $RESIZE_IMG"
 }
 

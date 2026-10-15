@@ -13,7 +13,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.droidspaces.app.ui.component.DsSnackbarHost
@@ -23,8 +23,12 @@ import com.droidspaces.app.ui.component.KernelUnsupportedState
 import com.droidspaces.app.ui.component.RootUnavailableState
 import com.droidspaces.app.ui.component.PullToRefreshWrapper
 import com.droidspaces.app.ui.component.RunningContainerCard
+import com.droidspaces.app.ui.util.AnimatedListEntry
+import com.droidspaces.app.ui.util.showError
+import com.droidspaces.app.ui.util.rememberAnimatedEntries
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
 import com.droidspaces.app.ui.viewmodel.SystemStatsViewModel
+import com.droidspaces.app.util.AnlandUtils
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.BorderStroke
@@ -48,15 +52,18 @@ fun ControlPanelScreen(
     containerViewModel: ContainerViewModel,
     onNavigateToContainerDetails: (String) -> Unit = {},
     onNavigateToTerminal: (String) -> Unit = {},
+    bottomBarInset: Dp = 0.dp,
     onNavigateToWaylandDisplay: () -> Unit = {},
     emptyStateBottomInset: Dp = 0.dp,
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val systemStatsViewModel: SystemStatsViewModel = viewModel()
 
     // Get running containers - derived from ViewModel state
     val runningContainers = containerViewModel.containerList.filter { it.isRunning }
+    val entries = rememberAnimatedEntries(runningContainers) { it.name }
 
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -67,7 +74,9 @@ fun ControlPanelScreen(
     // Restarts whenever the running container set changes.
     LaunchedEffect(runningContainers) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            systemStatsViewModel.monitorContainers(runningContainers)
+            // A container that died on its own (poweroff inside it) is only noticed by
+            // this poll, so it has to tell the list, or its card stays up with no stats.
+            systemStatsViewModel.monitorContainers(runningContainers, onStopped = containerViewModel::refresh)
         }
     }
 
@@ -78,23 +87,23 @@ fun ControlPanelScreen(
         // Using when instead of early return to prevent UI glitches during recomposition
         when {
             !isRootAvailable -> {
-                RootUnavailableState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+                RootUnavailableState(modifier = Modifier.padding(bottom = bottomBarInset))
             }
             !isBackendAvailable -> {
-                ErrorState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+                ErrorState(modifier = Modifier.padding(bottom = bottomBarInset))
             }
             !isKernelSupported -> {
-                KernelUnsupportedState(modifier = Modifier.padding(bottom = emptyStateBottomInset))
+                KernelUnsupportedState(modifier = Modifier.padding(bottom = bottomBarInset))
             }
             else -> {
-                if (runningContainers.isEmpty()) {
+                if (entries.isEmpty()) {
                     EmptyState(
                         icon = Icons.Default.Dashboard,
                         title = context.getString(R.string.no_containers_running),
                         description = context.getString(R.string.start_container_first),
                         // Reserve the floating tab bar's space so the centered
                         // content sits in the visible region, not behind the bar.
-                        modifier = Modifier.padding(bottom = emptyStateBottomInset)
+                        modifier = Modifier.padding(bottom = bottomBarInset)
                     )
                 } else {
                     Column(
@@ -102,27 +111,40 @@ fun ControlPanelScreen(
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp)
-                            .padding(top = 8.dp, bottom = 120.dp), // Clear floating tab bar
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            // Each card carries its own 16dp gap (AnimatedListEntry) on top of this
+                            .padding(top = 8.dp, bottom = bottomBarInset + 16.dp),
                     ) {
-                        // Wayland display card — shown on arm64 when compositor is running
-                        if (Constants.isArm64 && WaylandManager.isRunning) {
-                            WaylandDisplayCard(onClick = onNavigateToWaylandDisplay)
-                        }
-                        
-                        runningContainers.forEach { container ->
-                            RunningContainerCard(
-                                container = container,
-                                onEnter = {
-                                    onNavigateToContainerDetails(container.name)
-                                },
-                                onTerminalClick = {
-                                    onNavigateToTerminal(container.name)
-                                },
-                                osInfo = containerUsageMap[container.name],
-                            )
+                        entries.forEach { entry ->
+                            val container = entry.item
+                            // The heartbeat reports the broker's socket only for a container
+                            // booted with Anland, so it gates the pill, not the saved config.
+                            val anlandSock = containerUsageMap[container.name]?.anlandSocket
+                            // Keyed, so a card's state stays with its container when one leaves.
+                            key(entry.key) {
+                                AnimatedListEntry(entry) {
+                                    RunningContainerCard(
+                                        container = container,
+                                        onEnter = {
+                                            onNavigateToContainerDetails(container.name)
+                                        },
+                                        onTerminalClick = {
+                                            onNavigateToTerminal(container.name)
+                                        },
+                                        anlandEnabled = anlandSock != null,
+                                        onLaunchAnland = {
+                                            if (anlandSock != null && !AnlandUtils.launchWindow(context, container.name, anlandSock))
+                                                scope.showError(snackbarHostState, context.getString(R.string.anland_not_installed))
+                                        },
+                                        osInfo = containerUsageMap[container.name],
+                                    )
+                                }
+                            }
                         }
                     }
+                // Wayland display card — shown on arm64 when compositor is running
+                if (Constants.isArm64 && WaylandManager.isRunning) {
+                    WaylandDisplayCard(onClick = onNavigateToWaylandDisplay)
+
                 }
             }
         }
@@ -130,7 +152,7 @@ fun ControlPanelScreen(
         // Snackbar host (always present)
         DsSnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = bottomBarInset + 16.dp)
         )
     }
 }

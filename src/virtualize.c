@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - Resource Visibility Virtualization
+ * Droidspaces v7 - Resource Visibility Virtualization
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -295,7 +295,7 @@ static char *gen_stat(struct ds_config *cfg, size_t *out_len) {
   char line[2048];
 
   long long user_us = 0, system_us = 0;
-  long hz = sysconf(_SC_CLK_TCK);
+  long hz = ds_clk_tck();
   int own = cfg->cpu_period > 0 && hz > 0 &&
             ds_cgroup_cpu_times(cfg->container_name, &user_us, &system_us) == 0;
   unsigned long long own_user = 0, own_system = 0, own_idle = 0;
@@ -451,7 +451,7 @@ static double container_start_time_secs(pid_t pid) {
   fclose(f);
   if (r != 1 || starttime == 0)
     return -1.0;
-  long ticks = sysconf(_SC_CLK_TCK);
+  long ticks = ds_clk_tck();
   if (ticks <= 0)
     return -1.0;
   return (double)starttime / (double)ticks;
@@ -821,11 +821,12 @@ void ds_virtualize_update(struct ds_config *cfg) {
     snprintf(path, sizeof(path), "/proc/%d/root/" VPROC_PATH "/%s",
              (int)cfg->container_pid, dyn[i].name);
 
+    /* The directory is there but this file is not: the guest is taking its
+     * /run apart on the way down, or this one file never got set up. Nothing
+     * to refresh here and nothing to report, any more than for the directory
+     * itself above; the other files still get theirs. */
     struct stat st;
     if (stat(path, &st) != 0) {
-      write_monitor_debug_log(cfg->container_name,
-                              "[VIRT] vfile missing: %s (%s)", path,
-                              strerror(errno));
       free(buf);
       continue;
     }

@@ -47,6 +47,7 @@ import com.droidspaces.app.ui.terminal.virtualkeys.VirtualKeysView
 import android.graphics.Typeface
 import com.droidspaces.app.util.AnimationUtils
 import com.droidspaces.app.util.ContainerOSInfoManager
+import com.droidspaces.app.util.ContainerUsersManager
 import com.droidspaces.app.util.FontInfo
 import com.droidspaces.app.util.PreferencesManager
 import java.io.File
@@ -56,7 +57,13 @@ import com.termux.terminal.TerminalSession
 import com.termux.view.TerminalView
 import java.lang.ref.WeakReference
 import java.util.UUID
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.ui.platform.LocalDensity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.content.res.ResourcesCompat
 import com.droidspaces.app.R
 
@@ -70,7 +77,6 @@ private data class TerminalTab(
 @Composable
 fun ContainerTerminalScreen(
     containerName: String,
-    initialUsers: List<String>,
     onNavigateBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -79,7 +85,13 @@ fun ContainerTerminalScreen(
     // Read once at entry like the theme above; re-enter to apply
     val confirmTabClose = remember { PreferencesManager.getInstance(context).terminalConfirmClose }
 
-    val keyboardController = LocalSoftwareKeyboardController.current
+    // The TerminalView raises the IME itself, so Compose's keyboard controller has no
+    // session to hide and leaves it up over the screen we return to. Ask the window.
+    val hideKeyboard = {
+        activity?.window?.let {
+            WindowCompat.getInsetsController(it, it.decorView).hide(WindowInsetsCompat.Type.ime())
+        }
+    }
     var binder by remember { mutableStateOf<TerminalSessionService.SessionBinder?>(null) }
 
     DisposableEffect(Unit) {
@@ -99,11 +111,12 @@ fun ContainerTerminalScreen(
         }
     }
 
-    val availableUsers = remember(initialUsers) {
-        val list = initialUsers.toMutableList()
-        if (!list.contains("root")) list.add(0, "root")
-        list
-    }
+    val scope = rememberCoroutineScope()
+    var availableUsers by remember { mutableStateOf(listOf("root")) }
+    var pickJob by remember { mutableStateOf<Job?>(null) }
+    // Read inside snapshotFlow only, so the IME animation does not recompose the screen
+    val ime = WindowInsets.ime
+    val density = LocalDensity.current
 
     val tabs = remember { mutableStateListOf<TerminalTab>() }
     var activeTabId by remember { mutableStateOf("") }
@@ -126,22 +139,6 @@ fun ContainerTerminalScreen(
         hostnameReady = true
     }
 
-    LaunchedEffect(binder, hostnameReady) {
-        binder ?: return@LaunchedEffect
-        if (!hostnameReady) return@LaunchedEffect
-        if (tabs.isNotEmpty()) return@LaunchedEffect
-        val existing = TerminalSessionService.globalSessionList
-            .filter { (_, info) -> info.containerName == containerName }
-        if (existing.isNotEmpty()) {
-            existing.forEach { (id, info) ->
-                tabs.add(TerminalTab(id = id, user = info.user, label = "${info.user}@$hostname"))
-            }
-            activeTabId = existing.keys.last()
-        } else {
-            showUserPicker = true
-        }
-    }
-
     // Sync UI tabs with background service reality.
     // If sessions are killed externally (e.g. Notification Exit), remove them here.
     LaunchedEffect(TerminalSessionService.globalSessionList.size) {
@@ -151,6 +148,7 @@ fun ContainerTerminalScreen(
             val wasActiveRemoved = activeTabId in toRemove.map { it.id }
             tabs.removeAll(toRemove)
             if (tabs.isEmpty()) {
+                hideKeyboard()
                 onNavigateBack()
             } else if (wasActiveRemoved) {
                 activeTabId = tabs.last().id
@@ -171,12 +169,53 @@ fun ContainerTerminalScreen(
         activeTabId = id
     }
 
+    // Users change from inside the container (adduser in another tab), so ask every time
+    // instead of trusting the cache. A picker with root as its only row is skipped.
+    // The fetch belongs to the screen, not the effect. A restarted LaunchedEffect cancels
+    // its coroutine, but Shell.exec runs to the end first, so the restart would find the
+    // fetch still busy and skip, and the cancelled one never opened anything.
+    fun pickUserOrOpenRoot() {
+        if (pickJob?.isActive == true) return
+        pickJob = scope.launch {
+            val users = ContainerUsersManager.getUsers(containerName, useCache = false)
+            availableUsers = listOf("root") + users
+            if (users.isEmpty()) {
+                addTab("root")
+                return@launch
+            }
+            // The picker is its own window. Opened over the terminal's keyboard it sizes itself
+            // above the IME, takes focus, the IME drops, and it jumps to full size on screen.
+            // Put the keyboard away first and open it once the inset has settled at zero.
+            if (ime.getBottom(density) > 0) {
+                hideKeyboard()
+                withTimeoutOrNull(1000) { snapshotFlow { ime.getBottom(density) }.first { it == 0 } }
+            }
+            showUserPicker = true
+        }
+    }
+
+    LaunchedEffect(binder, hostnameReady) {
+        binder ?: return@LaunchedEffect
+        if (!hostnameReady) return@LaunchedEffect
+        if (tabs.isNotEmpty()) return@LaunchedEffect
+        val existing = TerminalSessionService.globalSessionList
+            .filter { (_, info) -> info.containerName == containerName }
+        if (existing.isNotEmpty()) {
+            existing.forEach { (id, info) ->
+                tabs.add(TerminalTab(id = id, user = info.user, label = "${info.user}@$hostname"))
+            }
+            activeTabId = existing.keys.last()
+        } else {
+            pickUserOrOpenRoot()
+        }
+    }
+
     fun closeTab(tab: TerminalTab) {
         // terminateSession handles the immediate UI state update (globalSessionList.remove)
         // and internal cleanup delays (EOF propagation).
         binder?.terminateSession(tab.id)
 
-        if (tabs.size == 1) keyboardController?.hide()
+        if (tabs.size == 1) hideKeyboard()
         val idx = tabs.indexOf(tab)
         tabs.remove(tab)
         if (tabs.isEmpty()) onNavigateBack()
@@ -184,7 +223,7 @@ fun ContainerTerminalScreen(
     }
 
     val exitScreen = {
-        keyboardController?.hide()
+        hideKeyboard()
         onNavigateBack()
     }
 
@@ -222,8 +261,12 @@ fun ContainerTerminalScreen(
     if (showUserPicker) {
         UserPickerDialog(
             users = availableUsers,
+            // A user deleted since it was last opened falls back to root
+            initialUser = PreferencesManager.getInstance(context).getLastTerminalUser(containerName)
+                ?.takeIf { it in availableUsers } ?: "root",
             onConfirm = { user ->
                 showUserPicker = false
+                PreferencesManager.getInstance(context).setLastTerminalUser(containerName, user)
                 addTab(user)
             },
             onDismiss = {
@@ -252,7 +295,7 @@ fun ContainerTerminalScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = { showUserPicker = true }) {
+                        IconButton(onClick = { pickUserOrOpenRoot() }) {
                             Icon(Icons.Default.Add, contentDescription = "New tab")
                         }
                     },
@@ -262,7 +305,7 @@ fun ContainerTerminalScreen(
                 )
 
                 if (tabs.isNotEmpty()) {
-                    ScrollableTabRow(
+                    SecondaryScrollableTabRow(
                         selectedTabIndex = tabs.indexOfFirst { it.id == activeTabId }.coerceAtLeast(0),
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                         contentColor = MaterialTheme.colorScheme.primary,
@@ -557,11 +600,12 @@ private fun KeyboardToggleButton(
 @Composable
 private fun UserPickerDialog(
     users: List<String>,
+    initialUser: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    var selected by remember { mutableStateOf(users.firstOrNull() ?: "root") }
+    var selected by remember { mutableStateOf(initialUser) }
 
     DsDialog(
         onDismiss = onDismiss,

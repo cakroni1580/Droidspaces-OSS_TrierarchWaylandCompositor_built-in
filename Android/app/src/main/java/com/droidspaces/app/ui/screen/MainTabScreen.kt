@@ -43,6 +43,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.sp
 import com.droidspaces.app.R
+import com.droidspaces.app.ui.theme.DsIcons
 import com.droidspaces.app.util.HostCapabilities
 import androidx.compose.runtime.collectAsState
 import com.droidspaces.app.util.Constants
@@ -51,7 +52,7 @@ private const val EASTER_EGG_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Home(R.string.home_title, Icons.Default.Home),
-    Containers(R.string.containers, Icons.Default.Storage),
+    Containers(R.string.containers, DsIcons.Logo),
     ControlPanel(R.string.panel, Icons.Default.Dashboard)
 }
 
@@ -275,7 +276,7 @@ fun MainTabScreen(
                         ) { expandedContainerName = null }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Storage,
+                            imageVector = DsIcons.Logo,
                             contentDescription = null,
                             modifier = Modifier
                                 .padding(end = 8.dp)
@@ -302,9 +303,10 @@ fun MainTabScreen(
         contentWindowInsets = WindowInsets(0)
     ) { innerPadding ->
         val density = LocalDensity.current
-        // Measured height of the floating bottom bar (incl. system nav inset).
-        // Reserved as bottom space for centered empty states so they sit in the
-        // visible region above the bar instead of behind it.
+        // Measured height of the floating bottom bar, system nav inset included.
+        // The tabs draw under it, so anything pinned to their bottom edge offsets
+        // by this. A fixed dp guess fits gesture nav and lands behind the bar on
+        // three-button nav, whose 48dp inset is much taller.
         var bottomBarHeight by remember { mutableStateOf(0.dp) }
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             HorizontalPager(
@@ -332,7 +334,8 @@ fun MainTabScreen(
                             },
                             containerCount = containerCount,
                             runningCount = runningCount,
-                            onRefresh = { performRefresh(TabItem.Home) }
+                            onRefresh = { performRefresh(TabItem.Home) },
+                            bottomBarInset = bottomBarHeight
                         )
                     }
 
@@ -348,7 +351,7 @@ fun MainTabScreen(
                             onRefresh = { performRefresh(TabItem.Containers) },
                             expandedContainerName = expandedContainerName,
                             onExpandedContainerNameChange = { expandedContainerName = it },
-                            emptyStateBottomInset = bottomBarHeight
+                            bottomBarInset = bottomBarHeight
                         )
                     }
 
@@ -361,6 +364,7 @@ fun MainTabScreen(
                             onRefresh = { performRefresh(TabItem.ControlPanel) },
                             onNavigateToContainerDetails = onNavigateToContainerDetails,
                             onNavigateToTerminal = onNavigateToTerminal,
+                            bottomBarInset = bottomBarHeight
                             onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
                             emptyStateBottomInset = bottomBarHeight
                         )
@@ -401,7 +405,8 @@ private fun HomeTabContent(
     onNavigateToControlPanel: () -> Unit,
     containerCount: Int,
     runningCount: Int,
-    onRefresh: suspend () -> Unit
+    onRefresh: suspend () -> Unit,
+    bottomBarInset: Dp = 0.dp
 ) {
     val context = LocalContext.current
     // Track refresh trigger for SystemInfoCard
@@ -423,7 +428,7 @@ private fun HomeTabContent(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
-                .padding(top = 8.dp, bottom = 120.dp) // Large bottom padding for floating bar + FAB
+                .padding(top = 8.dp, bottom = bottomBarInset + 16.dp)
         ) {
             DroidspacesStatusCard(
                 status = droidspacesStatus,
@@ -581,7 +586,7 @@ private fun ContainersTabContent(
     onRefresh: suspend () -> Unit,
     expandedContainerName: String?,
     onExpandedContainerNameChange: (String?) -> Unit,
-    emptyStateBottomInset: Dp = 0.dp
+    bottomBarInset: Dp = 0.dp
 ) {
     PullToRefreshWrapper(onRefresh = { onRefresh() }) {
         ContainersScreen(
@@ -594,7 +599,7 @@ private fun ContainersTabContent(
             containerViewModel = containerViewModel,
             expandedContainerName = expandedContainerName,
             onExpandedContainerNameChange = onExpandedContainerNameChange,
-            emptyStateBottomInset = emptyStateBottomInset
+            bottomBarInset = bottomBarInset
         )
     }
 }
@@ -608,6 +613,7 @@ private fun ControlPanelTabContent(
     onRefresh: suspend () -> Unit,
     onNavigateToContainerDetails: (String) -> Unit,
     onNavigateToTerminal: (String) -> Unit,
+    bottomBarInset: Dp = 0.dp
     onNavigateToWaylandDisplay: () -> Unit = {},
     emptyStateBottomInset: Dp = 0.dp
 ) {
@@ -624,6 +630,7 @@ private fun ControlPanelTabContent(
             containerViewModel = containerViewModel,
             onNavigateToContainerDetails = onNavigateToContainerDetails,
             onNavigateToTerminal = onNavigateToTerminal,
+            bottomBarInset = bottomBarInset
             onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
             emptyStateBottomInset = emptyStateBottomInset
         )

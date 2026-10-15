@@ -1,5 +1,5 @@
 /*
- * Droidspaces v6 - High-performance Container Runtime
+ * Droidspaces v7 - High-performance Container Runtime
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -183,28 +183,6 @@ reboot_loop:;
     fcntl(mid_sync_pipe[1], F_SETFD, FD_CLOEXEC);
 
     ds_log("[NET] Sync pipes created for net_mode=%d", cfg->net_mode);
-  }
-
-  /* First boot only: ensure no stale container with the same name is running
-   */
-  if (!cfg->reboot_cycle) {
-    pid_t existing_pid = 0;
-    if (is_container_running(cfg, &existing_pid)) {
-      if (existing_pid != getpid()) {
-        /*
-         * Crucial Safety: Only kill the process if it's confirmed to be a
-         * Droidspaces container. This prevents killing random processes that
-         * might have recycled the PID after the container died without
-         * cleanup.
-         */
-        if (is_valid_container_pid(existing_pid)) {
-          ds_warn("Killing stale container with same name (PID %d)",
-                  existing_pid);
-          kill(existing_pid, SIGKILL);
-          usleep(100000);
-        }
-      }
-    }
   }
 
   /* Stdio handling for monitor in background mode (early redirection).
@@ -397,13 +375,15 @@ reboot_loop:;
         } else {
           /* Start the dynamic route monitor thread to handle WiFi/Mobile
            * switches */
-          ds_net_start_route_monitor();
+          ds_net_start_route_monitor(cfg->container_name);
         }
       } else if (cfg->net_mode == DS_NET_GATEWAY) {
         if (setup_gateway_veth_side(cfg, netns_pid) < 0) {
           ds_warn("[NET] Monitor: setup_gateway_veth_side failed - "
                   "container will remain isolated");
         }
+      } else if (cfg->net_mode == DS_NET_MACVLAN) {
+        ds_net_macvlan_wire(cfg, netns_pid, 1);
       }
 
       /* Gateway self-heal: if any running client delegates to THIS container as
@@ -425,9 +405,9 @@ reboot_loop:;
       /* Send handshake to init */
       struct ds_net_handshake hs;
       ds_net_derive_handshake(netns_pid, cfg, &hs);
-      if (cfg->net_mode == DS_NET_GATEWAY)
-        ds_log("[NET] Monitor: sending DONE (gateway mode: eth0 is wired "
-               "host-side, IP comes from the gateway's DHCP)");
+      if (cfg->net_mode != DS_NET_NAT)
+        ds_log("[NET] Monitor: sending DONE (eth0, if any, is wired "
+               "host-side and addressed by the LAN's DHCP)");
       else
         ds_log("[NET] Monitor: sending DONE: peer=%s ip=%s", hs.peer_name,
                hs.ip_str);
@@ -502,7 +482,8 @@ reboot_loop:;
     sigaddset(&mask, SIGCHLD);
     sigprocmask(SIG_BLOCK, &mask, NULL);
     int sfd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
-    int gw_wired = 0, gw_tick = 0;
+    int gw_wired = 0, net_tick = 0;
+    struct timespec last_tick = {0, 0};
 
     while (1) {
       pid_t r = waitpid(mid_pid, &status, WNOHANG);
@@ -526,12 +507,27 @@ reboot_loop:;
         }
       }
 
-      ds_virtualize_update(cfg);
+      /* The poll below returns at once whenever the console has output, so a
+       * chatty guest (a shutdown prints hundreds of lines) would run the
+       * refresh hundreds of times a second. It is meant once per heartbeat. */
+      struct timespec now;
+      clock_gettime(CLOCK_MONOTONIC, &now);
+      long since_ms = (now.tv_sec - last_tick.tv_sec) * 1000 +
+                      (now.tv_nsec - last_tick.tv_nsec) / 1000000;
+      if (since_ms >= 500) {
+        last_tick = now;
+        ds_virtualize_update(cfg);
 
-      /* A gateway client whose gateway was not up yet is still unwired. Look
-       * again every couple of seconds until the cable is in, then stop. */
-      if (cfg->net_mode == DS_NET_GATEWAY && !gw_wired && ++gw_tick % 4 == 0)
-        gw_wired = ds_net_gateway_reconcile(cfg, cfg->container_pid);
+        /* A gateway client whose gateway was not up yet is still unwired.
+         * Look again every couple of seconds until the cable is in. */
+        if (cfg->net_mode == DS_NET_GATEWAY && !gw_wired && ++net_tick % 4 == 0)
+          gw_wired = ds_net_gateway_reconcile(cfg, cfg->container_pid);
+
+        /* A macvlan dies with its parent NIC, so keep checking for good:
+         * a replugged USB adapter gets the container's eth0 back. */
+        if (cfg->net_mode == DS_NET_MACVLAN && ++net_tick % 4 == 0)
+          ds_net_macvlan_wire(cfg, cfg->container_pid, 0);
+      }
 
       /* Poll the signalfd and, in background mode, the console PTY master.
        * poll() wakes immediately when the master becomes readable, so draining
@@ -690,23 +686,9 @@ reboot_loop:;
     cfg->reboot_cycle = 1;
     clock_gettime(CLOCK_BOOTTIME, &cfg->start_time);
 
-    /* Mirror restart behavior: ensure X, VirGL, and PulseAudio servers are up
-     * before next boot */
-    if (is_android() && cfg->x11) {
-      if (ds_x11_daemon_start(cfg) == 0)
-        wait_for_socket_or_death(
-            cfg->x11_pid, TX11_SOCK_DIR "/" TX11_DISPLAY_SOCK, 5000, 50000);
-    }
-
-    if (is_android() && cfg->virgl) {
-      if (ds_virgl_daemon_start(cfg) == 0)
-        wait_for_socket_or_death(cfg->virgl_pid, TX11_VIRGL_SOCKET, 2000,
-                                 20000);
-    }
-
-    if (is_android() && cfg->pulseaudio) {
-      ds_pulse_daemon_start(cfg);
-    }
+    /* The reloaded config may have turned a helper on or off since the
+     * last boot. */
+    ds_android_helpers_sync(cfg);
 
     /* Refresh ns_inode: new container has a new PID namespace inode.
      * Without this, ds_virtualize_update's PID-recycling guard rejects
@@ -727,6 +709,7 @@ reboot_loop:;
 
 monitor_cleanup_and_exit:
   ds_container_unlock(lifecycle_fd);
+  ds_container_release_supervision();
   /* Capture any final console output, then close the background console log. */
   if (!cfg->foreground && cfg->console.master >= 0)
     ds_console_drain(cfg->console.master, console_log_fd, &console_logged);
