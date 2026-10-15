@@ -246,6 +246,14 @@ fun ContainerConfigForm(
         )
         GroupDivider()
         SwitchItem(
+            icon = Icons.Default.DesktopWindows,
+            title = context.getString(R.string.enable_wayland),
+            summary = context.getString(R.string.enable_wayland_description),
+            checked = state.enableWayland,
+            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
+        )
+        GroupDivider()
+        SwitchItem(
             icon = Icons.AutoMirrored.Filled.VolumeUp,
             title = context.getString(R.string.enable_pulseaudio),
             summary = if (termux) context.getString(R.string.enable_pulseaudio_description)
@@ -256,15 +264,6 @@ fun ContainerConfigForm(
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enablePulseaudio = it)) },
         )
         
-        GroupDivider()
-        SwitchItem(
-            icon = Icons.Default.DesktopWindows,
-            title = context.getString(R.string.enable_wayland),
-            summary = context.getString(R.string.enable_wayland_description),
-            checked = state.enableWayland,
-            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
-        )
-
         SectionHeader(
             text = context.getString(R.string.cat_resource_limits),
             modifier = Modifier.padding(top = 16.dp)
