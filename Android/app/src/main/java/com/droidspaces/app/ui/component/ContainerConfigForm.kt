@@ -256,13 +256,13 @@ fun ContainerConfigForm(
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enablePulseaudio = it)) },
         )
         
-        ToggleCard(
+        GroupDivider()
+        SwitchItem(
             icon = Icons.Default.DesktopWindows,
             title = context.getString(R.string.enable_wayland),
             description = context.getString(R.string.enable_wayland_description),
             checked = state.enableWayland,
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
-            enabled = true
         )
 
         SectionHeader(
