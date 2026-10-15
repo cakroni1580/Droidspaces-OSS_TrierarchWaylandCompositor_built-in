@@ -524,6 +524,7 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
                  optarg);
         return -1;
       }
+      break;
     case 285:
       cfg->wayland = 1;
       break;
