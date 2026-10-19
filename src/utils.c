@@ -2201,7 +2201,6 @@ void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
     unlink(sock_path);
 }
 
-/* Set oom_score_adj to -1000 (unkillable).  Best-effort, no error return. */
 /* pthread_create for a helper thread that must never receive signals.
  *
  * A thread inherits its creator's signal mask, and a process-directed signal
@@ -2220,13 +2219,23 @@ int ds_thread_create(pthread_t *tid, void *(*fn)(void *), void *arg) {
   return ret;
 }
 
-void ds_oom_protect(void) {
+static void set_oom_score_adj(const char *val) {
   FILE *f = fopen("/proc/self/oom_score_adj", "w");
   if (f) {
-    fprintf(f, "-1000\n");
+    fputs(val, f);
     fclose(f);
   }
 }
+
+/* The runtime itself, daemon and monitor, must outlive any OOM kill.
+ * Best-effort, no error return. */
+void ds_oom_protect(void) { set_oom_score_adj("-1000\n"); }
+
+/* Container processes are forked from a protected parent and would inherit
+ * -1000, leaving a memory limit nothing to kill but failed allocations, and a
+ * global OOM free to pass over the container and take Android instead.
+ * Raising the value needs no privilege. */
+void ds_oom_unprotect(void) { set_oom_score_adj("0\n"); }
 
 void ds_daemon_child_preamble(void) {
   /* Ignore hangups, keyboard interrupts, and broken pipes so the helper

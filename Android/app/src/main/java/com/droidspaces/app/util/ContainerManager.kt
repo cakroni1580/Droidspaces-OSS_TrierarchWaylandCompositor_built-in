@@ -68,6 +68,8 @@ data class ContainerInfo(
     val memoryLimit: Long = 0,
     val cpuQuota: Long = 0,
     val pidsLimit: Long = 0,
+    /** Only matters with a memory limit: without one the container shares the host's swap anyway. */
+    val allowSwap: Boolean = false,
     val uuid: String = ""
 ) {
     val isRunning: Boolean
@@ -142,6 +144,7 @@ data class ContainerInfo(
             appendLine("privileged=$privileged")
         }
         if (memoryLimit > 0) appendLine("memory_limit=$memoryLimit")
+        appendLine("allow_swap=${if (allowSwap) "1" else "0"}")
         if (cpuQuota > 0) {
             appendLine("cpu_quota=$cpuQuota")
             appendLine("cpu_period=${ResourceLimits.CPU_PERIOD_US}")
@@ -175,6 +178,20 @@ object ContainerManager {
     fun getContainerDirectory(name: String): String {
         val sanitizedName = sanitizeContainerName(name)
         return "$CONTAINERS_BASE_PATH/$sanitizedName"
+    }
+
+    /**
+     * Copy [src] over [dst] as root so a hard reboot leaves the old file or the new one, never
+     * an empty one. A plain cp truncates in place, and on f2fs nobarrier mounts the data can sit
+     * in page cache for seconds, so a crash dropped container.config (#364).
+     */
+    fun installFileDurably(src: String, dst: String, mode: String = "644"): Shell.Result {
+        val q = ContainerCommandBuilder::quote
+        val tmp = "$dst.new"
+        return Shell.cmd(
+            "{ cp ${q(src)} ${q(tmp)} && chmod $mode ${q(tmp)} && sync && mv -f ${q(tmp)} ${q(dst)} && sync; } 2>&1" +
+                " || { rm -f ${q(tmp)}; false; }"
+        ).exec()
     }
 
     /**
@@ -443,6 +460,7 @@ object ContainerManager {
                 cpuQuota = (configMap["cpu_quota"]?.toLongOrNull() ?: 0) * ResourceLimits.CPU_PERIOD_US /
                     (configMap["cpu_period"]?.toLongOrNull()?.takeIf { it > 0 } ?: ResourceLimits.CPU_PERIOD_US),
                 pidsLimit = configMap["pids_limit"]?.toLongOrNull() ?: 0,
+                allowSwap = configMap["allow_swap"] == "1",
                 uuid = configMap["uuid"] ?: ""
             )
         } catch (e: Exception) {
@@ -607,9 +625,12 @@ object ContainerManager {
             } else {
                 val tempEnvFile = File("${context.cacheDir}/.env_${sanitizedName}")
                 tempEnvFile.writeText(newConfig.envFileContent + "\n")
-                Shell.cmd("cp ${ContainerCommandBuilder.quote(tempEnvFile.absolutePath)} ${ContainerCommandBuilder.quote(envFilePath)}").exec()
-                Shell.cmd("chmod 644 ${ContainerCommandBuilder.quote(envFilePath)}").exec()
+                val envResult = installFileDurably(tempEnvFile.absolutePath, envFilePath)
                 tempEnvFile.delete()
+                if (!envResult.isSuccess) {
+                    val errorMsg = (envResult.out + envResult.err).joinToString("\n").trim()
+                    return@withContext Result.failure(Exception("Failed to update environment variables: $errorMsg"))
+                }
             }
 
             // Write config to temp file first (app can write to cache dir)
@@ -617,21 +638,13 @@ object ContainerManager {
             val tempConfigFile = File("${context.cacheDir}/container_${sanitizedName}.config")
             tempConfigFile.writeText(configContent)
 
-            // Copy temp config to final location using shell (root required)
-            // Quote paths to handle spaces and special characters
-            val copyResult = Shell.cmd("cp ${ContainerCommandBuilder.quote(tempConfigFile.absolutePath)} ${ContainerCommandBuilder.quote(configPath)} 2>&1").exec()
+            val copyResult = installFileDurably(tempConfigFile.absolutePath, configPath)
             if (!copyResult.isSuccess) {
                 // Check both stdout and stderr for error messages
                 val errorOutput = (copyResult.out + copyResult.err).joinToString("\n").trim()
                 val errorMsg = if (errorOutput.isNotEmpty()) errorOutput else "Unknown error (exit code: ${copyResult.code})"
                 tempConfigFile.delete()
                 return@withContext Result.failure(Exception("Failed to update container config: $errorMsg"))
-            }
-
-            // Set proper permissions
-            val chmodResult = Shell.cmd("chmod 644 ${ContainerCommandBuilder.quote(configPath)} 2>&1").exec()
-            if (!chmodResult.isSuccess) {
-                // Non-fatal, but log warning
             }
 
             // Clean up temp config file

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.GppMaybe
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Public
@@ -307,6 +308,21 @@ fun ContainerConfigForm(
                     val snapped = ((it / memStep).roundToInt() * memStep).coerceIn(memStep, totalMemMb)
                     onStateChange(state.copy(memoryLimit = snapped * mb))
                 }
+            )
+        }
+        AnimatedVisibility(visible = memMb > 0 && ok("memory_limit")) {
+            SwitchItem(
+                icon = Icons.Default.SwapVert,
+                title = context.getString(R.string.limit_swap),
+                summary = when {
+                    !ok("swap_limit") -> context.getString(R.string.limit_not_supported, context.getString(R.string.limit_swap_requirement))
+                    state.allowSwap -> context.getString(R.string.limit_swap_on)
+                    else -> context.getString(R.string.limit_swap_off)
+                },
+                // A kernel that cannot cap swap lets the container use it, so show that
+                checked = state.allowSwap || !ok("swap_limit"),
+                enabled = ok("swap_limit"),
+                onCheckedChange = { clearFocus(); onStateChange(state.copy(allowSwap = it)) }
             )
         }
         GroupDivider()

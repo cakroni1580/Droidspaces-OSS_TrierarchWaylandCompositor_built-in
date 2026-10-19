@@ -267,6 +267,10 @@
     <string name="limit_memory">Limit memory</string>
     <string name="limit_memory_on">Capped below the device total of %1$s</string>
     <string name="limit_memory_off">Unlimited, shares all %1$s</string>
+    <string name="limit_swap">Allow swap</string>
+    <string name="limit_swap_on">May use the device\'s swap past its memory limit</string>
+    <string name="limit_swap_off">Stops at its memory limit, the device\'s swap stays free</string>
+    <string name="limit_swap_requirement">CONFIG_MEMCG_SWAP with swap accounting on</string>
     <string name="limit_cpu">Limit CPU</string>
     <string name="limit_cpu_on">Capped below the device total of %1$s</string>
     <string name="limit_cpu_off">Unlimited, shares all %1$s</string>

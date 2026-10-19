@@ -53,6 +53,9 @@ CONFIG_CGROUP_NET_PRIO=y
 # accounting that reports CPU usage on kernels before 4.15.
 # Optional: a limit whose option is missing is skipped with a warning
 CONFIG_MEMCG=y
+# Keeps a memory-limited container out of swap. Before 6.1 only; before 5.8
+# also boot with swapaccount=1 unless CONFIG_MEMCG_SWAP_ENABLED=y
+CONFIG_MEMCG_SWAP=y
 CONFIG_CFS_BANDWIDTH=y
 CONFIG_CGROUP_PIDS=y
 CONFIG_CGROUP_CPUACCT=y
@@ -260,7 +263,7 @@ Build with Bazel, the AOSP build scripts or plain `make`, whichever your tree us
 
 Turn them on only if you can rebuild every kernel module on the device from the same source tree and configuration, and flash them in `vendor_boot`, `vendor_dlkm` and `system_dlkm` together with the new `boot.img`, all at once. If any module is a prebuilt with no source, you cannot. Do not disable `CONFIG_MODVERSIONS` or force-load modules to get past the check; the structures really did change.
 
-Without these two options everything else works. `--cpus` and `--pids-limit` are skipped with a warning and the app greys out the two toggles. Memory limits need only `CONFIG_MEMCG`, which GKI already has.
+Without these two options everything else works. `--cpus` and `--pids-limit` are skipped with a warning and the app greys out the two toggles. Memory limits need only `CONFIG_MEMCG`, which GKI already has. Keeping a limited container out of swap also needs `CONFIG_MEMCG_SWAP`, plus `swapaccount=1` on the kernel command line before 5.8 unless `CONFIG_MEMCG_SWAP_ENABLED` is set; without it the container can still spill into swap past its limit, the start log says so, and the app greys out **Allow swap**.
 
 ## What the check looks for
 
@@ -282,6 +285,7 @@ Without these two options everything else works. `--cpus` and `--pids-limit` are
 | FUSE, TUN | `CONFIG_FUSE_FS`, `CONFIG_TUN` | FUSE filesystems and VPNs inside the container do not work. |
 | User namespaces | `CONFIG_USER_NS` | Allow Sandboxing is unavailable. |
 | Memory, CPU and process limits | `CONFIG_MEMCG`, `CONFIG_CFS_BANDWIDTH`, `CONFIG_CGROUP_PIDS`, and no `cgroup_disable=` for them on the kernel command line | That limit is skipped. |
+| Swap limit | `CONFIG_MEMCG_SWAP` with swap accounting on, `swapaccount=1` before 5.8 | A memory-limited container can still use swap. |
 | CPU usage accounting | `CONFIG_CGROUP_CPUACCT` on kernels before 4.15 | `info` shows no CPU usage. |
 
 ## Which kernel version to aim for

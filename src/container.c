@@ -1362,6 +1362,7 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
     ds_cgroup_attach(cfg->container_name);
     ds_log_silent = 0;
     ds_virtualize_join(pid);
+    android_native_personality();
 
     if (enter_namespace(pid, cfg) < 0)
       _exit(EXIT_FAILURE);
@@ -1419,6 +1420,9 @@ int enter_rootfs(struct ds_config *cfg, const char *user) {
     if (shell_pid < 0)
       _exit(EXIT_FAILURE);
     if (shell_pid == 0) {
+      /* Only the guest shell loses the protection. The session leader above
+       * holds the tty, and an OOM kill of it would end the session. */
+      ds_oom_unprotect();
       /* Not the session leader on purpose, see above: no setsid, no
        * TIOCSCTTY, the slave is already our controlling terminal. */
       if (ds_terminal_set_stdfds(tty.slave) < 0)
@@ -1571,6 +1575,7 @@ int run_in_rootfs(struct ds_config *cfg, char **argv, const char *as_user) {
     ds_cgroup_attach(cfg->container_name);
     ds_log_silent = 0;
     ds_virtualize_join(pid);
+    android_native_personality();
 
     if (enter_namespace(pid, cfg) < 0)
       _exit(EXIT_FAILURE);
@@ -1592,6 +1597,8 @@ int run_in_rootfs(struct ds_config *cfg, char **argv, const char *as_user) {
     if (cmd_pid < 0)
       _exit(EXIT_FAILURE);
     if (cmd_pid == 0) {
+      /* The waiter above relays the exit status and stays protected */
+      ds_oom_unprotect();
       signal(SIGINT, SIG_DFL);
       signal(SIGQUIT, SIG_DFL);
 
@@ -1680,10 +1687,12 @@ static const char *get_architecture(void) {
     return "x86_64";
   if (strcmp(uts.machine, "aarch64") == 0 || strcmp(uts.machine, "arm64") == 0)
     return "aarch64";
+  /* A 64-bit backend only runs on a 64-bit kernel. A 32-bit name here is the
+   * PER_LINUX32 personality a 32-bit Android hands every process. */
   if (strncmp(uts.machine, "arm", 3) == 0)
-    return "arm";
+    return UINTPTR_MAX > 0xffffffffu ? "aarch64" : "arm";
   if (strcmp(uts.machine, "i686") == 0 || strcmp(uts.machine, "i386") == 0)
-    return "x86";
+    return UINTPTR_MAX > 0xffffffffu ? "x86_64" : "x86";
   return uts.machine;
 }
 
@@ -1751,8 +1760,10 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
   }
 
   long long lim_mem, lim_quota, lim_period, lim_pids;
+  int swap_capped;
   ds_cgroup_get_limits(cfg->container_name, &lim_mem, &lim_quota, &lim_period,
-                       &lim_pids);
+                       &lim_pids, &swap_capped);
+  int swap_allowed = !swap_capped;
 
   /* Success - print Host and detailed Container info */
   if (cfg->format_output) {
@@ -1857,6 +1868,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     ds_json_int("cpu_quota", lim_quota, &first);
     ds_json_int("cpu_period", lim_period, &first);
     ds_json_int("pids_limit", lim_pids, &first);
+    ds_json_int("swap_allowed", swap_allowed, &first);
     ds_json_int("sandboxing_allowed", cfg->sandboxing_allowed, &first);
     ds_json_int("vts_allowed", cfg->allow_vts, &first);
     ds_json_int("foreground_mode", cfg->foreground, &first);
@@ -2164,6 +2176,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       } else {
         printf("  Memory : %s\n", lim);
       }
+      printf("  Swap   : %s\n", swap_allowed ? "allowed" : "not allowed");
     }
     if (lim_quota) {
       double cores = (double)lim_quota / (double)lim_period;

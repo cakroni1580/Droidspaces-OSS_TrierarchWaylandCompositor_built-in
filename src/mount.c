@@ -832,8 +832,8 @@ int setup_custom_binds(struct ds_config *cfg, const char *rootfs) {
 
     /* Perform bind mount (handles source/target symlink checks securely) */
     if (bind_mount(cfg->binds[i].src, tgt) < 0) {
-      ds_warn("Failed to bind mount %s on %s (skipping)", cfg->binds[i].src,
-              tgt);
+      ds_warn("Failed to bind mount %s on %s: %s (skipping)", cfg->binds[i].src,
+              cfg->binds[i].dest, strerror(errno));
       continue;
     }
 

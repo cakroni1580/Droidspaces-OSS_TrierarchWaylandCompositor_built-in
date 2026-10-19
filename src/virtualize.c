@@ -140,6 +140,8 @@ static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
 
     if (sscanf(line, "%127[^:]: %lld", key, &val) == 2 && mem_limit > 0) {
       long long lim_kb = mem_limit / 1024;
+      int swap_line = !strcmp(key, "SwapTotal") || !strcmp(key, "SwapFree") ||
+                      !strcmp(key, "SwapCached");
 
       if (!strcmp(key, "MemTotal"))
         val = lim_kb;
@@ -159,9 +161,11 @@ static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
           val = lim_kb - 1;
         if (val < 0)
           val = 0;
-      } else if (!strcmp(key, "SwapTotal") || !strcmp(key, "SwapFree"))
-        val = 0;
-      else if (!strcmp(key, "AnonPages") && cg_anon >= 0)
+      } else if (swap_line) {
+        /* Allowed swap is the host's, so show the host's */
+        if (!cfg->swap_uncapped)
+          val = 0;
+      } else if (!strcmp(key, "AnonPages") && cg_anon >= 0)
         val = cg_anon / 1024;
       else if ((!strcmp(key, "Cached") || !strcmp(key, "Mapped")) &&
                cg_file >= 0)
@@ -172,7 +176,7 @@ static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
         val = (long long)(val * ratio);
 
       /* Cap all fields at MemTotal to avoid nonsensical values */
-      if (has_kb && val > lim_kb)
+      if (has_kb && val > lim_kb && !swap_line)
         val = lim_kb;
 
       char fkey[130];
@@ -192,6 +196,18 @@ static char *gen_meminfo(struct ds_config *cfg, size_t *out_len) {
   fclose(f);
   buf[off] = '\0';
   *out_len = off;
+  return buf;
+}
+
+/* /proc/swaps: a memory-limited container gets no swap unless allowed, and
+ * meminfo says so, but fastfetch and swapon list the devices from here and
+ * would show the host's zram filling up. A header with no devices is "no
+ * swap". With swap allowed the host's file is the truth and stays. */
+static char *gen_swaps(struct ds_config *cfg, size_t *out_len) {
+  (void)cfg;
+  char *buf = strdup("Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n");
+  if (buf)
+    *out_len = strlen(buf);
   return buf;
 }
 
@@ -662,11 +678,50 @@ static void ds_virtualize_affinity(struct ds_config *cfg) {
  * namespaces, so without this it would see, and run on, every host CPU while
  * the rest of the container sees one. Call before setns(): init_pid is a host
  * PID. */
+/* Qualcomm kernels with core_ctl drop isolated CPUs from sched_getaffinity(),
+ * and which CPUs are isolated changes by the second. Copying that pins a
+ * session to whichever of init's CPUs happened to be awake, or leaves it on
+ * every host CPU when none were. Cpus_allowed_list is the mask init was given.
+ */
+static int task_cpus_allowed(pid_t pid, cpu_set_t *mask) {
+  char path[64], line[1024];
+  snprintf(path, sizeof(path), DS_PROC_STATUS_FMT, (int)pid);
+  FILE *f = fopen(path, "re");
+  if (!f)
+    return -1;
+
+  int found = 0;
+  while (!found && fgets(line, sizeof(line), f)) {
+    if (strncmp(line, "Cpus_allowed_list:", 18) != 0)
+      continue;
+    found = 1;
+    /* "0-1,4,6-7" */
+    for (char *p = line + 18; *p;) {
+      char *end;
+      long a = strtol(p, &end, 10);
+      if (end == p) {
+        p++;
+        continue;
+      }
+      long b = a;
+      if (*end == '-')
+        b = strtol(end + 1, &end, 10);
+      for (long i = a; i >= 0 && i <= b && i < CPU_SETSIZE; i++)
+        CPU_SET((int)i, mask);
+      p = end;
+    }
+  }
+  fclose(f);
+  return (found && CPU_COUNT(mask) > 0) ? 0 : -1;
+}
+
 void ds_virtualize_join(pid_t init_pid) {
   cpu_set_t mask;
   CPU_ZERO(&mask);
-  if (sched_getaffinity(init_pid, sizeof(mask), &mask) == 0 &&
-      sched_setaffinity(0, sizeof(mask), &mask) < 0) {
+  if (task_cpus_allowed(init_pid, &mask) < 0 &&
+      sched_getaffinity(init_pid, sizeof(mask), &mask) < 0)
+    return;
+  if (sched_setaffinity(0, sizeof(mask), &mask) < 0) {
   }
 }
 
@@ -695,9 +750,12 @@ int ds_virtualize_init(struct ds_config *cfg) {
     char *(*gen)(struct ds_config *, size_t *);
     int enabled;
   } proc_files[] = {
-      {"meminfo", gen_meminfo, has_mem}, {"cpuinfo", gen_cpuinfo, has_cpu},
-      {"stat", gen_stat, has_cpu},       {"uptime", gen_uptime, 1},
+      {"meminfo", gen_meminfo, has_mem},
+      {"cpuinfo", gen_cpuinfo, has_cpu},
+      {"stat", gen_stat, has_cpu},
+      {"uptime", gen_uptime, 1},
       {"loadavg", gen_loadavg, 1},
+      {"swaps", gen_swaps, has_mem && !cfg->swap_uncapped},
   };
 
   for (size_t i = 0; i < ARRAY_SIZE(proc_files); i++) {

@@ -94,46 +94,15 @@ object BinaryInstaller {
                 }
                 inputStream.close()
 
-                // Create temp file path in the same directory as target (same filesystem for atomic move)
-                // Using .tmp suffix - the move is atomic so no race condition
-                val tempTargetPath = "$targetPath.tmp"
-
-                // Step 1: Copy from app cache to temp location in target directory (requires root)
-                val copyResult = Shell.cmd("cp ${tempFile.absolutePath} $tempTargetPath 2>&1").exec()
-                if (!copyResult.isSuccess) {
-                    tempFile.delete()
-                    return Result.failure(
-                        Exception("Failed to copy $displayName to temp location: ${copyResult.err.joinToString()}")
-                    )
-                }
-                tempFile.delete() // Clean up app cache temp file
-
-                // Step 2: Set permissions on temp file (must be done before move)
-                val chmodResult = Shell.cmd("chmod 755 $tempTargetPath 2>&1").exec()
-                if (!chmodResult.isSuccess) {
-                    Shell.cmd("rm -f $tempTargetPath 2>&1").exec() // Clean up temp file
-                    return Result.failure(
-                        Exception("Failed to set permissions for $displayName: ${chmodResult.err.joinToString()}")
-                    )
-                }
-
-                // Step 3: Use atomic move (mv -f) to replace target file
-                // mv is atomic on the same filesystem - it just renames the inode
-                // This works even if the target binary is currently executing (no "text file busy" error)
+                // The rename inside installFileDurably also dodges "text file busy" while the
+                // daemon is running the old binary.
                 onProgress(InstallationStep.SettingPermissions(targetPath))
-                val moveResult = Shell.cmd("mv -f $tempTargetPath $targetPath 2>&1").exec()
-                if (!moveResult.isSuccess) {
-                    Shell.cmd("rm -f $tempTargetPath 2>&1").exec() // Clean up temp file on failure
+                val installResult = ContainerManager.installFileDurably(tempFile.absolutePath, targetPath, "755")
+                tempFile.delete()
+                if (!installResult.isSuccess) {
                     return Result.failure(
-                        Exception("Failed to install $displayName: ${moveResult.err.joinToString()}")
+                        Exception("Failed to install $displayName: ${(installResult.out + installResult.err).joinToString()}")
                     )
-                }
-
-                // Step 4: Final permission check (mv preserves permissions, but ensure they're correct)
-                val verifyChmodResult = Shell.cmd("chmod 755 $targetPath 2>&1").exec()
-                if (!verifyChmodResult.isSuccess) {
-                    // Non-fatal warning - permissions might already be correct
-                    // Continue as the move succeeded
                 }
 
                 return Result.success(Unit)

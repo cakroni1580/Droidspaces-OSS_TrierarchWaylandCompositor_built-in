@@ -407,8 +407,10 @@ struct ds_config {
   int selinux_permissive;  /* --selinux-permissive */
   int sandboxing_allowed;  /* --allow-sandboxing */
   int allow_vts;           /* --allow-vts: leave host VTs unmasked in hw mode */
-  int net_bridgeless;      /* Probe result: no CONFIG_BRIDGE, use PTP NAT */
-  int reboot_cycle;        /* 1 if we are in a reboot loop */
+  int allow_swap;    /* --allow-swap: a memory-limited container may use swap */
+  int swap_uncapped; /* runtime, never saved: no swap cap is in force */
+  int net_bridgeless;  /* Probe result: no CONFIG_BRIDGE, use PTP NAT */
+  int reboot_cycle;    /* 1 if we are in a reboot loop */
   int force_cgroupv1;  /* --force-cgroupv1: use v1 even if v2 is available */
   int privileged_mask; /* --privileged bitmask */
   int format_output;   /* --format: JSON output (show, info) */
@@ -514,6 +516,7 @@ struct ds_status {
    * host the container may use, the same scale as cpu_permill. */
   long ram_limit_kb;
   long cpu_limit_permill;
+  int swap_allowed; /* 0 only while a memory limit holds swap at 0 */
 };
 
 /* Caller fills name, pid and hostname. Fills the rest for every entry in one
@@ -600,6 +603,7 @@ void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
                            pid_t *pid_out, const char *pidfile,
                            const char *sock_path, const char *tag);
 void ds_oom_protect(void);
+void ds_oom_unprotect(void);
 int ds_thread_create(pthread_t *tid, void *(*fn)(void *), void *arg);
 /* Common preamble for a forked long-lived daemon child (audio/GPU/X11 helper):
  * ignore terminal-disconnect signals so it outlives the launching session and
@@ -654,6 +658,7 @@ void parse_privileged(const char *value, struct ds_config *cfg);
 /* android.c */
 
 int is_android(void);
+void android_native_personality(void);
 void android_optimizations(int enable);
 void ds_set_selinux_permissive(int enable);
 int ds_get_selinux_status(void);
@@ -716,13 +721,14 @@ int ds_cgroup_attach(const char *container_name);
 void ds_cgroup_cleanup_container(const char *container_name);
 void print_cgroup_status(struct ds_config *cfg);
 void ds_cgroup_apply_limits(struct ds_config *cfg);
+int ds_cgroup_has_swap_accounting(void);
 int ds_cgroup_ctrl_dir(const char *ctrl, const char *container_name, char *dir,
                        size_t size);
 void ds_cgroup_setup(struct ds_config *cfg);
 void ds_cgroup_join(const char *container_name);
 void ds_cgroup_get_limits(const char *container_name, long long *mem,
                           long long *cpu_quota, long long *cpu_period,
-                          long long *pids);
+                          long long *pids, int *swap_capped);
 int ds_cgroup_count_tasks(const char *container_name, int *running, int *total);
 int ds_cgroup_cpu_times(const char *container_name, long long *user_us,
                         long long *system_us);

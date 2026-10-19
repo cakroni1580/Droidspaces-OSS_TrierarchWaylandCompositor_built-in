@@ -49,6 +49,7 @@ data class ContainerConfigState(
     val memoryLimit: Long = 0,
     val cpuQuota: Long = 0,
     val pidsLimit: Long = 0,
+    val allowSwap: Boolean = false,
 )
 
 /** Extract the editable config fields from an existing container. */
@@ -87,6 +88,7 @@ fun ContainerInfo.toConfigState(): ContainerConfigState = ContainerConfigState(
     memoryLimit = memoryLimit,
     cpuQuota = cpuQuota,
     pidsLimit = pidsLimit,
+    allowSwap = allowSwap,
 )
 
 /**
@@ -129,4 +131,5 @@ fun ContainerInfo.withConfig(state: ContainerConfigState): ContainerInfo = copy(
     memoryLimit = state.memoryLimit,
     cpuQuota = state.cpuQuota,
     pidsLimit = state.pidsLimit,
+    allowSwap = state.allowSwap,
 )

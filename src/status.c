@@ -269,8 +269,11 @@ long ds_collect_status(struct ds_status *st, int n) {
       st[i].ram_used_kb = (long)((mem - cache) / 1024);
 
     long long lim_mem, quota, period, lim_pids;
-    ds_cgroup_get_limits(st[i].name, &lim_mem, &quota, &period, &lim_pids);
+    int swap_capped;
+    ds_cgroup_get_limits(st[i].name, &lim_mem, &quota, &period, &lim_pids,
+                         &swap_capped);
     st[i].ram_limit_kb = (long)(lim_mem / 1024);
+    st[i].swap_allowed = !swap_capped;
     long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
     long cpu_lim =
         quota > 0 && ncpu > 0 ? (long)(quota * 1000 / (period * ncpu)) : 0;
@@ -321,4 +324,5 @@ void ds_json_status(const struct ds_status *st, int *first) {
   ds_json_int("cpu_permill", st->cpu_permill, first);
   ds_json_int("ram_limit_kb", st->ram_limit_kb, first);
   ds_json_int("cpu_limit_permill", st->cpu_limit_permill, first);
+  ds_json_int("swap_allowed", st->swap_allowed, first);
 }

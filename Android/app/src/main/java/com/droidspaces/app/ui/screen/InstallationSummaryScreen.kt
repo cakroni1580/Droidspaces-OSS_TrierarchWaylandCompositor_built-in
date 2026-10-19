@@ -144,6 +144,7 @@ fun InstallationSummaryScreen(
                     val cpuLabel = ResourceLimits.cpuLabel(context, config)
                     val pidsLabel = ResourceLimits.pidsLabel(context, config)
                     if (memoryLabel != null) SummaryItem(stringResource(R.string.limit_memory), memoryLabel, Icons.Default.Memory)
+                    if (memoryLabel != null && config.allowSwap) SummaryItem(stringResource(R.string.limit_swap), stringResource(R.string.enabled_legend), Icons.Default.SwapVert)
                     if (cpuLabel != null) SummaryItem(stringResource(R.string.limit_cpu), cpuLabel, Icons.Default.Speed)
                     if (pidsLabel != null) SummaryItem(stringResource(R.string.limit_pids), pidsLabel, Icons.Default.Tag)
 

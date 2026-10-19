@@ -166,9 +166,7 @@ object ContainerInstaller {
             val tempConfigFile = File("${context.cacheDir}/container_${sanitizedName}.config")
             tempConfigFile.writeText(configContent)
 
-            // Copy temp config to final location using shell (root required)
-            // Quote paths to handle any special characters
-            val copyResult = Shell.cmd("cp ${quote(tempConfigFile.absolutePath)} ${quote(configFilePath)} 2>&1").exec()
+            val copyResult = ContainerManager.installFileDurably(tempConfigFile.absolutePath, configFilePath)
             if (!copyResult.isSuccess) {
                 // Check both stdout and stderr for error messages
                 val errorOutput = (copyResult.out + copyResult.err).joinToString("\n").trim()
@@ -177,12 +175,6 @@ object ContainerInstaller {
                 logger.e("Source: ${tempConfigFile.absolutePath}")
                 logger.e("Destination: $configFilePath")
                 throw Exception("Failed to write container config: $errorMsg")
-            }
-
-            // Set proper permissions
-            val chmodResult = Shell.cmd("chmod 644 ${quote(configFilePath)} 2>&1").exec()
-            if (!chmodResult.isSuccess) {
-                logger.w("Warning: Failed to set config file permissions")
             }
 
             // Clean up temp config file
@@ -200,12 +192,11 @@ object ContainerInstaller {
                 try {
                     tempEnvFile.writeText(config.envFileContent + "\n")
 
-                    val envCopyResult = Shell.cmd("cp ${quote(tempEnvFile.absolutePath)} ${quote(envFilePath)} 2>&1").exec()
+                    val envCopyResult = ContainerManager.installFileDurably(tempEnvFile.absolutePath, envFilePath)
                     if (!envCopyResult.isSuccess) {
-                        val errorMsg = envCopyResult.err.joinToString("\n")
+                        val errorMsg = (envCopyResult.out + envCopyResult.err).joinToString("\n")
                         logger.w("Warning: Failed to copy .env file: $errorMsg")
                     } else {
-                        Shell.cmd("chmod 644 ${quote(envFilePath)}").exec()
                         logger.i("Environment variables saved")
                         createdPaths.add(envFilePath)
                     }

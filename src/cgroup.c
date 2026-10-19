@@ -759,6 +759,9 @@ static int apply_limit(struct ds_config *cfg, const char *ctrl,
   if (!file)
     return 1;
 
+  /* Only undo a cgroup this call made: a later knob failing must not take
+   * the earlier limits in the same cgroup down with it. */
+  int made = ver == 1 && access(dir, F_OK) != 0;
   if (ver == 1) {
     mkdir_p(dir, 0755);
     /* Kernels before 5.x account flat by default, and then the limit would
@@ -766,6 +769,11 @@ static int apply_limit(struct ds_config *cfg, const char *ctrl,
      * hierarchical and ignore this. */
     snprintf(path, sizeof(path), "%s/memory.use_hierarchy", dir);
     if (!strcmp(ctrl, "memory") && write_file(path, "1") < 0) {
+    }
+    /* A cgroup left over from an earlier run keeps that run's memsw cap, and
+     * v1 refuses a limit_in_bytes above it, so lift it before any write. */
+    snprintf(path, sizeof(path), "%s/memory.memsw.limit_in_bytes", dir);
+    if (!strcmp(ctrl, "memory") && write_file(path, "-1") < 0) {
     }
   }
 
@@ -785,7 +793,7 @@ static int apply_limit(struct ds_config *cfg, const char *ctrl,
   } else {
     return 1;
   }
-  if (ver == 1)
+  if (made)
     rmdir(dir);
   return 0;
 }
@@ -802,6 +810,24 @@ void ds_cgroup_apply_limits(struct ds_config *cfg) {
                      "CONFIG_MEMCG, and no cgroup_disable=memory on the "
                      "kernel command line"))
       cfg->memory_limit = 0;
+    /* Unless the user allowed swap, a container at its limit would spill
+     * into the host's swap, which on Android is zram, so it keeps eating RAM
+     * and kswapd CPU until the whole phone crawls. Cap it at its own limit
+     * and let its OOM killer act instead. v2's swap.max=0 is absolute. v1 has
+     * no swap-only knob: RAM+swap equal to RAM leaves no room for swap at the
+     * limit, though global reclaim may still move some pages out within it.
+     * Per-cgroup swappiness would stop that, but Android 5.15 accepts the
+     * write and ignores it. A cap the kernel cannot provide counts as allowed
+     * swap, so the virtualization does not report a cap that is not there.
+     * That goes in a runtime field, allow_swap stays what the user saved.
+     * Allowed swap needs no write: the memory write above already lifted a
+     * leftover v1 memsw cap. */
+    cfg->swap_uncapped =
+        !cfg->memory_limit || cfg->allow_swap ||
+        !apply_limit(cfg, "memory", "memory.swap.max", "0",
+                     "memory.memsw.limit_in_bytes", val,
+                     "CONFIG_MEMCG_SWAP with swap accounting on, swapaccount=1 "
+                     "on the kernel command line before 5.8");
   }
   if (cfg->cpu_quota) {
     long long per = cfg->cpu_period > 0 ? cfg->cpu_period : 100000;
@@ -849,16 +875,24 @@ void ds_cgroup_apply_limits(struct ds_config *cfg) {
  * dropped at start. 0 means unlimited. */
 void ds_cgroup_get_limits(const char *container_name, long long *mem,
                           long long *cpu_quota, long long *cpu_period,
-                          long long *pids) {
+                          long long *pids, int *swap_capped) {
   char dir[PATH_MAX], path[PATH_MAX + 64], buf[256];
   int ver;
   *mem = *cpu_quota = *cpu_period = *pids = 0;
+  *swap_capped = 0;
 
   if ((ver = ds_cgroup_ctrl_dir("memory", container_name, dir, sizeof(dir)))) {
     snprintf(path, sizeof(path), "%s/%s", dir,
              ver == 1 ? "memory.limit_in_bytes" : "memory.max");
     if (read_file(path, buf, sizeof(buf)) > 0)
       *mem = parse_cgroup_ll(buf);
+    /* Swap is capped when v2 swap.max is 0, or v1 RAM+swap equals RAM */
+    snprintf(path, sizeof(path), "%s/%s", dir,
+             ver == 1 ? "memory.memsw.limit_in_bytes" : "memory.swap.max");
+    if (read_file(path, buf, sizeof(buf)) > 0) {
+      long long sw = parse_cgroup_ll(buf);
+      *swap_capped = ver == 2 ? sw == 0 : sw == *mem;
+    }
   }
   if ((ver = ds_cgroup_ctrl_dir("cpu", container_name, dir, sizeof(dir))) ==
       2) {
@@ -882,13 +916,46 @@ void ds_cgroup_get_limits(const char *container_name, long long *mem,
   /* Unlimited reads back as "max" or -1 depending on the file, and v1
    * memory spells it as a page-rounded LLONG_MAX */
   if (*mem < 0 || *mem > LLONG_MAX / 2)
-    *mem = 0;
+    *mem = *swap_capped = 0;
   if (*cpu_quota <= 0)
     *cpu_quota = *cpu_period = 0;
   else if (*cpu_period <= 0)
     *cpu_period = 100000; /* the kernel's default period */
   if (*pids < 0)
     *pids = 0;
+}
+
+/* Whether the kernel accounts swap per cgroup, without which no swap cap can
+ * be set. v1 has the memsw files at its root. A cgroup2 root never carries
+ * memory files, so ask a cgroup one level down that has memory enabled: it
+ * has swap.max exactly when swap is accounted. With none to ask, say yes; a
+ * cap that then fails is warned about at start and treated as allowed swap.
+ * ponytail: one level deep, systemd's slices always answer it. */
+int ds_cgroup_has_swap_accounting(void) {
+  char mnt[PATH_MAX], path[PATH_MAX * 2];
+  if (find_host_cgroup_mount("memory", mnt, sizeof(mnt))) {
+    snprintf(path, sizeof(path), "%s/memory.memsw.limit_in_bytes", mnt);
+    return access(path, F_OK) == 0;
+  }
+  if (!find_host_cgroup_mount(NULL, mnt, sizeof(mnt)))
+    return 0;
+  DIR *d = opendir(mnt);
+  if (!d)
+    return 0;
+  int answer = 1;
+  struct dirent *de;
+  while ((de = readdir(d)) != NULL) {
+    if (de->d_name[0] == '.')
+      continue;
+    snprintf(path, sizeof(path), "%s/%s/memory.max", mnt, de->d_name);
+    if (access(path, F_OK) != 0)
+      continue;
+    snprintf(path, sizeof(path), "%s/%s/memory.swap.max", mnt, de->d_name);
+    answer = access(path, F_OK) == 0;
+    break;
+  }
+  closedir(d);
+  return answer;
 }
 
 /* Count the tasks under one cgroup2 dir, children included: all of them in

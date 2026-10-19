@@ -432,6 +432,11 @@ int check_requirements_detailed(int format_output) {
                  "CONFIG_MEMCG, and no cgroup_disable=memory on the kernel "
                  "command line; --memory is skipped if absent",
                  ds_cgroup_has_controller("memory"), "OPT");
+  print_ds_check("swap_limit", "Swap limit support",
+                 "CONFIG_MEMCG_SWAP with swap accounting on (swapaccount=1 "
+                 "before 5.8); without it a memory-limited container can "
+                 "still use swap",
+                 ds_cgroup_has_swap_accounting(), "OPT");
   print_ds_check(
       "cpu_limit", "CPU limit support",
       "CONFIG_CFS_BANDWIDTH, and no cgroup_disable=cpu on the kernel command "

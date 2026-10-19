@@ -102,6 +102,8 @@ void print_usage(void) {
       "  -V, --volatile            Discard changes on exit (OverlayFS)\n"
       "      --force-cgroupv1      Force legacy cgroup v1 hierarchy\n"
       "      --memory=LIMIT        Memory limit (e.g. 512M, 2G)\n"
+      "      --allow-swap          Let a memory-limited container use host "
+      "swap\n"
       "      --cpus=COUNT          CPU limit (e.g. 1.5, 2)\n"
       "      --pids-limit=N        Max number of PIDs\n"
       "      --privileged=TAGS     Relax security: nomask, nocaps, noseccomp, "
@@ -366,6 +368,7 @@ static struct option long_options[] = {
     {"allow-sandboxing", no_argument, 0, 279},
     {"allow-userns", no_argument, 0, 279}, /* old name, kept for scripts */
     {"allow-vts", no_argument, 0, 278},
+    {"allow-swap", no_argument, 0, 284},
     {"volatile", no_argument, 0, 'V'},
     {"bind-mount", required_argument, 0, 'B'},
     {"bind", required_argument, 0, 'B'},
@@ -542,6 +545,9 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       break;
     case 278:
       cfg->allow_vts = 1;
+      break;
+    case 284:
+      cfg->allow_swap = 1;
       break;
     case 'V':
       cfg->volatile_mode = 1;

@@ -9,6 +9,7 @@
 #include "droidspace.h"
 #include <fcntl.h>
 #include <grp.h>
+#include <sys/personality.h>
 
 /* Android detection */
 
@@ -32,6 +33,21 @@ int is_android(void) {
   }
 
   return cached_result;
+}
+
+/* A 32-bit Android on a 64-bit kernel runs init as PER_LINUX32 and every
+ * process inherits it, the container included, so a 64-bit rootfs sees uname
+ * report armv8l and install scripts fetch 32-bit builds. Only the 64-bit
+ * backend can be running on a 64-bit kernel, so it alone resets this. Call
+ * while the host /system is still visible, is_android() looks there. */
+void android_native_personality(void) {
+#if UINTPTR_MAX > 0xffffffffu
+  if (!is_android())
+    return;
+  int persona = personality(0xffffffff);
+  if (persona != -1 && (persona & PER_MASK) == PER_LINUX32)
+    personality((unsigned long)((persona & ~PER_MASK) | PER_LINUX));
+#endif
 }
 
 /* Android optimizations */

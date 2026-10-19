@@ -89,6 +89,7 @@ Each flag that configures the container is saved in its config file on `start`, 
 | Flag | Value | Config key |
 |------|-------|------------|
 | `--memory` | size with `K`, `M`, `G` or `T`, minimum `4M` | `memory_limit`, in bytes |
+| `--allow-swap` | | `allow_swap` |
 | `--cpus` | cores, fractions allowed | `cpu_quota` and `cpu_period`, in microseconds |
 | `--pids-limit` | process count, minimum 16 | `pids_limit` |
 | `-P`, `--selinux-permissive` | | `selinux_permissive` |
