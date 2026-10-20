@@ -1,7 +1,7 @@
 <!--
 title: 卸载指南
 section: Reference
-order: 5
+order: 4
 desc: 从 Android 和 Linux 上安全卸载 Droidspaces。彻底删除容器、后端数据、APK 和系统文件。
 keywords: uninstall, droidspaces, remove, android, delete, rootfs, cleanup, container, runtime, backend, data
 -->

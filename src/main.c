@@ -131,7 +131,7 @@ void print_usage(void) {
       "                            e.g. -B /data:/data,/tmp:/tmp\n"
       "      --reset               Reset config to defaults (keeps "
       "name/rootfs)\n"
-      "      --format              JSON output (show, info, check)\n"
+      "      --json                JSON output (show, info, check)\n"
       "      --help                Show this help message\n\n");
 
   printf(C_BOLD
@@ -397,7 +397,7 @@ static struct option long_options[] = {
     {"macvlan-parent", required_argument, 0, 281},
     {"macvlan-mode", required_argument, 0, 282},
     {"reset", no_argument, 0, 256},
-    {"format", no_argument, 0, 265},
+    {"json", no_argument, 0, 265},
     {"memory", required_argument, 0, 266},
     {"cpus", required_argument, 0, 267},
     {"pids-limit", required_argument, 0, 268},
@@ -836,8 +836,8 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       cfg->gpu_mode = 1;
       break;
     case 265:
-      /* --format: JSON output */
-      cfg->format_output = 1;
+      /* --json: JSON output */
+      cfg->json_output = 1;
       break;
 
     case 266: {
@@ -1123,7 +1123,7 @@ int main(int argc, char **argv) {
 
   /* Basic info commands */
   if (strcmp(cmd, "check") == 0) {
-    ret = check_requirements_detailed(cfg.format_output);
+    ret = check_requirements_detailed(cfg.json_output);
     goto cleanup;
   }
   if (strcmp(cmd, "version") == 0) {

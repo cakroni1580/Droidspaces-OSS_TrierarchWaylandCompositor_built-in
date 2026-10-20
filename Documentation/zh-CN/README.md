@@ -15,12 +15,12 @@ Droidspaces 在已 root 的 Android 手机或 Linux PC 上，以容器方式运�
 
 ## 你能得到什么
 
-- **真正的 Linux 系统，不是 chroot，也不是虚拟机。** Ubuntu、Debian、Fedora、Arch、Alpine、NixOS、OpenWrt 等发行版都以自己的 init 作为 PID 1 启动。服务、定时器、在容器内执行 `reboot`，一切都能正常工作。
-- **开箱即用的网络。** NAT 模式让每个容器无需任何配置就拥有自己的地址和互联网访问。网关模式把容器的 LAN 交给一个 OpenWrt 容器，由它负责 DHCP、DNS 和防火墙。Macvlan 则让容器直接接入有线局域网，从路由器获取自己的地址。
-- **运行在手机上的桌面环境。** 显示用 Anland 或 Termux:X11，GPU 用 VirGL 或高通的 Turnip，声音用 PulseAudio，全部自动启动。打开开关、启动容器，桌面环境就会带着声音出现。
-- **需要时能访问硬件。** GPU、USB、传感器和块设备都可以通过一个开关暴露给容器。Docker 和 Podman 能在所有受支持内核上的容器内运行。
-- **长期运行的容器。** 在 Android 上，容器可以在开机时启动，早于你解锁手机，并且**持续运行数月**，无论应用是打开、关闭还是已卸载。一切都存放在 `/data/local/Droidspaces`。
-- **Linux 上是同一个二进制。** CLI 的每个功能在 Linux PC 上表现一致。软件包构建涵盖 aarch64、armhf、x86_64、x86 和 riscv64。
+- **真正的 Linux 系统，不是 chroot，也不是虚拟机：** Ubuntu、Debian、Fedora、Arch、Alpine、NixOS、OpenWrt 等发行版都以自己的 init 作为 PID 1 启动。服务、定时器、在容器内执行 `reboot`，一切都能正常工作。
+- **开箱即用的网络：** NAT 模式让每个容器无需任何配置就拥有自己的地址和互联网访问。网关模式把容器的 LAN 交给一个 OpenWrt 容器，由它负责 DHCP、DNS 和防火墙。Macvlan 则让容器直接接入有线局域网，从路由器获取自己的地址。
+- **运行在手机上的桌面环境：** 显示用 Anland 或 Termux:X11，GPU 用 VirGL 或高通的 Turnip，声音用 PulseAudio，全部自动启动。打开开关、启动容器，桌面环境就会带着声音出现。
+- **需要时能访问硬件：** GPU、USB、传感器和块设备都可以通过一个开关暴露给容器。Docker 和 Podman 能在所有受支持内核上的容器内运行。
+- **长期运行的容器：** 在 Android 上，容器可以在开机时启动，早于你解锁手机，并且**持续运行数月**，无论应用是打开、关闭还是已卸载。一切都存放在 `/data/local/Droidspaces`。
+- **Linux 上是同一个二进制：** CLI 的每个功能在 Linux PC 上表现一致。软件包构建涵盖 aarch64、armhf、x86_64、x86 和 riscv64。
 
 ## 系统要求
 

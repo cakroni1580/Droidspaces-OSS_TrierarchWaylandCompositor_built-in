@@ -1,7 +1,7 @@
 <!--
 title: Droidspaces 上的 NixOS 入门指南
 section: Reference
-order: 4
+order: 3
 desc: 在 Droidspaces 容器中运行 NixOS。构建 tarball、配置兼容性，以及尝试实验性的 Finix 系统。
 keywords: nixos, droidspaces, nix, container, android, finix, containerized
 -->

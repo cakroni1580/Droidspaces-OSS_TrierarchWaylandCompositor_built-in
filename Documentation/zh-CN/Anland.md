@@ -1,7 +1,7 @@
 <!--
 title: Anland (Wayland) 使用指南
-section: 指南
-order: 3
+section: Guides
+order: 5
 desc: 在 Droidspaces Android 容器中配置 Anland Wayland 显示，包括后端安装、APK 安装与容器选项。
 keywords: anland, wayland, droidspaces, android, kwin, weston, kde, plasma, gpu, adreno, snapdragon
 -->
@@ -57,15 +57,15 @@ Anland 是 Droidspaces 的可选 Wayland 显示方案。它通过一套缓冲区
 
 这种方式适合希望自行选择桌面环境、发行版或调试后端的用户。
 
-1. **进入 Droidspaces 容器。**
+1. **进入 Droidspaces 容器：**
 
-2. **拉取 Anland 源码。**
+2. **拉取 Anland 源码：**
 
    ```bash
    git clone -b legacy https://github.com/SuperTurtleDev/anland.git
    ```
 
-3. **在 `producers` 目录中选择对应的桌面环境和发行版。**
+3. **在 `producers` 目录中选择对应的桌面环境和发行版：**
 
    以 KDE 后端为例：
 
@@ -79,11 +79,11 @@ Anland 是 Droidspaces 的可选 Wayland 显示方案。它通过一套缓冲区
    └── other desktops
    ```
 
-4. **以 root 身份执行对应目录中的 `build.sh`。**
+4. **以 root 身份执行对应目录中的 `build.sh`：**
 
    构建脚本会处理依赖安装，并将对应的 Anland 后端安装到容器中。
 
-5. **使用项目提供的 `startup.sh` 启动桌面。**
+5. **使用项目提供的 `startup.sh` 启动桌面：**
 
 <a id="rootfs-builder"></a>
 
@@ -97,7 +97,7 @@ Anland 是 Droidspaces 的可选 Wayland 显示方案。它通过一套缓冲区
 >
 > 该方式目前仅支持 KDE Plasma, Gnome, niri 桌面。
 
-1. **Fork 该项目。**
+1. **Fork 该项目：**
 2. 进入 GitHub **Actions** 页面，找到 `编译并发布Droidspaces Rootfs` 工作流。
 3. 手动运行工作流，显示后端选择 `anland-wayland` 选项。
 4. 等待构建完成，通常约 15 分钟。
@@ -145,10 +145,10 @@ Anland 是 Droidspaces 的可选 Wayland 显示方案。它通过一套缓冲区
 
    Anland 自带音频处理链路，通常不需要 Droidspaces 的 PulseAudio 配置。关闭该选项后，还需要清理容器内已有的 `PULSE_SERVER` 环境变量，避免应用继续连接旧的 PulseAudio 服务。
 
-2. **默认关闭 SELinux 宽容模式。**
+2. **默认关闭 SELinux 宽容模式：**
 
    建议优先在 SELinux enforcing 模式下运行。若某些设备在强制模式下无法正常启动或显示 Anland，再临时启用 **SELinux 宽容模式** 作为兼容性排查手段。
 
-3. **运行 KDE Plasma 等桌面环境时，启用「允许用户命名空间」。**
+3. **运行 KDE Plasma 等桌面环境时，启用「允许用户命名空间」：**
 
    这是获得最佳性能的推荐设置。若不启用，KDE Plasma Wayland 可能出现明显卡顿或响应迟缓。Anland 本身不需要特权模式，也无需启用 `noseccomp`、`nomask` 或其他特权选项。

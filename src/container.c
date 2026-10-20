@@ -1715,7 +1715,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       safe_strncpy(cfg->container_name, first_name,
                    sizeof(cfg->container_name));
       resolve_pidfile_from_name(first_name, cfg->pidfile, sizeof(cfg->pidfile));
-    } else if (cfg->format_output) {
+    } else if (cfg->json_output) {
       return show_containers(cfg);
     } else {
       /* Multiple containers running, show Host info and list */
@@ -1766,7 +1766,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
   int swap_allowed = !swap_capped;
 
   /* Success - print Host and detailed Container info */
-  if (cfg->format_output) {
+  if (cfg->json_output) {
     struct ds_status st = {0};
     safe_strncpy(st.name, cfg->container_name, sizeof(st.name));
     st.pid = pid;

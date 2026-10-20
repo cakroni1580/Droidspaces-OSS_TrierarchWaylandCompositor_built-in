@@ -1,7 +1,7 @@
 <!--
 title: 从零开始的网络基础
-section: 指南
-order: 5
+section: Guides
+order: 7
 desc: 面向初学者的 Droidspaces 网关模式背后每个网络概念指南——IP 地址、LAN、WAN、DHCP、DNS、NAT、网桥、veth 对、网络命名空间与 OpenWRT。
 keywords: droidspaces, networking, gateway, openwrt, nat, dhcp, dns, lan, wan, veth, bridge, namespace, linux, android
 -->
@@ -364,7 +364,7 @@ veth 对是宿主机命名空间和容器命名空间之间的隧道：
 
 问题在于：如果 Droidspaces 也试图为这些容器安装 NAT、DHCP 和 DNS，就会与 OpenWRT 正在做的事情*冲突*。两个 DHCP 服务器争抢由谁分配 IP 地址。两个防火墙应用互相矛盾的规则。
 
-**网关模式解决了这个问题。** Droidspaces 退后一步。它只做 L2 的管道（虚拟线缆和交换机），让 OpenWRT 掌管所有策略：DHCP、DNS、防火墙、路由。
+**网关模式解决了这个问题：** Droidspaces 退后一步。它只做 L2 的管道（虚拟线缆和交换机），让 OpenWRT 掌管所有策略：DHCP、DNS、防火墙、路由。
 
 ### 架构总览
 
@@ -537,7 +537,7 @@ droidspaces --name=client --net=gateway --gateway=openwrt \
 
 该标志同时控制两件事，均从同一个名称派生。
 
-**1. 它命名宿主机网桥。**
+**1. 它命名宿主机网桥：**
 
 Droidspaces 在宿主机上创建的网桥命名为 `ds-{NAME}`：
 
@@ -547,7 +547,7 @@ Droidspaces 在宿主机上创建的网桥命名为 `ds-{NAME}`：
 --gateway-net=iot   ->  宿主机网桥：ds-iot
 ```
 
-**2. 它是网段标识符——客户端落在哪个网桥上。**
+**2. 它是网段标识符——客户端落在哪个网桥上：**
 
 网关 LAN 侧的 veth 名称是通过对字符串 `{gateway_container}:{gateway_net}` 进行哈希来生成的。相同的哈希 = 相同的 veth = 相同的网桥网段。这意味着共享相同 `--gateway` 和 `--gateway-net` 的多个客户端容器最终都在同一个网桥上，并且都从同一个 OpenWRT 接口获取 DHCP。
 
@@ -612,8 +612,8 @@ droidspaces --name=torbox --net=gateway --gateway=openwrt --gateway-net=vpn --ga
 
 NAT 模式除了 IPv4 之外也会给容器提供 IPv6：Droidspaces 通过路由通告 (RA) 发布一个私有 IPv6 前缀（`fd64:7370::/64`），并在出站时进行地址转换，原理与 IPv4 NAT 相同。网关容器的 WAN 口就是一个 NAT 接口，所以 OpenWRT 也可以获得 IPv6。但它不会自动配置好，开始之前需要先了解两点：
 
-- **Droidspaces 只给 OpenWRT 一个地址，而不是一段可以继续分发的地址。** 因此 OpenWRT 用自己的私有前缀 (ULA) 为 LAN 编址，并在 WAN 口再做一次 IPv6 NAT。客户端流量会被转换两次，一次由 OpenWRT，一次由 Droidspaces。这样可以正常工作，只是与真实运营商线路上使用 IPv6 的方式不同。
-- **两者都依赖宿主内核。** 容器共享宿主的内核，所以 Droidspaces 和 OpenWRT 都需要内核启用 `CONFIG_IP6_NF_NAT` 和 `CONFIG_IP6_NF_TARGET_MASQUERADE`。`droidspaces check` 会以 "IPv6 NAT support" 显示这一项。
+- **Droidspaces 只给 OpenWRT 一个地址，而不是一段可以继续分发的地址：** 因此 OpenWRT 用自己的私有前缀 (ULA) 为 LAN 编址，并在 WAN 口再做一次 IPv6 NAT。客户端流量会被转换两次，一次由 OpenWRT，一次由 Droidspaces。这样可以正常工作，只是与真实运营商线路上使用 IPv6 的方式不同。
+- **两者都依赖宿主内核：** 容器共享宿主的内核，所以 Droidspaces 和 OpenWRT 都需要内核启用 `CONFIG_IP6_NF_NAT` 和 `CONFIG_IP6_NF_TARGET_MASQUERADE`。`droidspaces check` 会以 "IPv6 NAT support" 显示这一项。
 
 Droidspaces rootfs 仓库提供的 OpenWRT 镜像已经包含第 1、2、4 步，使用它时只需为每个 LAN 执行第 3 步。其他 OpenWRT 镜像需要在网关容器内执行全部步骤。
 
@@ -693,8 +693,8 @@ ping6 -c3 google.com
 
 需要了解的三点：
 
-- **对于同时支持两种协议的站点，客户端仍然优先使用 IPv4。** 操作系统会把私有 IPv6 源地址排在 IPv4 之后，因此 IPv6 主要用于只有 IPv6 的目标。
-- **同步你的隔离规则。** 如果防火墙禁止客户端访问 Droidspaces NAT 网络 `172.28.0.0/16`，请为 `fd64:7370::/48` 添加同样的规则并加上 `option family 'ipv6'`，否则客户端可以通过 IPv6 访问其他 NAT 容器。
+- **对于同时支持两种协议的站点，客户端仍然优先使用 IPv4：** 操作系统会把私有 IPv6 源地址排在 IPv4 之后，因此 IPv6 主要用于只有 IPv6 的目标。
+- **同步你的隔离规则：** 如果防火墙禁止客户端访问 Droidspaces NAT 网络 `172.28.0.0/16`，请为 `fd64:7370::/48` 添加同样的规则并加上 `option family 'ipv6'`，否则客户端可以通过 IPv6 访问其他 NAT 容器。
 - **在网关容器上使用 `--disable-ipv6` 会关闭以上全部功能**，在客户端容器上使用则只关闭该客户端的 IPv6。
 
 ### 验证规则与内核要求

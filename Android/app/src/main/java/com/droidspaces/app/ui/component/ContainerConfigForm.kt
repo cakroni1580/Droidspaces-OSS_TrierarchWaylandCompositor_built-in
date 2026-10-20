@@ -94,7 +94,7 @@ fun ContainerConfigForm(
     var showHwAccessDialog by rememberSaveable { mutableStateOf(false) }
 
     val caps by HostCapabilities.state.collectAsState()
-    // Null until the first check --format lands or the cache loads; nothing is greyed out before then.
+    // Null until the first check --json lands or the cache loads; nothing is greyed out before then.
     fun ok(key: String) = caps?.has(key) ?: true
     // The user leaves to install Termux from the store and comes straight back.
     LifecycleResumeEffect(Unit) { HostCapabilities.refreshApps(context); onPauseOrDispose {} }

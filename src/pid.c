@@ -450,7 +450,7 @@ int show_containers(struct ds_config *cfg) {
   if (d)
     closedir(d);
 
-  if (cfg->format_output) {
+  if (cfg->json_output) {
     long ram_total = ds_collect_status(containers, count);
     printf("{\"total\":%d,\"ram_total_kb\":%ld,\"running\":[", totalcount,
            ram_total);

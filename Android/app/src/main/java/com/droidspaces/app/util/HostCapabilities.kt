@@ -12,7 +12,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * What the running kernel can do, from one `droidspaces --format check` call.
+ * What the running kernel can do, from one `droidspaces --json check` call.
  * The config form greys out what the host cannot honour, and [coerce] fixes a
  * saved config that already holds such a value.
  */
@@ -160,7 +160,7 @@ data class HostCapabilities(
                     cachedHostCapabilitiesBootId = bootId()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "check --format failed", e)
+                Log.w(TAG, "check --json failed", e)
             }
         }
     }

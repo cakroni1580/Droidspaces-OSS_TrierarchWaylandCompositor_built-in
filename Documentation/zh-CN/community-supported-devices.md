@@ -1,7 +1,7 @@
 <!--
 title: 社区支持的 Android 设备
 section: Reference
-order: 3
+order: 2
 desc: 社区维护的已通过验证可运行 Droidspaces 的 Android 设备兼容性列表。
 keywords: droidspaces, supported, devices, android, device, compatibility, kernel, support, list, hardware
 -->
@@ -26,10 +26,10 @@ keywords: droidspaces, supported, devices, android, device, compatibility, kerne
 
 | 设备名称 | 型号 | Android / ROM | Baseband / Build | 内核版本 | Root 方式 | 内核源码 | 下载链接 | Droidspaces 模式 | GPU 加速 | 状态 | 维护者 | 附加说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **Realme 6, 6i（印度版）, 6s, 7, Narzo 20 Pro, Narzo 30 4G** | RM6785 | LineageOS 23.2 - Android 16 | - | `4.14.357` | BakaSU v4.2.0 | - | [Download](https://github.com/avelith07/android_kernel_realme_mt6785/releases/tag/v0.9) | Both | Virgl | 正常运行 | [@avelith07](https://github.com/avelith07) | 适用于 RM6785（基于 RUI 2.0），已在 Android 16 上测试。内核源码基于 Lineage-24.0，应可在基于 AOSP/Lineage 的 Android 17 ROM 以及 Android 11-15 ROM 上工作。Droidspaces 不支持内存限制和 CPU 限制。请使用 Magic Mount 元模块 |
 | **OnePlus 7 Pro** | GM1911 | LineageOS 17.1 - Android 10 | `QQ3A.200805.001` | `4.14.117` | Magisk | [Source](https://github.com/charan-gn/guacamole-droidspaces-kernel) | [Download](https://github.com/charan-gn/guacamole-droidspaces-kernel/releases/tag/v1.0) | Both | Turnip &amp; Virgl | 正常运行 | [@charan-gn](https://github.com/charan-gn) | AnyKernel3 可在任何 ROM 上刷入。 |
 | **Galaxy S10（日版）** | SCV41 / SM-G973J | One UI 4.1 - Android 12 | `SCV41KDU1DWC1` | `4.14.190` | KernelSU-Next v3.1.0 | [Source](https://github.com/ravindu644/samsung_kernel_SCV41_droidspaces) | [Download](https://github.com/ravindu644/samsung_kernel_SCV41_droidspaces/releases/download/v2/Droidspaces-KSUN-Samsung-SCV41.tar) | Both | Turnip &amp; Virgl | 正常运行 | [@ravindu644](https://github.com/ravindu644) | - |
 | **Poco X2** | M1912G7Bx | BlissROM-v16.5 - Android 13 | - | `4.14.274` | KernelSU-Next v1.1.1 | [Source](https://github.com/ravindu644/phoenix-blissROM-A13-droidspaces) | [Download](https://github.com/ravindu644/phoenix-blissROM-A13-droidspaces/releases/download/v1/Droidspaces-KSUNv1.1.1-phoenix.zip) | Both | Turnip &amp; Virgl | 正常运行 | [@ravindu644](https://github.com/ravindu644) | - |
-| **Realme 6, 6i, 6s** | RMX2001L1 | RUI 2.0 - Android 11 | - | `4.14.336` | KSU-Next v3.2.0 / ReSukiSU v4.1.0 | [Source](https://github.com/Prime-TITAN-CameraMan/android_kernel_realme_nemo) | [Download](https://github.com/Prime-TITAN-CameraMan/android_kernel_realme_nemo/releases/tag/v1.1) | Both | Virgl | 正常运行 | [@Prime-TITAN-CameraMan](https://github.com/Prime-TITAN-CameraMan) | 仅限 RUI 2.0 且不支持防火墙（UFW/Fail2ban） |
 | **Redmi K20 Pro（国行）** | M1903F11A | YAAP 16 - Banshee (Android 16) | `1.0.c3-0061-1017_2229_f7c3bc9ce` | `4.14.353` | KernelSU v3.2.4-gee75714a | [Source](https://github.com/Alhkxsj/CRom-KSU-Builder) | [Download](https://github.com/Alhkxsj/CRom-KSU-Builder/releases/latest/download/raphael_YAAP-sixteen_KernelSU-by-xx.zip) | Both | Turnip &amp; Virgl | 正常运行 | [@Alhkxsj](https://github.com/Alhkxsj) | 内核源码为原版 YAAP 内核；通过自动化构建工作流应用 Droidspaces 配置 |
 | **Redmi note 7 pro (violet)** | M1901F7S | LineageOS 23.2 - Android 16 | `.c2-00029-SM6150_GEN_PACK-1.352094.1.355031.2` | `4.14.357` | Magisk | [Source](https://github.com/subhu2008/android_kernel_xiaomi_sm6150) | [Download](https://github.com/subhu2008/android_kernel_xiaomi_sm6150/releases/tag/stable) | Both | Turnip &amp; Virgl | 正常运行 | [@subhu2008](https://github.com/subhu2008) | 仅限 LineageOS 23.2。如果也能在其他 AOSP ROM 上运行，则同样可用。 |
 | **Redmi K40** | M2012K11AC | MIUI / HyperOS - Android 12 - 16 | - | `4.19.325` | ReSukiSU v4.2.0 | [Source](https://github.com/KirinNova/android_kernel_xiaomi_sm8250) | [Download](https://github.com/KirinNova/android_kernel_xiaomi_sm8250/releases/download/kernel-alioth-34749673426/MIUI_alioth_ReSukiSU-SuSFS-Droidspaces_20260913_anykernel3.zip) | Both | Turnip & Virgl | 正常运行 | [@KirinNova](https://github.com/KirinNova) | 支持 MIUI / HyperOS (Android 12-16) |

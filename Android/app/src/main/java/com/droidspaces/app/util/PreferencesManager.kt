@@ -89,7 +89,7 @@ class PreferencesManager private constructor(context: Context) {
             }
         }
 
-    // Raw `check --format` JSON and the boot it was taken on, see HostCapabilities.
+    // Raw `check --json` JSON and the boot it was taken on, see HostCapabilities.
     var cachedHostCapabilities: String?
         get() = prefs.getString(KEY_HOST_CAPABILITIES, null)
         set(value) { prefs.edit().putString(KEY_HOST_CAPABILITIES, value).apply() }

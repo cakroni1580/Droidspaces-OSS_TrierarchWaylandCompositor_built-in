@@ -1,339 +1,172 @@
 <!--
-title: Linux CLI 指南
-section: 指南
-order: 5
-desc: Droidspaces Linux CLI 完整参考手册。涵盖每个命令、参数和配置选项的说明。
-keywords: droidspaces, cli, linux, container, command, line, reference, bind, mount, nat, networking
+title: Linux CLI
+section: Guides
+order: 3
+desc: droidspaces 命令行参考：每条命令、每个参数，以及配置文件中的键。
+keywords: droidspaces, cli, linux, container, command, line, reference, flags, config, file
 -->
 
-> [!NOTE]
-> 本页的翻译落后于英文版本，部分内容可能已过时。最新内容请看[英文页面](../Linux-CLI.md)。
+# 命令行参考
 
-# Linux CLI 指南
+`droidspaces` 二进制在 Linux 和 Android 上是同一个，命令和参数也一样。在 Android 上，应用会把它安装到 `/data/local/Droidspaces/bin/droidspaces`，**将 Droidspaces 集成到系统路径中** 设置会把它放进 root shell 的 `PATH`。
 
-在 Linux 上通过命令行使用 Droidspaces 的完整指南。
+参数和命令可以以任意顺序出现，短形式和长形式可以互换，`=` 是可选的：`droidspaces -n web start` 和 `droidspaces start --name=web` 等价。`droidspaces docs` 会在分页器中离线显示同一份参考。
 
-> [!TIP]
->
-> **在 Android 上使用 CLI：** 所有命令行参数在 Android 上的用法完全一致。
->
-> 通过 App 安装后端后，`droidspaces` 二进制文件位于 `/data/local/Droidspaces/bin/droidspaces`。
->
-> 此外，你可以随时运行以下命令，离线查看完整的交互式、**更高级**的命令行文档：
-> `droidspaces docs`
+## 命令
 
----
+| 命令 | 作用 |
+|---------|--------------|
+| `start` | 启动容器。第一次启动需要 `--name` 和 `--rootfs` 或 `--rootfs-img`；之后会使用已保存的配置。 |
+| `stop` | 干净地关闭容器。`--name=a,b,c` 可以停止多个。 |
+| `restart` | 停止后再次启动。镜像挂载会保留，因此很快。 |
+| `enter [user]` | 在运行中的容器里打开 shell，默认以 root 身份。 |
+| `run [--] <cmd>` | 在运行中的容器里执行一条命令然后返回。`--user` 选择账号，`--stdin` 把你的输入管道进去。`run` 之后的内容都属于该命令，`--` 可以让命令本身以短横线开头。 |
+| `show` | 列出正在运行的容器。配合 `--json` 时输出 JSON，包含每个容器的发行版、主机名、IP、运行时间、CPU 和内存。 |
+| `info` | 显示容器的设置和状态。配合 `--json` 时输出 JSON。 |
+| `pid` | 打印容器 init 的 PID，或 `NONE`。 |
+| `scan` | 找出宿主侧记录丢失的运行中容器，并重新登记。 |
+| `check` | 探测内核是否具备 Droidspaces 使用的一切。配合 `--json` 时输出 JSON，每项探测为 `0` 或 `1`，另有 `requirements_met`。 |
+| `daemon` | 启动守护进程。`--foreground` 让它附着在终端上，供服务管理器使用。 |
+| `mode` | 如果有守护进程在应答，打印 `daemon`，否则打印 `direct`。 |
+| `docs`、`help`、`version` | 内置文档、参数摘要和版本。 |
 
-## 快速导航
+除 `check`、`docs`、`help`、`version` 和 `mode` 外，每个命令都需要 root。当恰好只有一个容器在运行时，`stop`、`restart`、`enter`、`run`、`info` 和 `pid` 可以省略 `--name`。
 
-[1. 入门指南](#getting-started)  
-[2. 命令参考](#command-reference)  
-[3. 选项与参数](#options-flags)  
-[4. 配置文件](#configs)  
-[5. 常见工作流](#common-workflows)  
-[6. 高级用法与生命周期](#advanced-usage)  
-[7. 系统要求](#system-requirements)
+如果守护进程在运行，CLI 会把命令交给它，因此 `droidspaces` 组的成员无需 `sudo` 即可使用 CLI。在环境中设置 `DS_NO_PROXY=1` 会让二进制自己完成工作。
 
----
+## 参数
 
-<a id="getting-started"></a>
-## 1. 入门指南
+每个用于配置容器的参数都会在 `start` 时保存到其配置文件中，因此只需提供一次。[容器设置](./Features.md)说明了每个参数的作用和使用场景；这里的表格是语法。
 
-### 启动你的第一个容器
-```bash
-# 从 rootfs 目录启动
-sudo droidspaces --rootfs=/path/to/rootfs start
+**根文件系统与身份**
 
-# 从 ext4 镜像启动
-sudo droidspaces --name=mycontainer --rootfs-img=/path/to/rootfs.img start
-```
+| 参数 | 值 | 配置键 |
+|------|-------|------------|
+| `-r`, `--rootfs` | 含 rootfs 的目录 | `rootfs_path` |
+| `-i`, `--rootfs-img` | ext4 镜像文件或块设备 | `rootfs_path` |
+| `-n`, `--name` | 容器名；`stop` 时可用逗号分隔多个 | `name` |
+| `-h`, `--hostname` | 容器内主机名，默认与容器名相同 | `hostname` |
+| `-C`, `--conf`, `--config` | 要加载的配置文件 | |
+| `--reset` | 将配置重置为默认值，保留容器名和 rootfs | |
+| `--init` | init 二进制，默认 `/sbin/init` | `custom_init` |
+| `-E`, `--env` | 由 `KEY=value` 行组成的文件 | `env_file` |
+| `-B`, `--bind` | `SRC:DEST[:ro]`，可重复或用逗号分隔 | `bind_mounts` |
 
-### 进入容器
-```bash
-# 以 root 身份进入
-sudo droidspaces --name=mycontainer enter
+**网络**
 
-# 以指定用户身份进入
-sudo droidspaces --name=mycontainer enter username
-```
+| 参数 | 值 | 配置键 |
+|------|-------|------------|
+| `--net` | `nat`（默认）、`gateway`、`macvlan`、`host`、`none` | `net_mode` |
+| `--nat-ip` | `172.28.0.0/16` 内的固定地址，仅 NAT | `static_nat_ip` |
+| `--upstream` | 发送 NAT 流量所用的接口，逗号分隔，支持通配符 | `upstream_interfaces` |
+| `--port` | `[HOST:]CONTAINER[/tcp\|udp]`，范围写作 `a-b:a-b`，可重复，仅 NAT | `port_forwards` |
+| `-d`, `--dns` | 解析器，逗号分隔 | `dns_servers` |
+| `--disable-ipv6` | | `disable_ipv6` |
+| `--gateway` | 充当路由器的运行中容器，网关模式必需 | `gateway_container` |
+| `--gateway-net` | LAN 段名称，默认 `lan` | `gateway_net` |
+| `--gateway-iface` | LAN 接口在网关内的名称，默认 `eth1` | `gateway_lan_ifname` |
+| `--gateway-bridge` | 宿主机网桥名称，默认 `ds-<gateway-net>` | `gateway_bridge` |
+| `--macvlan-parent` | 宿主机网卡，Macvlan 模式必需 | `macvlan_parent` |
+| `--macvlan-mode` | `bridge`（默认）、`private`、`vepa`、`passthru` | `macvlan_mode` |
 
-### 停止容器
-```bash
-# 停止单个容器
-sudo droidspaces --name=mycontainer stop
+**硬件与集成**
 
-# 停止多个容器
-sudo droidspaces --name=web,db,app stop
-```
+| 参数 | 值 | 配置键 |
+|------|-------|------------|
+| `-H`, `--hw-access` | | `enable_hw_access` |
+| `--allow-vts` | 配合 `--hw-access`，保留宿主机的 `tty1` 到 `tty6` 可见 | `allow_vts` |
+| `--gpu` | | `enable_gpu_mode` |
+| `-X`, `--x11` | | `enable_x11` |
+| `--tx11-flags` | Termux:X11 的额外参数 | `tx11_extra_flags` |
+| `--virgl` | 仅 Android | `enable_virgl` |
+| `--virgl-flags` | VirGL 服务的额外参数 | `virgl_extra_flags` |
+| `--pulse-audio` | 仅 Android | `enable_pulseaudio` |
+| `--anland` | 仅 Android，通过 Anland 应用使用 Wayland 桌面 | `enable_anland` |
+| `--enable-android-storage` | 仅 Android | `enable_android_storage` |
 
----
+**资源限制、安全与启动**
 
-<a id="command-reference"></a>
-## 2. 命令参考
+| 参数 | 值 | 配置键 |
+|------|-------|------------|
+| `--memory` | 带 `K`、`M`、`G` 或 `T` 的大小，最小 `4M` | `memory_limit`，单位为字节 |
+| `--cpus` | 核心数，允许小数 | `cpu_quota` 和 `cpu_period`，单位为微秒 |
+| `--pids-limit` | 进程数，最小 16 | `pids_limit` |
+| `-P`, `--selinux-permissive` | | `selinux_permissive` |
+| `--allow-sandboxing` | | `allow_sandboxing` |
+| `-V`, `--volatile` | | `volatile_mode` |
+| `--force-cgroupv1` | | `force_cgroupv1` |
+| `--privileged` | `nomask`、`nocaps`、`noseccomp`、`shared`、`full`，逗号分隔 | `privileged` |
 
-| 命令 | 说明 |
-|---------|--------|
-| `start` | 启动一个新容器。需指定 `--rootfs` 或 `--rootfs-img`。 |
-| `stop` | 优雅地关闭一个或多个容器。 |
-| `restart` | 快速重启（200 毫秒内），保留 loop 挂载。 |
-| `enter [user]` | 在运行中的容器内打开交互式 shell。 |
-| `run <cmd>` | 执行单个命令而不打开完整 shell。使用 `-u`/`--user` 以指定容器用户身份运行。 |
-| `info` | 显示容器的详细技术信息。配合 `--format` 时以 JSON 输出。 |
-| `show` | 以表格形式列出所有当前运行中的容器。配合 `--format` 时输出 JSON，包含每个容器的 OS、IP、运行时长、CPU 和内存。 |
-| `scan` | 检测并注册孤立/未跟踪的容器。 |
-| `check` | 验证系统和内核要求。加上 `--format` 时以 JSON 输出：每个探测项一个 `0`/`1`，外加 `requirements_met`。 |
-| `docs` | 打开交互式终端文档。 |
-| `help` | 显示帮助信息。 |
-| `version` | 输出版本字符串。 |
+**会话参数**，不会被保存
 
----
+| 参数 | 作用 |
+|------|--------------|
+| `-f`, `--foreground` | 在整个启动过程中把容器控制台留在你的终端上。 |
+| `-u`, `--user` | `run` 使用的账号。 |
+| `--stdin` | 把你的输入转发给 `run` 命令。不加它时命令收不到任何输入。 |
+| `--json` | `show`、`info` 和 `check` 的 JSON 输出。 |
 
-<a id="options-flags"></a>
-## 3. 选项与参数
+## 配置文件
 
-### Rootfs 选择
-
-| 选项 | 简写 | 说明 |
-|--------|------|-------------|
-| `--rootfs=PATH` | `-r` | rootfs 目录的路径。必须包含 `/sbin/init`。 |
-| `--rootfs-img=PATH` | `-i` | ext4 rootfs 镜像文件或块设备的路径。将自动挂载。 |
-
-*注意：这两者是互斥的。使用 `--rootfs-img` 时，`--name` 为必填项。*
-
-### 容器标识与配置
-
-| 选项 | 简写 | 说明 |
-|--------|------|-------------|
-| `--name=NAME` | `-n` | 容器的唯一名称。在基于目录的 rootfs 模式下若省略则自动生成。 |
-| `--hostname=NAME` | `-h` | 设置容器的主机名。默认为容器名称。 |
-| `--conf=PATH` | `-C` | 直接从配置文件加载容器配置。 |
-| `--reset` | | 将容器配置重置为默认值（保留名称和 rootfs 路径）。 |
-
-### 网络
-
-| 选项 | 简写 | 说明 |
-|--------|------|-------------|
-| `--net=MODE` | | 网络模式：NAT 模式 `nat`（默认）、主机模式 `host`、无网络模式 `none` 或网关模式 `gateway`。 |
-| `--upstream=IFACE` | | 将 NAT WAN 固定到指定接口；禁用自动上行链路检测。逗号分隔、按优先级排序，并支持通配符。示例：`--upstream=wlan0,rmnet*`。仅 NAT 模式有效。 |
-| `--port HOST:CONT[/proto]` | | 将主机端口转发到容器（NAT 模式）。支持 TCP/UDP。 |
-| `--dns=SERVERS` | `-d` | 自定义 DNS 服务器，逗号分隔。示例：`--dns=1.1.1.1,8.8.8.8` |
-| `--disable-ipv6` | | 在容器内禁用 IPv6。适用于所有网络模式。在主机模式下也会禁用宿主的 IPv6。 |
-
-#### 网关模式
-
-将某个容器的 LAN 委托给另一个正在运行的容器（例如 OpenWRT），由后者负责 DHCP、DNS、防火墙和路由。Droidspaces 只负责 L2 管道。完整指南请参阅[从零开始的网络基础](Networking-From-Zero.md)。
-
-| 选项 | 简写 | 说明 |
-|--------|------|-------------|
-| `--gateway=NAME` | | `--net=gateway` 的**必选项**。充当路由器的运行中容器。 |
-| `--gateway-net=NAME` | | LAN 网段名称 / 宿主网桥后缀（默认：`lan`）。共享同一值的客户端共享一个 LAN；不同值是相互隔离的网段。 |
-| `--gateway-iface=IFACE` | | 网关容器*内部*看到的接口名称（默认：`eth1`）。每个网段都需要唯一名称。 |
-| `--gateway-bridge=BR` | | 覆盖宿主网桥名称（默认：`ds-{gateway-net}`）。 |
-
-### 功能开关
-
-| 选项 | 简写 | 说明 |
-|--------|------|-------------|
-| `--foreground` | `-f` | 启动时附加到容器控制台以查看 init 日志。 |
-| `--volatile` | `-V` | 临时模式。更改存储在 RAM 中，退出后丢失。 |
-| `--hw-access` | `-H` | 暴露主机硬件（GPU、USB 等）。自动检测 GPU 组 ID 并在容器内创建匹配的组。参见[安全警告](./Features.md#hardware-access-mode)。 |
-| `--gpu` | | 仅启用 GPU 加速。扫描主机 `/dev` 中的已知 GPU 节点，并仅将其安全映射到容器中，不暴露其他主机硬件。（若已传入 `-H`，此选项将被忽略）。 |
-| `--allow-vts` | | 与 `--hw-access` 一起使用时，保留主机虚拟终端（`/dev/tty1`-`tty6`）可见。默认情况下它们会被 `/dev/null` 遮蔽，以免 systemd 容器的 `getty` 接管主机控制台。没有 `-H` 时无效。 |
-| `--allow-sandboxing` | | 允许非特权 Docker、Podman、Flatpak、bwrap 以及浏览器沙箱在容器内运行。会削弱隔离性。参见[沙箱支持](./Features.md#sandboxing) |
-| `--x11`| `-X` | 将主机 X11 socket 桥接到容器中。在 Android 上会启动 Termux:X11。 |
-| `--enable-android-storage`| | 挂载 `/storage/emulated/0`（仅限 Android）。 |
-| `--selinux-permissive` | | 在容器会话期间将主机 SELinux 设置为宽容模式。 |
-| `--force-cgroupv1` | | 强制使用旧版 Cgroup V1 层级。若主机内核存在损坏或不完整的 Cgroups V2 实现（常见于旧版 Android 4.x 内核），则需要此选项。 |
-| `--privileged=TAGS` | | 放宽安全保护。接受逗号分隔的标签列表：`nomask`、`nocaps`、`noseccomp`、`shared`、`full`。请极其谨慎地使用。 |
-
-### 绑定挂载
-
-| 选项 | 简写 | 说明 |
-|--------|------|-------------|
-| `--bind-mount=S:D` | `-B` | 将主机目录 `S` 挂载到容器路径 `D`。 |
-
-**格式：**
-- 多个挂载：`-B /src1:/dst1,/src2:/dst2` 或 `-B /src1:/dst1 -B /src2:/dst2`
-- 最大限制：每个容器最多 16 个挂载。
-- 不存在的主机路径将被跳过并发出警告。
-
----
-
-<a id="configs"></a>
-## 4. 配置文件
-
-与其完全依赖冗长的命令行参数，Droidspaces 允许你在 `.config` 文件中定义容器环境，并使用 `--conf` 参数加载它。
-
-以下是配置文件中每个受支持键的参考说明：
+一个普通的 `key=value` 文件，每行一个键，键名来自上面的表格。Droidspaces 按以下顺序查找：`--config` 指定的文件，然后 rootfs 旁边的 `container.config`，最后是工作目录中的 `Containers/<name>/container.config`。工作目录在 Linux 上是 `/var/lib/Droidspaces`，在 Android 上是 `/data/local/Droidspaces`。
 
 ```ini
-# Droidspaces 容器配置
-# 自动生成 - 修改可能被覆盖
-
-# 容器的唯一标识符
-name=ubuntu
-
-# 容器环境的主机名
-hostname=ubuntu-devbox
-
-# rootfs 目录或 .img 文件的绝对路径
-rootfs_path=/home/user/ubuntu-24.04-rootfs.img
-
-# 存储容器 PID 文件的自定义路径
-pidfile=/var/lib/Droidspaces/Pids/ubuntu.pid
-
-# 要绑定挂载的主机目录列表，逗号分隔 (src:dest)
-bind_mounts=/home/user:/mnt/host,/tmp:/mnt/tmp
-
-# 包含要加载的环境变量的文件的绝对路径
-env_file=/path/to/env.list
-
-# 唯一 UUID（自动生成，请勿手动修改）
-uuid=d88107dab4ef48a8874a93897188982d
-
-# 自定义 DNS 服务器（逗号分隔）
-dns_servers=1.1.1.1,8.8.8.8
-
-# -------- 布尔标志 (0 或 1) --------
-
-# 禁用 IPv6 网络
-disable_ipv6=0
-
-# 向容器暴露主机硬件节点 (/dev)
-enable_hw_access=0
-
-# 自动检测并安全映射 GPU 节点，无需完整硬件访问权限
-enable_gpu_mode=0
-
-# 桥接主机 X11 socket（Android 上为 Termux:X11）
-enable_x11=0
-
-# Android：设置 Android 内部共享存储挂载
-enable_android_storage=0
-
-# 在启动期间将主机 SELinux 策略设置为宽容模式
-selinux_permissive=0
-
-# 临时模式：退出后更改丢失
-volatile_mode=1
-
-# 在前台运行容器而非 fork 到后台
-foreground=0
-
-# ----------------------------------------
-# Android App 配置
-# CLI 引擎无法识别的任何行将被安全地保留在
-# 配置文件底部，并传回给宿主端。
+name=web
+hostname=web
+rootfs_path=/var/lib/Droidspaces/Containers/web/rootfs.img
+net_mode=nat
+port_forwards=80:80,443:443
+bind_mounts=/srv/www:/var/www:ro
+memory_limit=1073741824
+cpu_quota=200000
+cpu_period=100000
+allow_sandboxing=1
 ```
+
+布尔键取 `0` 或 `1`。后端不认识的键（例如 App 的 `run_at_boot`）会原样保留。容器运行时，它启动时使用的配置可以在容器内的 `/run/droidspaces/container.config` 看到。
+
+## 示例
+
+```bash
+# 第一次从镜像创建容器，并转发一个端口
+sudo droidspaces --name=web --rootfs-img=/srv/web.img --port=8080:80 start
+
+# 之后的启动只需要容器名
+sudo droidspaces --name=web start
+
+# 在控制台上观察启动过程
+sudo droidspaces --name=web --foreground start
+
+# 以指定用户进入 shell，以及带管道的单次命令
+sudo droidspaces --name=web enter alice
+sudo droidspaces --name=web run sh -c 'ps aux | grep nginx'
+
+# 把脚本通过管道送进容器
+sudo droidspaces --name=web --stdin run sh -s < setup.sh
+
+# 一台 OpenWrt 路由器，以及一个位于它后面的客户端
+sudo droidspaces --name=openwrt --rootfs=/srv/openwrt --net=nat start
+sudo droidspaces --name=kali --rootfs=/srv/kali --net=gateway --gateway=openwrt start
+
+# 接入有线 LAN 并拥有自己地址的容器
+sudo droidspaces --name=ubuntu --rootfs=/srv/ubuntu --net=macvlan --macvlan-parent=eth0 start
+
+# 试用一下，不保留
+sudo droidspaces --name=scratch --rootfs=/srv/ubuntu --volatile start
+
+# 以 JSON 查看正在运行的容器
+sudo droidspaces --json show
+```
+
+## 文件位置
+
+| 路径 | 内容 |
+|------|----------|
+| `<workspace>/Containers/<name>/` | 容器的配置；对于由 App 安装的容器，还包括其 rootfs |
+| `<workspace>/Logs/<name>/` | 每次启动、停止和重启的日志 |
+| `<workspace>/Logs/droidspacesd.log` | 守护进程日志 |
+| `/mnt/Droidspaces/<name>` | 容器运行期间镜像 rootfs 的挂载位置 |
 
 ---
 
-<a id="common-workflows"></a>
-## 5. 常见工作流
-
-### 使用配置文件运行
-无需传入大量参数，你可以从 `.config` 文件加载所有配置：
-```bash
-sudo droidspaces --conf=./my-container.config start
-```
-
-### 持久化开发环境
-```bash
-sudo droidspaces \
-  --name=dev \
-  --rootfs=/path/to/ubuntu-rootfs \
-  --hostname=devbox \
-  --bind-mount=/home/user/projects:/workspace \
-  start
-```
-
-### NAT 隔离与端口转发
-```bash
-sudo droidspaces \
-  --name=server \
-  --rootfs-img=/path/to/rootfs.img \
-  --net=nat \
-  --port=8080:80 \
-  start
-```
-
-### 固定上行链路的 NAT
-强制容器通过指定接口访问互联网，而不是跟随宿主当前活跃网络。可以固定 VPN 隧道（`tun0`）作为断路保护，也可以固定 `rmnet*`，让手机使用 Wi-Fi 时容器仍走移动数据：
-```bash
-sudo droidspaces \
-  --name=vpnbox \
-  --rootfs-img=/path/to/rootfs.img \
-  --net=nat \
-  --upstream=tun0 \
-  start
-```
-
-### 网关模式（LAN 由 OpenWRT 管理）
-先启动路由器容器（NAT 模式），再把客户端接入它：
-```bash
-# 1. 路由器
-sudo droidspaces --name=openwrt --rootfs=/data/openwrt --net=nat start
-
-# 2. LAN/DHCP/防火墙由 openwrt 管理的客户端
-sudo droidspaces --name=kali --rootfs=/data/kali --net=gateway --gateway=openwrt start
-```
-
-### 临时测试环境
-```bash
-sudo droidspaces --name=test --rootfs=/path/to/rootfs --volatile start
-```
-
-### 一次性命令
-```bash
-sudo droidspaces --name=mycontainer run uname -a
-# 使用 sh -c 执行管道命令：
-sudo droidspaces --name=mycontainer run sh -c "ps aux | grep init"
-# 使用 -u/--user 以特定用户身份运行：
-sudo droidspaces --name=mycontainer -u myuser run whoami
-sudo droidspaces --name=mycontainer -u myuser run env
-sudo droidspaces --name=mycontainer -u myuser run sh -c "id && env"
-```
-
-### GPU 加速
-确保仅安全暴露 GPU 节点（而非所有主机硬件）：
-```bash
-sudo droidspaces --name=gpu-app --rootfs=/path/to/rootfs --gpu start
-```
-
-### 深度定制（特权模式）
-适用于需要非掩码访问的场景：
-```bash
-sudo droidspaces --name=privileged-box --rootfs=/path/to/rootfs --privileged=full start
-# 或混合使用标签：
-sudo droidspaces --name=dev-box --rootfs=/path/to/rootfs --privileged=nocaps,noseccomp start
-```
-
----
-
-<a id="advanced-usage"></a>
-## 6. 高级用法与生命周期
-
-### 容器恢复
-如果容器是在当前会话之外启动的，或者其宿主端 PID 文件 / 配置文件丢失或损坏，可以使用 `scan` 从容器隔离的 `/run` 内存中恢复它：
-```bash
-sudo droidspaces scan
-```
-
----
-
-<a id="system-requirements"></a>
-## 7. 系统要求
-
-始终运行内置检查器以验证你的内核是否支持所需的 namespace 和功能：
-```bash
-sudo droidspaces check
-```
-
-有关技术要求的深入探讨，请参阅[内核配置指南](./Kernel-Configuration.md)。
-
----
-
-## 下一步
-- [功能深入解析](./Features.md)
-- [故障排除](./Troubleshooting.md)
-- [Android App 使用指南](./Usage-Android-App.md)
+上一页：[容器设置](./Features.md) | 下一页：[显示、音频与桌面](./Graphics-and-Audio.md)

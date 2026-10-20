@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-/* Live container status for `show --format` and `info --format`.
+/* Live container status for `show --json` and `info --json`.
  *
  * Everything is read from the host side. Kernel 3.10 compatible.
  *

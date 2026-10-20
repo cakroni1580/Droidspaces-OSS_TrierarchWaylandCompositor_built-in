@@ -21,11 +21,11 @@ Flags and the command can come in any order, short and long forms are interchang
 | `restart` | Stops and starts again. Image mounts are kept, so it is fast. |
 | `enter [user]` | Opens a shell inside a running container, as root by default. |
 | `run [--] <cmd>` | Runs one command inside a running container and returns. `--user` picks the account, `--stdin` pipes your input in. Anything after `run` belongs to the command, and `--` lets the command itself start with a dash. |
-| `show` | Lists running containers. With `--format`, JSON with distribution, hostname, IP, uptime, CPU and RAM for each. |
-| `info` | Shows a container's settings and state. With `--format`, JSON. |
+| `show` | Lists running containers. With `--json`, JSON with distribution, hostname, IP, uptime, CPU and RAM for each. |
+| `info` | Shows a container's settings and state. With `--json`, JSON. |
 | `pid` | Prints the PID of the container's init, or `NONE`. |
 | `scan` | Finds running containers whose host-side records were lost and registers them again. |
-| `check` | Probes the kernel for everything Droidspaces uses. With `--format`, JSON with one `0` or `1` per probe and `requirements_met`. |
+| `check` | Probes the kernel for everything Droidspaces uses. With `--json`, JSON with one `0` or `1` per probe and `requirements_met`. |
 | `daemon` | Starts the daemon. `--foreground` keeps it attached to the terminal, for a service manager. |
 | `mode` | Prints `daemon` if a daemon is answering, otherwise `direct`. |
 | `docs`, `help`, `version` | The built-in documentation, the flag summary, and the version. |
@@ -105,7 +105,7 @@ Each flag that configures the container is saved in its config file on `start`, 
 | `-f`, `--foreground` | Keep the container's console on your terminal through the boot. |
 | `-u`, `--user` | The account `run` uses. |
 | `--stdin` | Forward your input to the `run` command. Without it the command gets nothing. |
-| `--format` | JSON output from `show`, `info` and `check`. |
+| `--json` | JSON output from `show`, `info` and `check`. |
 
 ## The config file
 
@@ -156,7 +156,7 @@ sudo droidspaces --name=ubuntu --rootfs=/srv/ubuntu --net=macvlan --macvlan-pare
 sudo droidspaces --name=scratch --rootfs=/srv/ubuntu --volatile start
 
 # What is running, as JSON
-sudo droidspaces --format show
+sudo droidspaces --json show
 ```
 
 ## Where things are

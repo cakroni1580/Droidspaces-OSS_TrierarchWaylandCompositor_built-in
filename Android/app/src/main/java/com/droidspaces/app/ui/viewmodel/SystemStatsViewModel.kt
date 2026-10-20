@@ -37,7 +37,7 @@ class SystemStatsViewModel(application: Application) : AndroidViewModel(applicat
         if (running.isEmpty()) return
 
         while (true) {
-            // One `show --format` call covers every container, so a tick costs the same
+            // One `show --json` call covers every container, so a tick costs the same
             // for ten containers as for one. Absence from the result means it died.
             val live = ContainerOSInfoManager.fetchAll(getApplication())
             val dead = running.filter { it.name !in live }

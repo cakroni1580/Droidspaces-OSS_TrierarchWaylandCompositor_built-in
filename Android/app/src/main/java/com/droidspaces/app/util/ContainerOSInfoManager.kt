@@ -11,7 +11,7 @@ import org.json.JSONObject
 
 /**
  * Live container status (OS name, hostname, IP, uptime, CPU, RAM) from one
- * `show --format` call, with in-memory and persistent caching so cards render
+ * `show --json` call, with in-memory and persistent caching so cards render
  * instantly on the next app start.
  */
 object ContainerOSInfoManager {
@@ -28,7 +28,7 @@ object ContainerOSInfoManager {
     private var context: Context? = null
 
     /**
-     * One container's status as reported by `show --format`.
+     * One container's status as reported by `show --json`.
      */
     data class OSInfo(
         val prettyName: String?,
@@ -93,7 +93,7 @@ object ContainerOSInfoManager {
     }
 
     /**
-     * One `show --format` round trip: live status of every running container, keyed by
+     * One `show --json` round trip: live status of every running container, keyed by
      * name. A container missing from the result is not running.
      */
     suspend fun fetchAll(appContext: Context): Map<String, OSInfo> = withContext(Dispatchers.IO) {

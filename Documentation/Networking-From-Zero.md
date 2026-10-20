@@ -200,7 +200,7 @@ In NAT mode, Droidspaces does for containers what your home router does for your
 - The container can reach the internet, and the internet sees Android's IP, not the container's.
 - Droidspaces runs an embedded DHCP server for the container and configures its DNS.
 - The container also gets IPv6. Droidspaces announces a private prefix (`fd64:7370::/64`) with router advertisements, so the container configures its own address, and translates it on the way out with the IPv6 version of `MASQUERADE`. This needs the IPv6 NAT table in the kernel; without it the container is IPv4 only.
-- On Android, a background route monitor finds the active internet uplink by reading the kernel's routing rules, and re-points container traffic as soon as the active network changes (for example, a handoff from Wi-Fi to mobile data).
+- On Android, a background route monitor finds the active internet uplink by reading the kernel's routing rules, and re-points container traffic as soon as the active network changes (for example, a handoff from Wi-Fi to mobile data). On Linux the same monitor keeps IP forwarding on and puts back NAT rules that a firewall reload removed.
 
 ### How NAT mode picks the WAN uplink (automatic)
 

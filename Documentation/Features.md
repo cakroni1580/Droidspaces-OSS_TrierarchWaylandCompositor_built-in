@@ -99,7 +99,7 @@ Known GPU families: Mesa DRI render nodes on Intel, AMD and most ARM SoCs, Qualc
 `--memory=SIZE`, `--cpus=COUNT` and `--pids-limit=N`, keys `memory_limit`, `cpu_quota` with `cpu_period`, and `pids_limit`. Off by default; a container shares everything the device has.
 
 - **Limit memory**: `--memory=512M` or `--memory=2G`. The container cannot grow past it into the device's swap, so at the limit its own OOM killer ends a process inside it instead of the phone slowing down as zram fills. Everything inside the container, `free` and fastfetch included, reports usage against this limit and no swap.
-- **Allow swap**: `--allow-swap`, key `allow_swap`. Lets a memory-limited container use the device's swap past its limit, as it could before the cap, and shows it the device's swap. `droidspaces info` and `show --format` say whether a running container may swap.
+- **Allow swap**: `--allow-swap`, key `allow_swap`. Lets a memory-limited container use the device's swap past its limit, as it could before the cap, and shows it the device's swap. `droidspaces info` and `show --json` say whether a running container may swap.
 - **Limit CPU**: `--cpus=1.5` gives the container one and a half cores' worth of time, spread over all cores.
 - **Limit processes**: the most processes and threads the container may have at once, minimum 16. A systemd distribution needs a few hundred.
 

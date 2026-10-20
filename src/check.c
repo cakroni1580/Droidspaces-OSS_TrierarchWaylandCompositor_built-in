@@ -13,7 +13,7 @@
 /* Static status variables */
 
 static int is_root = 0;
-/* check --format: emit one JSON int per probe instead of the text report */
+/* check --json: emit one JSON int per probe instead of the text report */
 static int json_mode = 0;
 static int json_first = 1;
 
@@ -259,13 +259,13 @@ void print_ds_check(const char *key, const char *name, const char *desc,
   }
 }
 
-int check_requirements_detailed(int format_output) {
+int check_requirements_detailed(int json_output) {
   check_buf_pos = 0;
   check_buf[0] = '\0';
 
   /* In JSON mode the headers and summary still land in check_buf and are
    * simply never written; cheaper than guarding every check_append. */
-  json_mode = format_output;
+  json_mode = json_output;
   json_first = 1;
   if (json_mode)
     printf("{");

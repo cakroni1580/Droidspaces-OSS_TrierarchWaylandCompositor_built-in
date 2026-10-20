@@ -413,7 +413,7 @@ struct ds_config {
   int reboot_cycle;    /* 1 if we are in a reboot loop */
   int force_cgroupv1;  /* --force-cgroupv1: use v1 even if v2 is available */
   int privileged_mask; /* --privileged bitmask */
-  int format_output;   /* --format: JSON output (show, info) */
+  int json_output;     /* --json: JSON output (show, info, check) */
   char prog_name[64];  /* argv[0] for logging */
 
   /* Runtime state */
@@ -1037,7 +1037,7 @@ void print_documentation(const char *argv0);
 
 int check_requirements(void);
 int check_requirements_hw(int hw_access);
-int check_requirements_detailed(int format_output);
+int check_requirements_detailed(int json_output);
 
 /* daemon.c - daemon, client, and probe entry points */
 

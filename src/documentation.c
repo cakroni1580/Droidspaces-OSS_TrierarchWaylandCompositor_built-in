@@ -264,7 +264,7 @@ static void print_page(int page, const char *bin) {
     p_printf("  (Displays name and PID inside a table)\n\n");
 
     p_printf("%sListing Containers (JSON):%s\n", bold, reset);
-    p_printf("  %s --format show\n", bin);
+    p_printf("  %s --json show\n", bin);
     p_printf(
         "  (Adds OS, hostname, IP, uptime, CPU and RAM per container)\n\n");
 
@@ -273,9 +273,9 @@ static void print_page(int page, const char *bin) {
     p_printf("  (Shows current features, metadata, and container state)\n\n");
 
     p_printf("%sTechnical Information (JSON):%s\n", bold, reset);
-    p_printf("  %s --name=mycontainer --format info\n\n", bin);
+    p_printf("  %s --name=mycontainer --json info\n\n", bin);
     p_printf("%sHost Capabilities (JSON):%s\n", bold, reset);
-    p_printf("  %s --format check\n\n", bin);
+    p_printf("  %s --json check\n\n", bin);
 
     p_printf("%sMetadata Recovery:%s\n", bold, reset);
     p_printf("  %s scan\n", bin);
