@@ -10,11 +10,13 @@
 
 /* PTY Allocation */
 
-/* Open master + slave without relying on /dev/ptmx symlink resolution.
+/* Open master + slave from the ptmx node given. "/dev/ptmx" on the host;
+ * inside a container "/dev/pts/ptmx", which is the newinstance node whatever
+ * setup_devpts had to fall back to for /dev/ptmx itself.
  * TIOCGPTPEER (4.13+) opens slave directly from master fd.
  * Falls back to TIOCGPTN + path open for kernel 3.x. */
-int ds_openpty(int *master, int *slave, char *name) {
-  int m = open("/dev/ptmx", O_RDWR | O_NOCTTY | O_CLOEXEC);
+int ds_openpty(const char *ptmx, int *master, int *slave, char *name) {
+  int m = open(ptmx, O_RDWR | O_NOCTTY | O_CLOEXEC);
   if (m < 0)
     return -1;
 
@@ -54,8 +56,32 @@ err:
   return -1;
 }
 
+/* The console pair on its way from container init to the monitor, or to a
+ * foreground start. Both fds travel together so the holder keeps the slave
+ * open too: with no slave open the master hangs up, and the session would end
+ * between an init's death and the next cycle's pair arriving. */
+int ds_console_send(int sock, int master, int slave) {
+  int fds[2] = {master, slave};
+  return ds_send_fds(sock, "FD", 2, fds, 2);
+}
+
+int ds_console_recv(int sock, int *master, int *slave) {
+  char tag[2];
+  int fds[2], count;
+  if (ds_recv_fds(sock, tag, sizeof(tag), fds, 2, &count) < 0)
+    return -1;
+  if (count != 2) {
+    for (int i = 0; i < count; i++)
+      close(fds[i]);
+    return -1;
+  }
+  *master = fds[0];
+  *slave = fds[1];
+  return 0;
+}
+
 int ds_terminal_create(struct ds_tty_info *tty) {
-  if (ds_openpty(&tty->master, &tty->slave, tty->name) < 0) {
+  if (ds_openpty("/dev/ptmx", &tty->master, &tty->slave, tty->name) < 0) {
     ds_error("openpty failed: %s", strerror(errno));
     return -1;
   }

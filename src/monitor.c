@@ -65,6 +65,32 @@ static void close_and_forget(int *fd) {
   *fd = -1;
 }
 
+static int console_log_open(const struct ds_config *cfg) {
+  char safe_name[256];
+  char log_dir[PATH_MAX];
+  char log_path[PATH_MAX];
+  sanitize_container_name(cfg->container_name, safe_name, sizeof(safe_name));
+  snprintf(log_dir, sizeof(log_dir), "%.2048s/" DS_LOGS_SUBDIR "/%.256s",
+           get_workspace_dir(), safe_name);
+  mkdir_p(log_dir, 0755);
+  snprintf(log_path, sizeof(log_path), "%.4080s/console", log_dir);
+  rotate_log(log_path, 2 * 1024 * 1024);
+  return open(log_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+}
+
+/* Nobody is attached to the console: a background start, or a foreground one
+ * whose command has gone. From here on the monitor reads the master itself,
+ * so a chatty init never blocks on a full pty, and logs what it reads. */
+static void console_adopt(struct ds_config *cfg, int *log_fd) {
+  if (cfg->console.master >= 0) {
+    int fl = fcntl(cfg->console.master, F_GETFL, 0);
+    if (fl >= 0)
+      (void)fcntl(cfg->console.master, F_SETFL, fl | O_NONBLOCK);
+  }
+  if (*log_fd < 0)
+    *log_fd = console_log_open(cfg);
+}
+
 void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write) {
   int sync_pipe[2];
   sync_pipe[0] = -1;
@@ -114,31 +140,19 @@ void ds_monitor_run(struct ds_config *cfg, int sync_pipe_write) {
 
   int stdio_redirected = 0;
 
-  /* Background console-drain setup (see ds_console_drain).
-   * Runs once, before the reboot loop, so a single log fd survives internal
-   * reboot cycles. In background mode the monitor is the only reader of the
-   * console PTY master: make it non-blocking and open a per-container console
-   * log so the heartbeat loop below keeps the PTY buffer drained. Foreground
-   * mode leaves the master untouched - the parent's console_monitor_loop
-   * drives it. */
+  /* Console-drain setup (see ds_console_drain and console_adopt). The log fd
+   * is opened once, before the reboot loop, so it survives internal reboot
+   * cycles. The master itself arrives from each boot cycle's init over
+   * console_sock. In foreground the start command reads the console while it
+   * lives; its end of console_fwd is dropped here so that only it holds one,
+   * and its exit shows up as end of file in the heartbeat loop below. */
   int console_log_fd = -1;
   size_t console_logged = 0;
-  if (!cfg->foreground && cfg->console.master >= 0) {
-    int fl = fcntl(cfg->console.master, F_GETFL, 0);
-    if (fl >= 0)
-      (void)fcntl(cfg->console.master, F_SETFL, fl | O_NONBLOCK);
-
-    char safe_name[256];
-    char log_dir[PATH_MAX];
-    char log_path[PATH_MAX];
-    sanitize_container_name(cfg->container_name, safe_name, sizeof(safe_name));
-    snprintf(log_dir, sizeof(log_dir), "%.2048s/" DS_LOGS_SUBDIR "/%.256s",
-             get_workspace_dir(), safe_name);
-    mkdir_p(log_dir, 0755);
-    snprintf(log_path, sizeof(log_path), "%.4080s/console", log_dir);
-    rotate_log(log_path, 2 * 1024 * 1024);
-    console_log_fd =
-        open(log_path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+  if (cfg->foreground) {
+    close(cfg->console_fwd[0]);
+    cfg->console_fwd[0] = -1;
+  } else {
+    console_log_fd = console_log_open(cfg);
   }
 
   /* Reboot-aware boot loop
@@ -533,19 +547,32 @@ reboot_loop:;
        * poll() wakes immediately when the master becomes readable, so draining
        * is effectively real-time - a container init that fills the PTY buffer
        * is unblocked at once instead of wedging forever in n_tty_write. */
-      struct pollfd pfds[2];
+      struct pollfd pfds[4];
       int npfd = 0;
       int sfd_slot = -1;
       int con_slot = -1;
+      int sock_slot = -1;
+      int fwd_slot = -1;
       if (sfd >= 0) {
         pfds[npfd].fd = sfd;
         pfds[npfd].events = POLLIN;
         sfd_slot = npfd++;
       }
-      if (!cfg->foreground && cfg->console.master >= 0) {
+      /* The master is ours to read only while no start command is attached */
+      if (cfg->console_fwd[1] < 0 && cfg->console.master >= 0) {
         pfds[npfd].fd = cfg->console.master;
         pfds[npfd].events = POLLIN;
         con_slot = npfd++;
+      }
+      if (cfg->console_sock[0] >= 0) {
+        pfds[npfd].fd = cfg->console_sock[0];
+        pfds[npfd].events = POLLIN;
+        sock_slot = npfd++;
+      }
+      if (cfg->console_fwd[1] >= 0) {
+        pfds[npfd].fd = cfg->console_fwd[1];
+        pfds[npfd].events = POLLIN;
+        fwd_slot = npfd++;
       }
       if (npfd > 0) {
         poll(pfds, (nfds_t)npfd, 500);
@@ -558,6 +585,39 @@ reboot_loop:;
             (pfds[con_slot].revents & (POLLIN | POLLHUP | POLLERR)))
           ds_console_drain(cfg->console.master, console_log_fd,
                            &console_logged);
+        /* The attached start command is gone: nothing is ever written our
+         * way on console_fwd, so anything to read there is its end of file.
+         * The console carries on as a background one. */
+        if (fwd_slot >= 0 &&
+            (pfds[fwd_slot].revents & (POLLIN | POLLHUP | POLLERR))) {
+          close(cfg->console_fwd[1]);
+          cfg->console_fwd[1] = -1;
+          console_adopt(cfg, &console_log_fd);
+        }
+        /* This cycle's init sent its console. The previous cycle's pair goes
+         * now, its last lines logged first unless the start command is the
+         * one reading them. */
+        if (sock_slot >= 0 && (pfds[sock_slot].revents & POLLIN)) {
+          int m, s;
+          if (ds_console_recv(cfg->console_sock[0], &m, &s) == 0) {
+            if (cfg->console.master >= 0) {
+              if (cfg->console_fwd[1] < 0)
+                ds_console_drain(cfg->console.master, console_log_fd,
+                                 &console_logged);
+              close(cfg->console.master);
+              close(cfg->console.slave);
+            }
+            cfg->console.master = m;
+            cfg->console.slave = s;
+            if (cfg->console_fwd[1] >= 0 &&
+                ds_console_send(cfg->console_fwd[1], m, s) < 0) {
+              close(cfg->console_fwd[1]);
+              cfg->console_fwd[1] = -1;
+            }
+            if (cfg->console_fwd[1] < 0)
+              console_adopt(cfg, &console_log_fd);
+          }
+        }
       } else {
         usleep(500000);
       }
@@ -711,10 +771,19 @@ monitor_cleanup_and_exit:
   ds_container_unlock(lifecycle_fd);
   ds_container_release_supervision();
   /* Capture any final console output, then close the background console log. */
-  if (!cfg->foreground && cfg->console.master >= 0)
+  if (cfg->console_fwd[1] < 0 && cfg->console.master >= 0)
     ds_console_drain(cfg->console.master, console_log_fd, &console_logged);
   if (console_log_fd >= 0)
     close(console_log_fd);
+  if (cfg->console.master >= 0) {
+    close(cfg->console.master);
+    close(cfg->console.slave);
+    cfg->console.master = cfg->console.slave = -1;
+  }
+  if (cfg->console_fwd[1] >= 0) {
+    close(cfg->console_fwd[1]);
+    cfg->console_fwd[1] = -1;
+  }
 
   /* Free dynamically allocated configuration members before exit */
   ds_config_free(cfg);

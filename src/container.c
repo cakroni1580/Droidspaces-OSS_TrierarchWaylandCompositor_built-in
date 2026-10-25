@@ -518,6 +518,12 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
   int sync_pipe[2] = {-1, -1}; /* read by cleanup: set before any goto */
   pid_t tweaks_pid = -1;       /* the android_optimizations(1) helper */
 
+  /* Console fds, filled in once init sends its pty up. Every caller hands us
+   * a zeroed cfg, and 0 is stdin, which cleanup must never close. */
+  cfg->console.master = cfg->console.slave = -1;
+  cfg->console_sock[0] = cfg->console_sock[1] = -1;
+  cfg->console_fwd[0] = cfg->console_fwd[1] = -1;
+
   /* Here and not with the other network checks in main.c: a restart reloads
    * its config after those ran, and this is the one both paths go through. */
   if (cfg->net_mode == DS_NET_MACVLAN && ds_net_macvlan_check(cfg) < 0)
@@ -771,26 +777,6 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     firmware_path_add(fw_path);
   }
 
-  ds_fix_host_ptys();
-
-  if (ds_terminal_create(&cfg->console) < 0) {
-    ds_error("Failed to allocate console PTY");
-    goto cleanup;
-  }
-
-  /* Propagate the host terminal's window size to the console PTY master
-   * so the slave (which becomes /dev/console) has correct dimensions
-   * from the very start of boot. This prevents misaligned output during
-   * the window between PTY creation and the console_monitor_loop startup.
-   * Without this, 'sudo poweroff' output is misaligned for the first
-   * ~10 lines because sudo resets/queries the terminal size and finds
-   * a {0,0} winsize on the PTY slave. */
-  if (isatty(STDIN_FILENO)) {
-    struct winsize ws;
-    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0)
-      ioctl(cfg->console.master, TIOCSWINSZ, &ws);
-  }
-
   /* 5. Resolve target PID file names early so monitor inherits them */
   char global_pidfile[PATH_MAX];
   resolve_pidfile_from_name(cfg->container_name, global_pidfile,
@@ -839,6 +825,16 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
   /* Record start time before fork so monitor and virtualize_update share it */
   clock_gettime(CLOCK_BOOTTIME, &cfg->start_time);
 
+  /* The console is allocated by init from the container's own devpts, so the
+   * host's /dev/pts never carries it, and comes back up this socketpair. */
+  if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, cfg->console_sock) <
+          0 ||
+      (cfg->foreground && socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0,
+                                     cfg->console_fwd) < 0)) {
+    ds_error("socketpair failed: %s", strerror(errno));
+    goto cleanup;
+  }
+
   /* 8. Fork Monitor Process */
   pid_t monitor_pid = fork();
   if (monitor_pid < 0) {
@@ -859,6 +855,13 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
 
   /* PARENT PROCESS */
   close(sync_pipe[1]);
+  close(cfg->console_sock[0]);
+  close(cfg->console_sock[1]);
+  cfg->console_sock[0] = cfg->console_sock[1] = -1;
+  if (cfg->foreground) {
+    close(cfg->console_fwd[1]);
+    cfg->console_fwd[1] = -1;
+  }
 
   /* Wait for Monitor to send child PID */
   if (read(sync_pipe[0], &cfg->container_pid, sizeof(pid_t)) != sizeof(pid_t)) {
@@ -913,7 +916,9 @@ static int start_rootfs_locked(struct ds_config *cfg, int *lock_fd,
     ds_container_unlock(*lock_fd);
     *lock_fd = -1;
 
-    int ret = console_monitor_loop(cfg->console.master, monitor_pid, cfg);
+    int ret = console_monitor_loop(cfg->console_fwd[0], monitor_pid, cfg);
+    close(cfg->console_fwd[0]);
+    cfg->console_fwd[0] = -1;
     free_config_env_vars(cfg);
     return ret;
   } else {
@@ -956,9 +961,12 @@ cleanup:
   if (has_side_effects) {
     cleanup_container_resources(cfg, cfg->container_pid, 0, 1 /* force */);
   }
-  if (cfg->console.master >= 0) {
-    close(cfg->console.master);
-    cfg->console.master = -1;
+  for (int i = 0; i < 2; i++) {
+    if (cfg->console_sock[i] >= 0)
+      close(cfg->console_sock[i]);
+    if (cfg->console_fwd[i] >= 0)
+      close(cfg->console_fwd[i]);
+    cfg->console_sock[i] = cfg->console_fwd[i] = -1;
   }
   if (sync_pipe[0] >= 0)
     close(sync_pipe[0]);

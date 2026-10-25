@@ -173,7 +173,7 @@ Chosen once, when the container is installed.
 
 ## Things with no toggle
 
-**Init systems.** Any init that can run as PID 1 works: systemd, OpenRC, runit, s6, SysVinit, OpenWrt's procd. The container's `/sbin/init` must exist, or you name another with Custom Init Binary. The app's container details recognise systemd, OpenRC and procd and let you manage their services.
+**Init systems.** Any init that can run as PID 1 works: systemd, OpenRC, runit, s6, SysVinit, OpenWrt's procd. The container's `/sbin/init` must exist, or you name another with Custom Init Binary. The app's container details recognise systemd, OpenRC, procd and runit and let you manage their services.
 
 **Hostname.** `--hostname=NAME`, key `hostname`. Defaults to the container name.
 

@@ -2,7 +2,8 @@ package com.droidspaces.app.util
 
 /**
  * Shared safety choke point for the per-init-system service managers
- * ([ContainerSystemdManager], [ContainerOpenRCManager], [ContainerProcdManager]).
+ * ([ContainerSystemdManager], [ContainerOpenRCManager], [ContainerProcdManager],
+ * [ContainerRunitManager]).
  *
  * Service/unit names are DISCOVERED from inside the container, which may be a
  * hostile third-party rootfs, and then interpolated into a host-level command:
@@ -16,7 +17,7 @@ package com.droidspaces.app.util
  *
  * Every service manager MUST pass a name through [isSafeServiceName] before
  * building a command. The allow-list covers exactly the characters real
- * systemd / OpenRC / procd service names use and excludes every shell
+ * systemd / OpenRC / procd / runit service names use and excludes every shell
  * metacharacter, so a validated name can be embedded literally and safely.
  */
 object ServiceManagerBase {

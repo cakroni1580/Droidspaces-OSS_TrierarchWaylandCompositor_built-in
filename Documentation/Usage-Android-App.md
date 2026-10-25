@@ -99,7 +99,7 @@ Only running containers appear here, each with its uptime, IP address, CPU and R
 
 **Systemd.** The list shows every unit with its state and is filterable: all, enabled, disabled, masked, static, or units in an abnormal state. Each one can be started, stopped, restarted, enabled, disabled or masked, and **View logs** shows its journal. **Inspect unit** opens the unit's properties, dependencies and `systemctl status` output, and **Edit override** writes a drop-in for it, so you can change a service's settings from the phone without a text editor in the container.
 
-**OpenRC** and **OpenWrt (procd)** get the same list with start, stop, restart, enable and disable, and reload on OpenWrt.
+**OpenRC**, **OpenWrt (procd)** and **runit** get the same list with start, stop, restart, enable and disable, reload on OpenWrt, and a run-at-boot toggle on runit, which adds or removes the service's `down` file.
 
 ## Terminal
 

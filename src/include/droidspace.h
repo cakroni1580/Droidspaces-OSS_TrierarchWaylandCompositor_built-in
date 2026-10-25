@@ -448,6 +448,13 @@ struct ds_config {
 
   /* Terminal (console + ttys) */
   struct ds_tty_info console;
+  /* The console travels on these socketpairs. Init allocates it from the
+   * container's own devpts and sends the pair up console_sock[1]; the monitor
+   * reads [0] and keeps a copy. A foreground start also gets the pair, over
+   * console_fwd[1]; only the start command holds console_fwd[0], so once it
+   * is gone the monitor sees end of file there and adopts the console. */
+  int console_sock[2];
+  int console_fwd[2];
 
   /* Environment variables (dynamically allocated) */
   char env_file[PATH_MAX];
@@ -697,7 +704,6 @@ int ds_apply_jail_mask(int hw_access, int privileged_mask, int sandboxing);
 int setup_dev(const char *rootfs, int hw_access, int gpu_mode, int allow_vts);
 int create_devices(const char *rootfs, const char *staging);
 int setup_devpts(int hw_access);
-int ds_fix_host_ptys(void);
 int setup_volatile_overlay(struct ds_config *cfg);
 int cleanup_volatile_overlay(struct ds_config *cfg);
 int check_volatile_mode(struct ds_config *cfg);
@@ -950,7 +956,9 @@ void ds_dhcp_server_stop(void);
 
 /* terminal.c */
 
-int ds_openpty(int *master, int *slave, char *name);
+int ds_openpty(const char *ptmx, int *master, int *slave, char *name);
+int ds_console_send(int sock, int master, int slave);
+int ds_console_recv(int sock, int *master, int *slave);
 int ds_terminal_create(struct ds_tty_info *tty);
 int ds_terminal_set_stdfds(int fd);
 int ds_terminal_make_controlling(int fd);
@@ -959,7 +967,7 @@ int ds_terminal_proxy(int master_fd);
 
 /* console.c */
 
-int console_monitor_loop(int console_master_fd, pid_t monitor_pid,
+int console_monitor_loop(int console_sock, pid_t monitor_pid,
                          struct ds_config *cfg);
 
 /* pid.c */
