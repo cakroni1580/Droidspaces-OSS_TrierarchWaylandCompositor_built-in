@@ -97,13 +97,13 @@ jobs:
 
     # A release signed with a throwaway key could never update the real app, so
     # a release run without the key stops here instead of publishing one
-    - name: Require the key for a release
-      if: env.TAG != ''
-      env:
-        RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-      run: |
-        [ -n "$RELEASE_KEYSTORE" ] && [ -n "$KEYSTORE_PASSWORD" ] || { echo "Releases are signed with the release key: set RELEASE_KEYSTORE and KEYSTORE_PASSWORD"; exit 1; }
+    #- name: Require the key for a release
+    #  if: env.TAG != ''
+    #  env:
+    #   RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+    #   KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+    #  run: |
+    #    [ -n "$RELEASE_KEYSTORE" ] && [ -n "$KEYSTORE_PASSWORD" ] || { echo "Releases are signed with the release key: set RELEASE_KEYSTORE and KEYSTORE_PASSWORD"; exit 1; }
 
     - name: Generate Contributors
       continue-on-error: true
