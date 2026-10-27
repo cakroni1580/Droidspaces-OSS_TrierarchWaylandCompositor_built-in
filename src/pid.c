@@ -439,6 +439,7 @@ int show_containers(struct ds_config *cfg) {
       ds_anland_load_sock(&tmp_cfg);
       safe_strncpy(st->anland_sock, tmp_cfg.anland_sock,
                    sizeof(st->anland_sock));
+      st->x11 = tmp_cfg.x11;
     }
     ds_config_free(&tmp_cfg);
     if (!st->hostname[0])

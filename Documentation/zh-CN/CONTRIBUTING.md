@@ -99,25 +99,30 @@ App 的最低要求是 **Android 8（API 26）**。对 Android App 的改动不�
 make native            # 为当前主机架构构建
 make aarch64           # 交叉构建：aarch64、x86_64、armhf、x86、riscv64
 make debug-hardened    # 带 ASan、UBSan、LSan 的构建，用于排查内存问题
-make all-build         # 构建全部架构，并同步进 APK 资源目录
+make all-build         # 构建全部架构
 make all-tarball       # all-build 再加上发布用 tarball
+make bump NEW=x.y.z    # 设置 droidspace.h 中的 DS_VERSION
 make format            # 用仓库的 .clang-format 对 src/ 执行 clang-format
 make clean
 ```
 
 不带目标的 `make` 只会打印帮助，不会构建任何东西。`make native` 需要 musl 工具链；如果
-缺失，按错误提示运行 `./install-musl.sh <架构>`。
+缺失，按错误提示运行 `scripts/install-musl.sh <架构>`。
 
-常用选项：`V=1` 显示完整编译命令行，`ENABLE_SOCKETD_BACKEND=0` 构建不含私有 API 桥接的
-精简版本。
+构建是增量的：改一个头文件只会重新编译包含它的目标文件，未改动的架构则什么都不做，所以
+`make native` 之后再 `make aarch64` 只会完整构建一次，之后不再重复。目标文件放在
+`output/.obj/<架构>` 下。编译器或 `CFLAGS` 的变化不会被跟踪，改了这些请先 `make clean`。
+
+常用选项：`V=1` 显示完整编译命令行，`NO_STRIP=1` 保留符号，`MUSL_CROSS=dir` 指定存放
+`<triplet>-gcc` 的目录，`ENABLE_SOCKETD_BACKEND=1` 编译私有 API 桥接。
 
 构建启用了 `-Wall -Wextra -Wpedantic -Werror`，以及格式化、变量遮蔽和截断相关的警告。一个
 警告就是一次构建失败，而不是一条评审意见。
 
 新增 `.c` 文件时必须把它加进 Makefile 的 `SRCS`。这里没有通配符。
 
-版本号从 `src/include/droidspace.h` 中的 `DS_VERSION` 提取。要改版本号请改那里，不要改
-Makefile。
+版本号从 `src/include/droidspace.h` 中的 `DS_VERSION` 提取。`make bump NEW=x.y.z` 会改写它；
+其他地方都不带版本号。
 
 ### Android App
 
@@ -128,13 +133,19 @@ Makefile。
 ./build.sh release     # 签名的 release APK
 ```
 
-请使用脚本，而不要直接调用 gradle。脚本会准备 wrapper、清理产物，并把 APK 放到其余工具
-期望的位置。
+请使用脚本，而不要直接调用 gradle。APK 构建会为四个手机架构运行 `make`，并把
+`output/droidspaces-<架构>` 作为生成的资源打包，所以它需要 musl 工具链，也永远不会读取你
+手动复制的二进制。
 
 ### CI
 
-`.github/workflows/ci.yml` 会执行 `make all-tarball`、`scripts/mkdeb.sh` 以及 gradle
-release 构建。它**不会**检查代码格式，所以运行 `make format` 是你的责任。
+`.github/workflows/ci.yml` 会在每次 push 和 pull request 时执行 `make all-tarball`、
+`scripts/mkdeb.sh` 以及 gradle release 构建。它**不会**检查代码格式，所以运行 `make format`
+是你的责任。
+
+发布就是打一个标签：`make bump NEW=x.y.z`，提交，然后推送标签 `vx.y.z`。CI 会拒绝与
+`DS_VERSION` 不一致的标签，并发布 APK、tarball、Debian 包和 `SHA256SUMS` 文件，附带自上一个
+标签以来每个提交的更新日志。
 
 ## 代码风格
 

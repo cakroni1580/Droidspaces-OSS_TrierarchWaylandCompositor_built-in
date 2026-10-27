@@ -11,7 +11,9 @@ Droidspaces is a container runtime. Two halves:
 - `src/` is the C backend, statically linked against musl, one binary for Android and Linux.
 - `Android/` is the Compose app that drives that binary over a root shell.
 
-The compiled backend ships inside the APK at `Android/app/src/main/assets/binaries`.
+The compiled backend ships inside the APK. Gradle runs `make` for the four phone arches and
+packages `output/droidspaces-<arch>` as a generated asset, so the APK always carries the
+backend from the tree it was built from.
 
 ## Build
 
@@ -21,7 +23,8 @@ C backend:
 make native            # build for the host arch, this is the real build command
 make aarch64           # cross builds: aarch64, x86_64, armhf, x86, riscv64
 make debug-hardened    # ASan, UBSan, LSan
-make all-build         # every arch, then syncs into the APK assets
+make all-build         # every arch
+make bump NEW=x.y.z    # set DS_VERSION in droidspace.h
 make format            # clang-format over src/
 ```
 
@@ -34,14 +37,16 @@ Android app, from `Android/`:
 ./build.sh release     # signed release
 ```
 
-Use the script, not gradle directly. CI runs `make all-tarball` then gradle, and does not
-check formatting, so `make format` is on you.
+Use the script, not gradle directly. It needs the musl toolchains, because the APK build runs
+`make`. CI runs `make all-tarball`, `scripts/mkdeb.sh`, then gradle, and does not check
+formatting, so `make format` is on you. A pushed `v*` tag that matches `DS_VERSION` publishes
+a release.
 
 Adding a new `.c` file means adding it to `SRCS` in the Makefile. There is no wildcard.
 
-The Makefile does not track header dependencies. Run `make clean` before building after a
-header edit or a branch switch, or stale objects give you a binary that fails in ways the
-diff cannot explain.
+The build is incremental: a header edit rebuilds only the objects that include it, and an
+unchanged arch is a no-op. Objects live under `output/.obj/<arch>`. A compiler or `CFLAGS`
+change is not tracked, so `make clean` after those.
 
 ## Testing and debugging on a device
 

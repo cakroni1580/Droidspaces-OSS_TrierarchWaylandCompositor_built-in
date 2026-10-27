@@ -28,6 +28,7 @@ import com.droidspaces.app.util.ContainerOSInfoManager
 import com.droidspaces.app.util.ContainerDiskUsageManager
 import com.droidspaces.app.util.ContainerUsersManager
 import com.droidspaces.app.util.AnlandUtils
+import com.droidspaces.app.util.TermuxX11Utils
 import com.droidspaces.app.ui.util.showError
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -43,6 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 
 /**
@@ -258,10 +260,27 @@ fun ContainerDetailsScreen(
 
             osInfo?.anlandSocket?.let { socketPath ->
                 item(key = "anland_${container.name}") {
-                    AnlandCard(
+                    DisplayAppCard(
+                        icon = rememberVectorPainter(Icons.Default.DesktopWindows),
+                        title = context.getString(R.string.anland_option),
+                        description = context.getString(R.string.enable_anland_description),
                         onLaunch = {
                             if (!AnlandUtils.launchWindow(context, container.name, socketPath))
                                 scope.showError(snackbarHostState, context.getString(R.string.anland_not_installed))
+                        }
+                    )
+                }
+            }
+
+            if (osInfo?.x11 == true) {
+                item(key = "x11_${container.name}") {
+                    DisplayAppCard(
+                        icon = painterResource(R.drawable.ic_x11),
+                        title = context.getString(R.string.termux_x11_option),
+                        description = context.getString(R.string.launch_x11_description),
+                        onLaunch = {
+                            if (!TermuxX11Utils.launch(context))
+                                scope.showError(snackbarHostState, context.getString(R.string.termux_x11_not_installed))
                         }
                     )
                 }
@@ -304,6 +323,7 @@ private fun hasOSInfoChanged(old: ContainerOSInfoManager.OSInfo, new: ContainerO
            old.hostname != new.hostname ||
            old.ipAddress != new.ipAddress ||
            old.anlandSocket != new.anlandSocket ||
+           old.x11 != new.x11 ||
            old.uptime != new.uptime ||
            old.cpuUsage != new.cpuUsage ||
            old.ramUsedKb != new.ramUsedKb ||
@@ -716,13 +736,16 @@ private fun PremiumInitSystemCard(
 
 
 /**
- * Opens the container's Wayland desktop in the Anland app. Listed once the
- * heartbeat reports the broker's socket, which only a container booted with
- * Anland Display has. The saved config is not consulted: editing it while
- * the container runs changes nothing until a restart.
+ * Opens the container's desktop in Anland or Termux:X11. Listed once the
+ * heartbeat says the container booted with that display. The saved config is
+ * not consulted: editing it while the container runs changes nothing until a
+ * restart.
  */
 @Composable
-private fun AnlandCard(
+private fun DisplayAppCard(
+    icon: Painter,
+    title: String,
+    description: String,
     onLaunch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -733,7 +756,7 @@ private fun AnlandCard(
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = AnimationUtils.cardFadeSpec(),
-        label = "anland_card_fade"
+        label = "display_card_fade"
     )
 
     Surface(
@@ -757,20 +780,20 @@ private fun AnlandCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Icon(
-                    imageVector = Icons.Default.DesktopWindows,
+                    painter = icon,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Column {
                     Text(
-                        text = context.getString(R.string.anland_option),
+                        text = title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = context.getString(R.string.enable_anland_description),
+                        text = description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )

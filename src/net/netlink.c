@@ -45,9 +45,16 @@
 #define NLMSG_TAIL(n)                                                          \
   ((struct rtattr *)(((uint8_t *)(n)) + NLMSG_ALIGN((n)->nlmsg_len)))
 
-/* Append an rtattr with optional payload to a netlink message */
-static struct rtattr *nl_addattr(struct nlmsghdr *n, int maxlen, int type,
-                                 const void *data, int dlen) {
+/* Append an rtattr with optional payload to a netlink message.
+ *
+ * Kept out of line: once GCC 14's LTO inlines this into a builder whose
+ * attribute sizes fold to constants, it takes `n` for the 16-byte header
+ * member rather than the request it heads and reports every memcpy as an
+ * overflow. The maxlen check is the real bound, and here it stays opaque. */
+static __attribute__((noinline)) struct rtattr *nl_addattr(struct nlmsghdr *n,
+                                                           int maxlen, int type,
+                                                           const void *data,
+                                                           int dlen) {
   int len = RTA_LENGTH(dlen);
   if ((int)(NLMSG_ALIGN(n->nlmsg_len) + RTA_ALIGN(len)) > maxlen)
     return NULL;

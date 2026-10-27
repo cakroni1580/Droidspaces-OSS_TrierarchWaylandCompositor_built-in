@@ -316,11 +316,27 @@ tasks.register("generateModuleProp") {
     }
 }
 
+// The backend the APK ships. make is incremental, so an unchanged src/ costs one no-op per arch
+val repo = rootProject.layout.projectDirectory.dir("..")
+val phoneArches = listOf("aarch64", "armhf", "x86_64", "x86")
+val buildBackend = tasks.register<Exec>("buildBackend") {
+    workingDir(repo)
+    commandLine(listOf("make") + phoneArches)
+    inputs.dir(repo.dir("src"))
+    inputs.file(repo.file("Makefile"))
+    outputs.files(phoneArches.map { repo.file("output/droidspaces-$it") })
+}
+val backendAssets = tasks.register<Sync>("backendAssets") {
+    from(buildBackend)
+    into(generatedDir.dir("assets/binaries"))
+}
+
 // Run before every build variant
 tasks.configureEach {
     if (name.startsWith("pre") && name.endsWith("Build")) {
         dependsOn("generateSupportedLocalesList")
         dependsOn("generateModuleProp")
+        dependsOn(backendAssets)
     }
 }
 

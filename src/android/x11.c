@@ -192,7 +192,9 @@ int ds_x11_daemon_start(struct ds_config *cfg) {
   }
 
   /* Reuse existing global server if still alive */
-  pid_t existing = ds_daemon_read_pid("x11.xpid");
+  pid_t existing =
+      ds_global_daemon_reuse(check_x11_needs, "x11.xpid", cfg->tx11_extra_flags,
+                             TX11_SOCK_DIR "/" TX11_DISPLAY_SOCK, "[X11]");
   if (existing > 0) {
     ds_log("Termux:X11: xserver already running (PID %d)", (int)existing);
     cfg->x11_pid = existing;
@@ -207,7 +209,7 @@ int ds_x11_daemon_start(struct ds_config *cfg) {
   pid_t child = spawn_xserver(uid, TX11_DISPLAY_STR, cfg->tx11_extra_flags);
   if (child > 0) {
     cfg->x11_pid = child;
-    ds_daemon_write_pid("x11.xpid", child);
+    ds_daemon_write_pid("x11.xpid", child, cfg->tx11_extra_flags);
     return 0;
   }
   return -1;

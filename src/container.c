@@ -1781,6 +1781,7 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
     safe_strncpy(st.hostname, cfg->hostname, sizeof(st.hostname));
     ds_anland_load_sock(cfg);
     safe_strncpy(st.anland_sock, cfg->anland_sock, sizeof(st.anland_sock));
+    st.x11 = cfg->x11;
     long ram_total = ds_collect_status(&st, 1);
 
     int first = 1;
@@ -1848,7 +1849,6 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
                 cfg->hw_access ? "full" : (cfg->gpu_mode ? "GPU" : "none"),
                 &first);
 
-    ds_json_int("x11", cfg->x11, &first);
     if (is_android()) {
       if (cfg->tx11_extra_flags)
         ds_json_str("tx11_flags", cfg->tx11_extra_flags, &first);

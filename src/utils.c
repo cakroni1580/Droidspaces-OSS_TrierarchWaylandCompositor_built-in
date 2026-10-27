@@ -1509,8 +1509,22 @@ long ds_clk_tck(void) {
   return hz > 0 ? hz : 100;
 }
 
-/* Seconds since container init started: field 22 (starttime) of
- * /proc/<pid>/stat subtracted from /proc/uptime. */
+/* Field 22 of /proc/<pid>/stat, in clock ticks since boot, or 0. Counted
+ * from the last ')' because comm may hold spaces: the Termux:X11 server's is
+ * "termux-x11 com.", which threw a plain whitespace split off by one. */
+static unsigned long long proc_starttime(pid_t pid) {
+  char path[64], buf[1024];
+  snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
+  if (read_file(path, buf, sizeof(buf)) < 0)
+    return 0;
+  const char *p = strrchr(buf, ')');
+  for (int field = 2; p && field < 22; field++)
+    p = strchr(p + 1, ' ');
+  return p ? strtoull(p + 1, NULL, 10) : 0;
+}
+
+/* Seconds since container init started: its starttime subtracted from
+ * /proc/uptime. */
 long ds_get_container_uptime(pid_t pid) {
   if (pid <= 0)
     return -1;
@@ -1519,27 +1533,11 @@ long ds_get_container_uptime(pid_t pid) {
   if (clk_tck <= 0)
     clk_tck = 100;
 
-  char stat_path[PATH_MAX];
-  snprintf(stat_path, sizeof(stat_path), "/proc/%d/stat", (int)pid);
-
-  FILE *f = fopen(stat_path, "r");
-  if (!f)
-    return -1;
-
-  unsigned long long start_ticks = 0;
-  /* starttime is the 22nd field */
-  for (int i = 1; i <= 21; i++) {
-    if (fscanf(f, "%*s") == EOF)
-      break;
-  }
-  if (fscanf(f, "%llu", &start_ticks) != 1)
-    start_ticks = 0;
-  fclose(f);
-
+  unsigned long long start_ticks = proc_starttime(pid);
   if (start_ticks == 0)
     return -1;
 
-  f = fopen("/proc/uptime", "r");
+  FILE *f = fopen("/proc/uptime", "r");
   if (!f)
     return -1;
 
@@ -2123,29 +2121,40 @@ void ds_free_split_flags(char **argv, int argc) {
  * Shared building blocks for x11.c, virgl-android.c, pulseaudio-android.c,
  * monitor.c, and daemon.c.  Generic (not Android-specific). */
 
-/* Read a daemon PID from <pids_dir>/<filename>; returns pid or -1. */
-pid_t ds_daemon_read_pid(const char *filename) {
+/* A daemon pidfile is "<pid> <starttime>\n<flags>". Pids/ survives a device
+ * reboot, and by then the pid can belong to any process, which a stop would
+ * SIGKILL. The starttime ties it to the process that was spawned. A file
+ * written before the starttime existed has none, so *legacy is set and the
+ * pid is trusted as it always was. The file lands in buf for the flags. */
+static pid_t daemon_pidfile_load(const char *filename, char *buf, size_t size,
+                                 int *legacy) {
   char path[PATH_MAX];
   snprintf(path, sizeof(path), "%s/%s", get_pids_dir(), filename);
-
-  char buf[32] = {0};
-  int fd = open(path, O_RDONLY | O_CLOEXEC);
-  if (fd < 0)
+  if (read_file(path, buf, size) < 0)
     return -1;
-  ssize_t n = read(fd, buf, sizeof(buf) - 1);
-  close(fd);
-
-  if (n <= 0)
+  char *end;
+  pid_t pid = (pid_t)strtol(buf, &end, 10);
+  unsigned long long start = *end == ' ' ? strtoull(end + 1, NULL, 10) : 0;
+  if (legacy)
+    *legacy = start == 0;
+  if (pid <= 1 || kill(pid, 0) != 0)
     return -1;
-  pid_t pid = (pid_t)atoi(buf);
-  return (pid > 1 && kill(pid, 0) == 0) ? pid : -1;
+  return (start == 0 || proc_starttime(pid) == start) ? pid : -1;
 }
 
-/* Write PID to <pids_dir>/<filename>. */
-void ds_daemon_write_pid(const char *filename, pid_t pid) {
-  char path[PATH_MAX], buf[32];
+/* Read a daemon PID from <pids_dir>/<filename>; returns pid or -1. */
+pid_t ds_daemon_read_pid(const char *filename) {
+  char buf[4096];
+  return daemon_pidfile_load(filename, buf, sizeof(buf), NULL);
+}
+
+/* Write PID to <pids_dir>/<filename>, with the flags the server was spawned
+ * with for ds_global_daemon_reuse() to compare. */
+void ds_daemon_write_pid(const char *filename, pid_t pid, const char *flags) {
+  char path[PATH_MAX], buf[4096];
   snprintf(path, sizeof(path), "%s/%s", get_pids_dir(), filename);
-  snprintf(buf, sizeof(buf), "%d", (int)pid);
+  snprintf(buf, sizeof(buf), "%d %llu\n%s", (int)pid, proc_starttime(pid),
+           flags ? flags : "");
   write_file_atomic(path, buf);
 }
 
@@ -2159,6 +2168,23 @@ void ds_daemon_remove_pid(const char *filename) {
 /* Resolve a cached pid or fall back to the pidfile. */
 pid_t ds_resolve_daemon_pid(pid_t cached, const char *pidfile) {
   return cached > 0 ? cached : ds_daemon_read_pid(pidfile);
+}
+
+static void daemon_kill(pid_t pid, const char *pidfile, const char *sock_path,
+                        const char *tag) {
+  if (pid > 0) {
+    ds_log("%s terminating (PID %d)...", tag, (int)pid);
+    kill(pid, SIGTERM);
+    for (int i = 0; i < 10 && kill(pid, 0) == 0; i++)
+      usleep(100000);
+    if (kill(pid, 0) == 0) {
+      kill(pid, SIGKILL);
+      waitpid(pid, NULL, 0);
+    }
+  }
+  ds_daemon_remove_pid(pidfile);
+  if (sock_path)
+    unlink(sock_path);
 }
 
 /*
@@ -2183,22 +2209,40 @@ void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
   }
 
   pid_t pid = ds_resolve_daemon_pid(cached_pid, pidfile);
-  if (pid > 0) {
-    ds_log("%s terminating (PID %d)...", tag, (int)pid);
-    kill(pid, SIGTERM);
-    for (int i = 0; i < 10 && kill(pid, 0) == 0; i++)
-      usleep(100000);
-    if (kill(pid, 0) == 0) {
-      kill(pid, SIGKILL);
-      waitpid(pid, NULL, 0);
-    }
-    if (pid_out)
-      *pid_out = 0;
-  }
+  if (pid > 0 && pid_out)
+    *pid_out = 0;
+  daemon_kill(pid, pidfile, sock_path, tag);
+}
 
-  ds_daemon_remove_pid(pidfile);
-  if (sock_path)
-    unlink(sock_path);
+/* A global server's flags are fixed when it spawns, and a restart keeps the
+ * server alive for the next boot, so reusing it blindly meant edited extra
+ * flags never reached it. Reuse it only while its flags match this config's.
+ * A mismatched server is replaced unless another running container shares
+ * it. A legacy pidfile records neither flags nor identity, so that server is
+ * reused as before and the next full stop moves it to the new format.
+ * Returns the pid to reuse, or -1 when the caller should spawn. */
+pid_t ds_global_daemon_reuse(int (*check_fn)(void), const char *pidfile,
+                             const char *flags, const char *sock_path,
+                             const char *tag) {
+  char buf[4096];
+  int legacy;
+  pid_t pid = daemon_pidfile_load(pidfile, buf, sizeof(buf), &legacy);
+  if (pid <= 0)
+    return -1;
+
+  const char *nl = strchr(buf, '\n');
+  if (legacy || strcmp(nl ? nl + 1 : "", flags ? flags : "") == 0)
+    return pid;
+
+  if (check_fn() == 1) {
+    ds_warn("%s shared with another running container, new extra flags apply "
+            "once it stops",
+            tag);
+    return pid;
+  }
+  ds_log("%s extra flags changed, restarting the server", tag);
+  daemon_kill(pid, pidfile, sock_path, tag);
+  return -1;
 }
 
 /* pthread_create for a helper thread that must never receive signals.

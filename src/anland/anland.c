@@ -147,7 +147,7 @@ int ds_anland_daemon_start(struct ds_config *cfg) {
   chmod(cfg->anland_sock, 0666);
 
   cfg->anland_pid = child;
-  ds_daemon_write_pid(pidfile, child);
+  ds_daemon_write_pid(pidfile, child, NULL);
 
   /* Record the socket path so the app (and a later restart) can find it. */
   char rec[PATH_MAX];

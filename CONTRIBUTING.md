@@ -110,25 +110,32 @@ sufficient.
 make native            # build for the host architecture
 make aarch64           # cross builds: aarch64, x86_64, armhf, x86, riscv64
 make debug-hardened    # ASan, UBSan, LSan build for chasing memory bugs
-make all-build         # every architecture, then syncs into the APK assets
+make all-build         # every architecture
 make all-tarball       # all-build plus a release tarball
+make bump NEW=x.y.z    # set DS_VERSION in droidspace.h
 make format            # clang-format over src/, using the repo .clang-format
 make clean
 ```
 
 Bare `make` prints help and builds nothing. `make native` needs a musl toolchain; if it is
-missing, run `./install-musl.sh <arch>` as the error message tells you.
+missing, run `scripts/install-musl.sh <arch>` as the error message tells you.
 
-Useful options: `V=1` for full compiler command lines, `ENABLE_SOCKETD_BACKEND=0` for a
-minimal build without the private API bridge.
+The build is incremental: a header edit rebuilds only the objects that include it, and an
+unchanged arch is a no-op, so `make aarch64` after `make native` costs a full build once and
+nothing afterwards. Objects live under `output/.obj/<arch>`. A compiler or `CFLAGS` change is
+not tracked, so `make clean` after those.
+
+Useful options: `V=1` for full compiler command lines, `NO_STRIP=1` to keep symbols,
+`MUSL_CROSS=dir` to point at a directory of `<triplet>-gcc`, `ENABLE_SOCKETD_BACKEND=1` for
+the private API bridge.
 
 The build runs with `-Wall -Wextra -Wpedantic -Werror` plus format, shadow, and truncation
 warnings. A warning is a build failure, not a review comment.
 
 Adding a new `.c` file means adding it to `SRCS` in the Makefile. There is no wildcard.
 
-The version string is scraped from `DS_VERSION` in `src/include/droidspace.h`. Bump it
-there, not in the Makefile.
+The version string is scraped from `DS_VERSION` in `src/include/droidspace.h`. `make bump
+NEW=x.y.z` rewrites it; nothing else carries the version.
 
 ### Android app
 
@@ -139,14 +146,19 @@ From `Android/`:
 ./build.sh release     # signed release APK
 ```
 
-Use the script rather than calling gradle directly. It sets up the wrapper, cleans, and
-places the APK where the rest of the tooling expects it.
+Use the script rather than calling gradle directly. The APK build runs `make` for the four
+phone arches and packages `output/droidspaces-<arch>` as a generated asset, so it needs the
+musl toolchains and never reads a binary you copied by hand.
 
 ### CI
 
 `.github/workflows/ci.yml` runs `make all-tarball`, `scripts/mkdeb.sh`, and the gradle
-release build. It does **not** check formatting, so running `make format` is your
-responsibility.
+release build on every push and pull request. It does **not** check formatting, so running
+`make format` is your responsibility.
+
+A release is a tag: `make bump NEW=x.y.z`, commit, then push the tag `vx.y.z`. CI refuses a
+tag that does not match `DS_VERSION`, and publishes the APK, tarball, Debian packages and a
+`SHA256SUMS` file with a changelog of every commit since the previous tag.
 
 ## Code Style
 

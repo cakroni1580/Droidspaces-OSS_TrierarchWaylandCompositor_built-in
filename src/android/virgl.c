@@ -104,7 +104,9 @@ int ds_virgl_daemon_start(struct ds_config *cfg) {
   }
 
   /* Reuse existing global server if still alive */
-  pid_t existing = ds_daemon_read_pid("virgl.vpid");
+  pid_t existing = ds_global_daemon_reuse(check_virgl_needs, "virgl.vpid",
+                                          cfg->virgl_extra_flags,
+                                          TX11_VIRGL_SOCKET, "[VirGL]");
   if (existing > 0) {
     ds_log("VirGL: server already running (PID %d)", (int)existing);
     cfg->virgl_pid = existing;
@@ -118,7 +120,7 @@ int ds_virgl_daemon_start(struct ds_config *cfg) {
   pid_t child = spawn_virgl(cfg->virgl_extra_flags);
   if (child > 0) {
     cfg->virgl_pid = child;
-    ds_daemon_write_pid("virgl.vpid", child);
+    ds_daemon_write_pid("virgl.vpid", child, cfg->virgl_extra_flags);
     return 0;
   }
   return -1;

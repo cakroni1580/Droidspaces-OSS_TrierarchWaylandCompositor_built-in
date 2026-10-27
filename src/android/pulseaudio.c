@@ -235,7 +235,7 @@ int ds_pulse_daemon_start(struct ds_config *cfg) {
     return -1;
 
   cfg->pulse_pid = child;
-  ds_daemon_write_pid("pulse.ppid", child);
+  ds_daemon_write_pid("pulse.ppid", child, NULL);
 
   /* Wait for the UNIX socket to appear, then set the default sink.
    * If PA hasn't created the socket in 3s (or dies), pactl is skipped. */

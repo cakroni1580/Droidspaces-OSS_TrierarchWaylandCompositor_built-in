@@ -175,6 +175,7 @@
     <string name="cgroup_v1_option">Cgroup V1</string>
     <string name="privileged_option">Privileged</string>
     <string name="anland_option">Anland</string>
+    <string name="termux_x11_option">Termux:X11</string>
     <string name="userns_option">Sandboxing</string>
     <string name="installation_setup_summary">Installation Summary</string>
     <string name="review_configuration">Review Configuration</string>
@@ -245,6 +246,7 @@
     <string name="run_at_boot_description">Start container on boot</string>
     <string name="enable_anland">Anland Display</string>
     <string name="enable_anland_description">Show a Wayland desktop in the Anland app</string>
+    <string name="launch_x11_description">Show the X11 desktop in the Termux:X11 app</string>
     <string name="launch_anland_window">Launch</string>
     <string name="anland_not_installed">Not available. Needs the Anland 5.x app installed. Anland 6.x is not supported.</string>
     <string name="anland_needs_gpu">Needs GPU Access or Hardware Access.</string>

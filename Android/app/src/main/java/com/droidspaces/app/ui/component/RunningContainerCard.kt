@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,8 +34,10 @@ fun RunningContainerCard(
     container: ContainerInfo,
     onEnter: () -> Unit = {},
     onTerminalClick: () -> Unit = {},
-    anlandEnabled: Boolean = false,
-    onLaunchAnland: () -> Unit = {},
+    // The display app this container booted with, Anland or Termux:X11. No label, no pill.
+    displayLabel: String? = null,
+    displayIcon: Painter? = null,
+    onLaunchDisplay: () -> Unit = {},
     osInfo: ContainerOSInfoManager.OSInfo? = null,
     modifier: Modifier = Modifier
 ) {
@@ -76,11 +79,11 @@ fun RunningContainerCard(
                     modifier = Modifier.weight(1f)
                 )
 
-                // Anland pill beside the terminal one, only once the heartbeat has
-                // reported the broker's socket, so a tap always has somewhere to go.
-                if (anlandEnabled) {
+                // Display app pill beside the terminal one, only once the heartbeat
+                // says the container booted with one, so a tap always has somewhere to go.
+                if (displayLabel != null && displayIcon != null) {
                     Surface(
-                        onClick = onLaunchAnland,
+                        onClick = onLaunchDisplay,
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer,
                         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -93,13 +96,13 @@ fun RunningContainerCard(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.DesktopWindows,
+                                painter = displayIcon,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = context.getString(R.string.anland_option),
+                                text = displayLabel,
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold
                             )

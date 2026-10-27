@@ -20,18 +20,8 @@ echo ""
 
 cd "$(dirname "$0")"
 
-# Check if gradlew exists, if not create it
-if [ ! -f "gradlew" ]; then
-    echo "📦 Setting up Gradle wrapper..."
-    gradle wrapper --gradle-version 8.2
-fi
-
 # Make gradlew executable
 chmod +x gradlew
-
-# Clean previous builds
-echo "🧹 Cleaning previous builds..."
-./gradlew clean
 
 # Build APK based on type
 if [ "$BUILD_TYPE" = "release" ]; then

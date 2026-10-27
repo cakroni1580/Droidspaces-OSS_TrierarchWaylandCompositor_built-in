@@ -10,7 +10,6 @@ output/
 *.config
 .cache
 .claude
-Android/app/src/main/assets/binaries/
 
 # Keystores
 *.keystore

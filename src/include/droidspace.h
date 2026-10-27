@@ -69,7 +69,7 @@
 /* Constants */
 
 #define DS_PROJECT_NAME "Droidspaces"
-#define DS_VERSION "7.0.0"
+#define DS_VERSION "7.1.0"
 #define DS_MIN_KERNEL_MAJOR 3
 #define DS_MIN_KERNEL_MINOR 10
 
@@ -516,6 +516,7 @@ struct ds_status {
   char ip[256];          /* non-loopback IPv4 addresses, comma separated */
   char ip6[512];         /* global and ULA IPv6 addresses, comma separated */
   char anland_sock[108]; /* host socket of the anland daemon, or "" */
+  int x11;               /* booted with Termux:X11 */
   long uptime_sec;
   long ram_used_kb;
   long cpu_permill;
@@ -603,12 +604,15 @@ int count_folders(const char *path);
 /* Daemon lifecycle helpers */
 typedef void (*ds_child_fn)(int ready_fd, void *user_data);
 pid_t ds_daemon_read_pid(const char *filename);
-void ds_daemon_write_pid(const char *filename, pid_t pid);
+void ds_daemon_write_pid(const char *filename, pid_t pid, const char *flags);
 void ds_daemon_remove_pid(const char *filename);
 pid_t ds_resolve_daemon_pid(pid_t cached, const char *pidfile);
 void ds_global_daemon_stop(int (*check_fn)(void), pid_t cached_pid,
                            pid_t *pid_out, const char *pidfile,
                            const char *sock_path, const char *tag);
+pid_t ds_global_daemon_reuse(int (*check_fn)(void), const char *pidfile,
+                             const char *flags, const char *sock_path,
+                             const char *tag);
 void ds_oom_protect(void);
 void ds_oom_unprotect(void);
 int ds_thread_create(pthread_t *tid, void *(*fn)(void *), void *arg);
