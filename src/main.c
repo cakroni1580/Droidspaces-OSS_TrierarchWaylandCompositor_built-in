@@ -91,6 +91,9 @@ void print_usage(void) {
       "      --pulse-audio         Configure PulseAudio sound server "
       "support\n"
       "      --anland              Embed the anland display daemon "
+      "(Android)\n\n"
+
+      "      --wayland             Bridge Wayland compositor socket into container "
       "(Android)\n\n");
 
   printf(
@@ -335,7 +338,8 @@ static struct option long_options[] = {
     {"virgl-flags", required_argument, 0, 272},
     {"pulse-audio", no_argument, 0, 273},
     {"anland", no_argument, 0, 283},
-    {"gateway", required_argument, 0, 274},
+    {"wayland", no_argument, 0, 285},
+    {"gateway", required_argument,{"wayland", no_argument, 0, 285}, 0, 274},
     {"gateway-container", required_argument, 0, 274},
     {"gateway-net", required_argument, 0, 275},
     {"gateway-iface", required_argument, 0, 276},
@@ -486,6 +490,9 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
                  optarg);
         return -1;
       }
+      break;
+    case 285:
+      cfg->wayland = 1;
       break;
     case 'I':
       cfg->disable_ipv6 = 1;
