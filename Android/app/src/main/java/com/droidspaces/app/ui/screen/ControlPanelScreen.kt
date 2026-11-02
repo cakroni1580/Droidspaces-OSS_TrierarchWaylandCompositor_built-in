@@ -34,6 +34,10 @@ import com.droidspaces.app.util.AnlandUtils
 import com.droidspaces.app.util.TermuxX11Utils
 import androidx.compose.ui.platform.LocalContext
 import com.droidspaces.app.R
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
+import com.droidspaces.app.util.Constants
 import com.droidspaces.app.wayland.WaylandManager
 
 /**
