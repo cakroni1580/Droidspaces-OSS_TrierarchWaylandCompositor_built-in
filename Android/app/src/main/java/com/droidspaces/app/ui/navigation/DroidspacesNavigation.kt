@@ -45,6 +45,7 @@ import com.droidspaces.app.ui.screen.RunitScreen
 import com.droidspaces.app.ui.screen.ContainerTerminalScreen
 import com.droidspaces.app.ui.viewmodel.ContainerInstallationViewModel
 import com.droidspaces.app.ui.viewmodel.ContainerViewModel
+import com.droidspaces.app.WaylandActivity
 import com.droidspaces.app.util.ContainerManager
 import com.droidspaces.app.util.FilePickerUtils
 import com.droidspaces.app.ui.util.FullScreenLoading
@@ -123,6 +124,8 @@ sealed class Screen(val route: String) {
     data object Terminal : Screen("terminal/{containerName}") {
         fun createRoute(containerName: String) = "terminal/${Uri.encode(containerName)}"
     }
+
+    data object WaylandDisplay : Screen("wayland_display")
 }
 
 /**
@@ -338,6 +341,13 @@ fun DroidspacesNavigation(
                 },
                 onNavigateToTerminal = { containerName ->
                     navController.navigate(Screen.Terminal.createRoute(containerName))
+                    },
+                onNavigateToWaylandDisplay = {
+                    context.startActivity(
+                        Intent(context, WaylandActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        } 
+                    )
                 }
             )
         }
@@ -671,6 +681,19 @@ fun DroidspacesNavigation(
                     navController.popBackStack()
                     sharedContainerViewModel.refresh()
                 }
+            )
+        }
+
+        // Wayland display — global single compositor, no container arg needed
+        composable(
+            route = Screen.WaylandDisplay.route,
+            enterTransition = defaultEnterTransition,
+            exitTransition = defaultExitTransition,
+            popEnterTransition = defaultEnterTransition,
+            popExitTransition = defaultExitTransition,
+        ) {
+            com.droidspaces.app.ui.screen.WaylandScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
     }
