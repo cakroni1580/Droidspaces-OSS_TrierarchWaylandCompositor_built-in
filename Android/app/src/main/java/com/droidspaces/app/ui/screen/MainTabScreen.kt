@@ -47,6 +47,7 @@ import com.droidspaces.app.ui.theme.DsIcons
 import com.droidspaces.app.util.HostCapabilities
 import androidx.compose.runtime.collectAsState
 import com.droidspaces.app.util.Constants
+import com.droidspaces.app.wayland.WaylandManager
 
 private const val EASTER_EGG_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -54,6 +55,8 @@ enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.v
     Home(R.string.home_title, Icons.Default.Home),
     Containers(R.string.containers, DsIcons.Logo),
     ControlPanel(R.string.panel, Icons.Default.Dashboard)
+    // Wayland Display — only visible while compositor is running.
+    WaylandDisplay(R.string.wayland_display, Icons.Default.DesktopWindows)
 }
 
 /**
@@ -84,14 +87,42 @@ fun MainTabScreen(
     // containerViewModel is now passed as parameter to ensure sharing
 
 
-    val tabs = remember { TabItem.values() }
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
+    // Droidspaces fork extension: observe compositor lifecycle directly.
+    // WaylandManager.isRunning is already backed by Compose mutableStateOf.
+    val isWaylandRunning = Constants.isArm64 && WaylandManager.isRunning
+
+    // Keep mainline tabs unchanged; append the fork-specific tab conditionally.
+    val tabs = buildList {
+        add(TabItem.Home)
+        add(TabItem.Containers)
+        add(TabItem.ControlPanel)
+
+        if (isWaylandRunning) {
+            add(TabItem.WaylandDisplay)
+        }
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = 0,
+        pageCount = { tabs.size }
+    )
 
     // Read once here and handed down as a Boolean, so Home, Containers and the
     // Panel can never disagree. Unknown counts as supported until the probe lands.
     val caps by HostCapabilities.state.collectAsState()
     val isKernelSupported = caps?.requirementsMet != false
-    val selectedTab = tabs[pagerState.currentPage]
+
+    // Guard the selected index while the dynamic page count changes.
+    val selectedTab = tabs.getOrElse(pagerState.currentPage) {
+        TabItem.Home
+    }
+
+    // If compositor stops while Wayland is selected, return to Home.
+    LaunchedEffect(isWaylandRunning) {
+        if (!isWaylandRunning && pagerState.currentPage >= tabs.size) {
+            pagerState.scrollToPage(0)
+        }
+    }
 
     // Jump to the tab requested by a launcher shortcut, then clear the request.
     LaunchedEffect(requestedTab) {
@@ -320,7 +351,25 @@ fun MainTabScreen(
                                 onNavigateToContainerDetails = onNavigateToContainerDetails,
                                 onNavigateToTerminal = onNavigateToTerminal,
                                 bottomBarInset = bottomBarHeight,
-                                onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
+                                onNavigateToWaylandDisplay = {
+                                    val waylandIndex = tabs.indexOf(TabItem.WaylandDisplay)
+
+                                    if (isWaylandRunning && waylandIndex >= 0) {
+                                        scope.launch {
+                                            pagerState.animateScrollToPage(waylandIndex)
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                        // Droidspaces fork extension: built-in Wayland display page.
+                        TabItem.WaylandDisplay -> {
+                            WaylandScreen(
+                                onNavigateBack = {
+                                    scope.launch {
+                                        pagerState.animateScrollToPage(0)
+                                    }
+                                }
                             )
                         }
                     }
@@ -335,6 +384,7 @@ fun MainTabScreen(
                     .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
             ) {
                 MainBottomBar(
+                    tabs = tabs,
                     selectedTab = selectedTab,
                     onTabSelected = { tab ->
                         scope.launch {
@@ -487,11 +537,11 @@ private fun CountCard(icon: ImageVector, tint: Color, count: Int, label: String,
 
 @Composable
 private fun MainBottomBar(
+    tabs: List<TabItem>,
     selectedTab: TabItem,
     onTabSelected: (TabItem) -> Unit
 ) {
     val context = LocalContext.current
-    val tabs = TabItem.entries
     val selectedIndex = tabs.indexOf(selectedTab)
     
     Surface(
