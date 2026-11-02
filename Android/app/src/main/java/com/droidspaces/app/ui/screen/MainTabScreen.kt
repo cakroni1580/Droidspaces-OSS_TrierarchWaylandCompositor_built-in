@@ -244,6 +244,8 @@ fun MainTabScreen(
                         }
                     }
                 }
+                // Droidspaces fork extension: Wayland page has no container refresh.
+                TabItem.WaylandDisplay -> Unit
             }
         }
     }
