@@ -76,6 +76,7 @@ fun MainTabScreen(
     onNavigateToEditContainer: (String) -> Unit = {},
     onNavigateToContainerDetails: (String) -> Unit = {},
     onNavigateToTerminal: (String) -> Unit = {},
+    onNavigateToWaylandDisplay: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -318,7 +319,8 @@ fun MainTabScreen(
                                 containerViewModel = containerViewModel,
                                 onNavigateToContainerDetails = onNavigateToContainerDetails,
                                 onNavigateToTerminal = onNavigateToTerminal,
-                                bottomBarInset = bottomBarHeight
+                                bottomBarInset = bottomBarHeight,
+                                onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
                             )
                         }
                     }
