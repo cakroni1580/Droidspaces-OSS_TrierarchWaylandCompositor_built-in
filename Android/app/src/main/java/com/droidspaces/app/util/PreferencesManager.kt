@@ -106,7 +106,7 @@ class PreferencesManager private constructor(context: Context) {
     var isSymlinkEnabled: Boolean by pref(KEY_SYMLINK_ENABLED, false)
     
     var isWaylandCompositorEnabled: Boolean
-        get() = prefs.getBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, false)
+        get() = prefs.getBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, true)
         set(value) {
             prefs.edit().putBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, value).apply()
         }
