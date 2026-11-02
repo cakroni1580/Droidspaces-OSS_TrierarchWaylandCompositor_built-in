@@ -147,6 +147,7 @@ fun InstallationSummaryScreen(
                     Option(!config.enableHwAccess && config.enableGpuMode, stringResource(R.string.gpu_access), stringResource(R.string.enabled_legend), Icons.Default.DeveloperBoard)
                     Option(config.enableTermuxX11, stringResource(R.string.termux_x11), stringResource(R.string.enabled_legend), painterResource(id = R.drawable.ic_x11))
                     Option(config.enableAnland, stringResource(R.string.enable_anland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
+                    Option(config.enableWayland && Constants.isArm64) SummaryItem(stringResource(R.string.enable_wayland), stringResource(R.string.enabled_legend), Icons.Default.DesktopWindows)
                     Option(config.enableVirgl, stringResource(R.string.enable_virgl), stringResource(R.string.enabled_legend), Icons.Default.Layers)
                     Option(config.enablePulseaudio, stringResource(R.string.enable_pulseaudio), stringResource(R.string.enabled_legend), Icons.AutoMirrored.Filled.VolumeUp)
                     Option(config.selinuxPermissive, stringResource(R.string.selinux_permissive), stringResource(R.string.enabled_legend), Icons.Default.Security)
