@@ -47,16 +47,13 @@ import com.droidspaces.app.ui.theme.DsIcons
 import com.droidspaces.app.util.HostCapabilities
 import androidx.compose.runtime.collectAsState
 import com.droidspaces.app.util.Constants
-import com.droidspaces.app.wayland.WaylandManager
 
 private const val EASTER_EGG_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Home(R.string.home_title, Icons.Default.Home),
     Containers(R.string.containers, DsIcons.Logo),
-    ControlPanel(R.string.panel, Icons.Default.Dashboard),
-    // Wayland Display — only visible while compositor is running.
-    WaylandDisplay(R.string.wayland_display, Icons.Default.DesktopWindows)
+    ControlPanel(R.string.panel, Icons.Default.Dashboard)
 }
 
 /**
@@ -87,42 +84,14 @@ fun MainTabScreen(
     // containerViewModel is now passed as parameter to ensure sharing
 
 
-    // Droidspaces fork extension: observe compositor lifecycle directly.
-    // WaylandManager.isRunning is already backed by Compose mutableStateOf.
-    val isWaylandRunning = Constants.isArm64 && WaylandManager.isRunning
-
-    // Keep mainline tabs unchanged; append the fork-specific tab conditionally.
-    val tabs = buildList {
-        add(TabItem.Home)
-        add(TabItem.Containers)
-        add(TabItem.ControlPanel)
-
-        if (isWaylandRunning) {
-            add(TabItem.WaylandDisplay)
-        }
-    }
-
-    val pagerState = rememberPagerState(
-        initialPage = 0,
-        pageCount = { tabs.size }
-    )
+    val tabs = remember { TabItem.values() }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
 
     // Read once here and handed down as a Boolean, so Home, Containers and the
     // Panel can never disagree. Unknown counts as supported until the probe lands.
     val caps by HostCapabilities.state.collectAsState()
     val isKernelSupported = caps?.requirementsMet != false
-
-    // Guard the selected index while the dynamic page count changes.
-    val selectedTab = tabs.getOrElse(pagerState.currentPage) {
-        TabItem.Home
-    }
-
-    // If compositor stops while Wayland is selected, return to Home.
-    LaunchedEffect(isWaylandRunning) {
-        if (!isWaylandRunning && pagerState.currentPage >= tabs.size) {
-            pagerState.scrollToPage(0)
-        }
-    }
+    val selectedTab = tabs[pagerState.currentPage]
 
     // Jump to the tab requested by a launcher shortcut, then clear the request.
     LaunchedEffect(requestedTab) {
@@ -244,8 +213,6 @@ fun MainTabScreen(
                         }
                     }
                 }
-                // Droidspaces fork extension: Wayland page has no container refresh.
-                TabItem.WaylandDisplay -> Unit
             }
         }
     }
@@ -253,43 +220,36 @@ fun MainTabScreen(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            if (selectedTab != TabItem.WaylandDisplay) {
-                 TopAppBar(
-                    title = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable(
-                                interactionSource = remember {
-                                    androidx.compose.foundation.interaction.MutableInteractionSource()
-                                },
-                                indication = null
-                            ) { expandedContainerName = null }
-                        ) {
-                            Icon(
-                                imageVector = DsIcons.Logo,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .padding(end = 8.dp)
-                                    .size(24.dp)
-                            )
-                            Text(
-                                text = context.getString(selectedTab.titleResId),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = onNavigateToSettings) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = context.getString(R.string.settings)
-                            )
-                        }
-                    },
-                    windowInsets = WindowInsets.statusBars
-                )
-            }
+            TopAppBar(
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { expandedContainerName = null }
+                    ) {
+                        Icon(
+                            imageVector = DsIcons.Logo,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .size(24.dp)
+                        )
+                        Text(
+                            text = context.getString(selectedTab.titleResId),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = context.getString(R.string.settings))
+                    }
+                },
+                windowInsets = WindowInsets.statusBars
+            )
         },
         bottomBar = {
             // No bottom bar content here to avoid the solid background
@@ -360,52 +320,30 @@ fun MainTabScreen(
                                 onNavigateToContainerDetails = onNavigateToContainerDetails,
                                 onNavigateToTerminal = onNavigateToTerminal,
                                 bottomBarInset = bottomBarHeight,
-                                onNavigateToWaylandDisplay = {
-                                    val waylandIndex = tabs.indexOf(TabItem.WaylandDisplay)
-
-                                    if (isWaylandRunning && waylandIndex >= 0) {
-                                        scope.launch {
-                                            pagerState.animateScrollToPage(waylandIndex)
-                                        }
-                                    }
-                                },
+                                onNavigateToWaylandDisplay = onNavigateToWaylandDisplay,
                             )
                         }
                     }
-                    // Droidspaces fork extension: built-in Wayland display page.
-                    TabItem.WaylandDisplay -> {
-                        WaylandScreen(
-                            onNavigateBack = {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(0)
-                                }
-                            }
-                        )
-                    }
                 }
             }
+
             // Floating Bottom Bar Overlay
-            if (selectedTab != TabItem.WaylandDisplay) {
-                Box(
-                    modifier = Modifier
-                       .align(Alignment.BottomCenter)
-                       .fillMaxWidth()
-                       .onSizeChanged {
-                           bottomBarHeight = with(density) { it.height.toDp() }
-                       }
-                ) {
-                    MainBottomBar(
-                       tabs = tabs,
-                       selectedTab = selectedTab,
-                       onTabSelected = { tab ->
-                           scope.launch {
-                               pagerState.scrollToPage(tabs.indexOf(tab))
-                           }
-                           expandedContainerName = null
-                       }
-                   )
-               }
-           }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
+            ) {
+                MainBottomBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = { tab ->
+                        scope.launch {
+                            pagerState.scrollToPage(tabs.indexOf(tab))
+                        }
+                        expandedContainerName = null
+                    }
+                )
+            }
         }
     }
 }
@@ -549,12 +487,12 @@ private fun CountCard(icon: ImageVector, tint: Color, count: Int, label: String,
 
 @Composable
 private fun MainBottomBar(
-    tabs: List<TabItem>,
     selectedTab: TabItem,
     onTabSelected: (TabItem) -> Unit
 ) {
     val context = LocalContext.current
-    val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
+    val tabs = TabItem.entries
+    val selectedIndex = tabs.indexOf(selectedTab)
     
     Surface(
         modifier = Modifier.fillMaxWidth(),
