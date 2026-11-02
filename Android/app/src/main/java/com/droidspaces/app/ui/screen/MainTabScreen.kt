@@ -253,36 +253,43 @@ fun MainTabScreen(
     Scaffold(
         containerColor = Color.Transparent,
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null
-                        ) { expandedContainerName = null }
-                    ) {
-                        Icon(
-                            imageVector = DsIcons.Logo,
-                            contentDescription = null,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .size(24.dp)
-                        )
-                        Text(
-                            text = context.getString(selectedTab.titleResId),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Black
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(imageVector = Icons.Default.Settings, contentDescription = context.getString(R.string.settings))
-                    }
-                },
-                windowInsets = WindowInsets.statusBars
-            )
+            if (selectedTab != TabItem.WaylandDisplay) {
+                 TopAppBar(
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable(
+                                interactionSource = remember {
+                                    androidx.compose.foundation.interaction.MutableInteractionSource()
+                                },
+                                indication = null
+                            ) { expandedContainerName = null }
+                        ) {
+                            Icon(
+                                imageVector = DsIcons.Logo,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .size(24.dp)
+                            )
+                            Text(
+                                text = context.getString(selectedTab.titleResId),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = context.getString(R.string.settings)
+                            )
+                        }
+                    },
+                    windowInsets = WindowInsets.statusBars
+                )
+            }
         },
         bottomBar = {
             // No bottom bar content here to avoid the solid background
@@ -377,25 +384,28 @@ fun MainTabScreen(
                     }
                 }
             }
-
             // Floating Bottom Bar Overlay
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .onSizeChanged { bottomBarHeight = with(density) { it.height.toDp() } }
-            ) {
-                MainBottomBar(
-                    tabs = tabs,
-                    selectedTab = selectedTab,
-                    onTabSelected = { tab ->
-                        scope.launch {
-                            pagerState.scrollToPage(tabs.indexOf(tab))
-                        }
-                        expandedContainerName = null
-                    }
-                )
-            }
+            if (selectedTab != TabItem.WaylandDisplay) {
+                Box(
+                    modifier = Modifier
+                       .align(Alignment.BottomCenter)
+                       .fillMaxWidth()
+                       .onSizeChanged {
+                           bottomBarHeight = with(density) { it.height.toDp() }
+                       }
+                ) {
+                    MainBottomBar(
+                       tabs = tabs,
+                       selectedTab = selectedTab,
+                       onTabSelected = { tab ->
+                           scope.launch {
+                               pagerState.scrollToPage(tabs.indexOf(tab))
+                           }
+                           expandedContainerName = null
+                       }
+                   )
+               }
+           }
         }
     }
 }
