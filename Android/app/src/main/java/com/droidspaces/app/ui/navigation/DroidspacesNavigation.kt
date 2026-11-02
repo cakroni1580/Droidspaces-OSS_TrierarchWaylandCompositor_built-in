@@ -60,6 +60,7 @@ import com.droidspaces.app.ui.screen.JournaldScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.content.Intent
 
 /**
  * Sealed class representing all navigation destinations.
