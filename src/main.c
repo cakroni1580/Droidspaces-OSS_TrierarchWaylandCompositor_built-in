@@ -339,7 +339,7 @@ static struct option long_options[] = {
     {"pulse-audio", no_argument, 0, 273},
     {"anland", no_argument, 0, 283},
     {"wayland", no_argument, 0, 285},
-    {"gateway", required_argument,{"wayland", no_argument, 0, 285}, 0, 274},
+    {"gateway", required_argument, 0, 274},
     {"gateway-container", required_argument, 0, 274},
     {"gateway-net", required_argument, 0, 275},
     {"gateway-iface", required_argument, 0, 276},
