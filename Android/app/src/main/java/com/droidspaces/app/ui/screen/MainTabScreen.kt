@@ -54,7 +54,7 @@ private const val EASTER_EGG_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 enum class TabItem(val titleResId: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     Home(R.string.home_title, Icons.Default.Home),
     Containers(R.string.containers, DsIcons.Logo),
-    ControlPanel(R.string.panel, Icons.Default.Dashboard)
+    ControlPanel(R.string.panel, Icons.Default.Dashboard),
     // Wayland Display — only visible while compositor is running.
     WaylandDisplay(R.string.wayland_display, Icons.Default.DesktopWindows)
 }
@@ -362,16 +362,16 @@ fun MainTabScreen(
                                 },
                             )
                         }
-                        // Droidspaces fork extension: built-in Wayland display page.
-                        TabItem.WaylandDisplay -> {
-                            WaylandScreen(
-                                onNavigateBack = {
-                                    scope.launch {
-                                        pagerState.animateScrollToPage(0)
-                                    }
+                    }
+                    // Droidspaces fork extension: built-in Wayland display page.
+                    TabItem.WaylandDisplay -> {
+                        WaylandScreen(
+                            onNavigateBack = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(0)
                                 }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             }
@@ -542,7 +542,7 @@ private fun MainBottomBar(
     onTabSelected: (TabItem) -> Unit
 ) {
     val context = LocalContext.current
-    val selectedIndex = tabs.indexOf(selectedTab)
+    val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
     
     Surface(
         modifier = Modifier.fillMaxWidth(),
