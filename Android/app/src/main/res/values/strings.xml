@@ -50,6 +50,7 @@
     <!-- Main Tab Screen -->
     <string name="container_singular">Container</string>
     <string name="running">Running</string>
+    <string name="wayland_display">Wayland</string>
 
     <!-- Backend Status Card -->
     <string name="backend_checking">Backend: Checking...</string>
