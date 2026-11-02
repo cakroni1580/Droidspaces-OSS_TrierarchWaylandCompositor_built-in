@@ -4,6 +4,7 @@ import android.app.Application
 import android.system.Os
 import com.topjohnwu.superuser.Shell
 import com.droidspaces.app.util.SystemInfoManager
+import com.droidspaces.app.util.PreferencesManager
 import com.droidspaces.app.wayland.WaylandManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
