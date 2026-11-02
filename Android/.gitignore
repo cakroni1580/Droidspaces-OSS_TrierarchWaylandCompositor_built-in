@@ -1,6 +1,8 @@
 # Build outputs
 *.apk
 *.aab
+# CMakeLists.txt files are source — un-ignore them (root .gitignore has *.txt)
+!**/CMakeLists.txt
 build/
 .gradle/
 .kotlin/
