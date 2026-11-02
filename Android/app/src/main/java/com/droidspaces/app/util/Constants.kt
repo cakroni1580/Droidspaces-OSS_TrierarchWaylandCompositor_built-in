@@ -27,6 +27,10 @@ object Constants {
 
     const val KERNEL_CONFIG_DOC_URL = "https://github.com/ravindu644/Droidspaces-OSS/blob/main/Documentation/Kernel-Configuration.md"
 
+    // Preferences keys
+    const val KEY_WAYLAND_COMPOSITOR_ENABLED = "wayland_compositor_enabled"
+    const val KEY_TREAT_AS_64BIT = "treat_as_64bit"
+    
     // Minimum storage requirements
     const val MIN_STORAGE_GB = 4
 
@@ -34,6 +38,12 @@ object Constants {
     const val NAT_IP_PREFIX = "172.28"
     const val NAT_OCTET_MIN = 1
     const val NAT_OCTET_MAX = 254
+
+    // Wayland compositor is only supported on arm64-v8a.
+    // Used to hide Wayland UI on unsupported architectures.
+    val isArm64: Boolean = android.os.Build.SUPPORTED_ABIS[0].let {
+        it.contains("arm64") || it.contains("aarch64")
+    }
 
     /**
      * Check if droidspaces binary is available in system PATH
