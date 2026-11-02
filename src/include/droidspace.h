@@ -342,7 +342,7 @@ typedef enum {
   DS_INIT_SYSTEMD,  /* SIGRTMIN+3 */
   DS_INIT_PROCD,    /* SIGUSR2    -- OpenWrt; SIGTERM = reboot there! */
   DS_INIT_OPENRC,   /* SIGTERM    */
-  DS_INIT_RUNIT,    /* SIGCONT    */
+  DS_INIT_RUNIT,    /* stopit flag + SIGCONT */
   DS_INIT_S6,       /* SIGUSR2    */
   DS_INIT_BUSYBOX,  /* SIGUSR2    */
   DS_INIT_SYSVINIT, /* SIGTERM    */
@@ -830,7 +830,8 @@ int ds_net_macvlan_check(const struct ds_config *cfg);
  * bridge.  The kernel does not auto-reap these (the host-side veth pins its
  * orphan peer netns), so this prevents the leak.  No-op for a non-gateway. */
 void ds_net_gateway_teardown(const char *gateway_name);
-int ds_net_disable_tx_checksum(const char *ifname);
+void ds_net_prepare_host_veth(const char *ifname);
+void ds_net_steer_rx(const char *sys, const char *ifname);
 void parse_cidr(const char *cidr, uint32_t *ip_out, uint32_t *mask_out);
 
 int ds_get_dns_servers(const char *custom_dns, char *out, size_t size);

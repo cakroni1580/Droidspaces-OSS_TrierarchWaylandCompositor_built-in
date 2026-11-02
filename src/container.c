@@ -1008,6 +1008,39 @@ static int load_booted_config(const struct ds_config *cfg, pid_t pid,
   return 0;
 }
 
+/* Set the mode of a runit flag file through an fd, so a FIFO or device the
+ * guest planted at the path is refused instead of blocked on or followed. */
+static int runit_flag(const char *path, int flags, mode_t mode) {
+  int fd = open(path, flags | O_WRONLY | O_NONBLOCK | O_CLOEXEC, 0);
+  struct stat st;
+  int ok = fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) &&
+           fchmod(fd, mode) == 0;
+  if (fd >= 0)
+    close(fd);
+  return ok ? 0 : -1;
+}
+
+/* runit shuts down on SIGCONT only while /etc/runit/stopit carries the owner
+ * execute bit, so this does what runit-init 0 does before it signals: create
+ * the flag, set the bit, clear the reboot flag so stage 3 halts. Void and
+ * Debian ship stopit as an absolute symlink into /run, which through
+ * /proc/<pid>/root would resolve against the host, so a child steps into the
+ * container's mount namespace first. */
+static void runit_request_halt(pid_t pid, struct ds_config *cfg) {
+  pid_t child = fork();
+  if (child == 0) {
+    if (enter_namespace(pid, cfg) < 0 ||
+        runit_flag("/etc/runit/stopit", O_CREAT, 0100) < 0)
+      _exit(1);
+    runit_flag("/etc/runit/reboot", 0, 0);
+    _exit(0);
+  }
+  int st;
+  if (child < 0 || waitpid(child, &st, 0) < 0 || !WIFEXITED(st) ||
+      WEXITSTATUS(st))
+    ds_warn("runit: could not set /etc/runit/stopit, SIGCONT may be ignored");
+}
+
 /* The body of a stop. The caller holds the lifecycle lock. */
 static int stop_rootfs_locked(struct ds_config *caller_cfg, int skip_unmount,
                               int timeout_seconds) {
@@ -1114,9 +1147,10 @@ static int stop_rootfs_locked(struct ds_config *caller_cfg, int skip_unmount,
       if (init_type == DS_INIT_PROCD || init_type == DS_INIT_S6 ||
           init_type == DS_INIT_BUSYBOX)
         sig = SIGUSR2;
-      else if (init_type == DS_INIT_RUNIT)
+      else if (init_type == DS_INIT_RUNIT) {
+        runit_request_halt(pid, cfg);
         sig = SIGCONT;
-      else if (init_type == DS_INIT_SYSTEMD)
+      } else if (init_type == DS_INIT_SYSTEMD)
         sig = DS_SIG_STOP; /* SIGRTMIN+3 */
       else if (init_type == DS_INIT_OPENRC)
         sig = SIGPWR;
