@@ -1,6 +1,3 @@
 [submodule "third_party/trierarch"]
 	path = third_party/trierarch
 	url = https://github.com/cakroni1580/trierarch
-git add .gitmodules third_party/trierarch
-git commit -m "Add Trierarch as third-party submodule"
-git push
