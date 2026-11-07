@@ -100,6 +100,7 @@ struct ds_config {
   char *virgl_extra_flags; /* --virgl-flags "..." (heap, NULL if unset) */
   int pulseaudio;          /* --pulse-audio (Android only) */
   int anland;              /* --anland: embed anland display daemon (Android) */
+  int wayland;             /* --wayland (Android only) */
   int volatile_mode;       /* --volatile */
   int disable_ipv6;        /* --disable-ipv6 */
   int android_storage;     /* --enable-android-storage */
