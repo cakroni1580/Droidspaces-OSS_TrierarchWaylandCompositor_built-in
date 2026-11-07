@@ -9,8 +9,8 @@ OUT_DIR     = output
 # Default compiler. Do not allow recursive builds to accidentally get empty CC.
 CC ?= cc
 
-# DS_VERSION in droidspace.h is the one place the version lives; `make bump` rewrites it
-VERSION := $(shell grep "DS_VERSION" $(SRC_DIR)/include/droidspace.h | awk '{print $$3}' | tr -d '"')
+# DS_VERSION in droidspaces.h is the one place the version lives; `make bump` rewrites it
+VERSION := $(shell grep "DS_VERSION" $(SRC_DIR)/include/droidspaces.h | awk '{print $$3}' | tr -d '"')
 
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
 
@@ -29,36 +29,113 @@ endif
 
 # Every source listed by hand: a stray .c in the tree must not get linked in
 SRCS = $(SRC_DIR)/main.c \
-       $(SRC_DIR)/utils.c \
+       $(SRC_DIR)/core/log.c \
+       $(SRC_DIR)/core/string.c \
+       $(SRC_DIR)/core/fs.c \
+       $(SRC_DIR)/core/paths.c \
+       $(SRC_DIR)/core/proc.c \
+       $(SRC_DIR)/core/exec.c \
+       $(SRC_DIR)/core/fdpass.c \
+       $(SRC_DIR)/core/frame.c \
+       $(SRC_DIR)/core/json.c \
+       $(SRC_DIR)/core/platform.c \
+       $(SRC_DIR)/security/peer_auth.c \
+       $(SRC_DIR)/security/selinux.c \
+       $(SRC_DIR)/config/config.c \
+       $(SRC_DIR)/config/parse.c \
+       $(SRC_DIR)/config/load.c \
+       $(SRC_DIR)/config/save.c \
+       $(SRC_DIR)/security/jail.c \
+       $(SRC_DIR)/security/caps.c \
+       $(SRC_DIR)/security/seccomp.c \
+       $(SRC_DIR)/security/seccomp_shims.c \
+       $(SRC_DIR)/rootfs/mount.c \
+       $(SRC_DIR)/rootfs/image.c \
+       $(SRC_DIR)/rootfs/volatile.c \
+       $(SRC_DIR)/rootfs/binds.c \
+       $(SRC_DIR)/dev/dev.c \
+       $(SRC_DIR)/dev/devpts.c \
+       $(SRC_DIR)/cgroup/discover.c \
+       $(SRC_DIR)/cgroup/mount.c \
+       $(SRC_DIR)/cgroup/v1.c \
+       $(SRC_DIR)/cgroup/lifecycle.c \
+       $(SRC_DIR)/cgroup/limits.c \
+       $(SRC_DIR)/cgroup/stats.c \
+       $(SRC_DIR)/virt/mem.c \
+       $(SRC_DIR)/virt/cpu.c \
+       $(SRC_DIR)/virt/affinity.c \
+       $(SRC_DIR)/virt/vproc.c \
+       $(SRC_DIR)/hw/gpu.c \
+       $(SRC_DIR)/hw/hardware.c \
+       $(SRC_DIR)/tty/pty.c \
+       $(SRC_DIR)/tty/proxy.c \
+       $(SRC_DIR)/tty/console.c \
+       $(SRC_DIR)/net/nl/core.c \
+       $(SRC_DIR)/net/nl/probe.c \
+       $(SRC_DIR)/net/nl/link.c \
+       $(SRC_DIR)/net/nl/addr.c \
+       $(SRC_DIR)/net/nl/linkdump.c \
+       $(SRC_DIR)/net/nl/route_query.c \
+       $(SRC_DIR)/net/nl/rule.c \
+       $(SRC_DIR)/net/ipt/core.c \
+       $(SRC_DIR)/net/ipt/match.c \
+       $(SRC_DIR)/net/ipt/insert.c \
+       $(SRC_DIR)/net/ipt/remove.c \
+       $(SRC_DIR)/net/ipt/rules.c \
+       $(SRC_DIR)/net/ipt/portfwd.c \
+       $(SRC_DIR)/net/dhcp/proto.c \
+       $(SRC_DIR)/net/dhcp/server.c \
+       $(SRC_DIR)/net/dhcp/ra.c \
+       $(SRC_DIR)/net/naming.c \
+       $(SRC_DIR)/net/netns.c \
+       $(SRC_DIR)/net/dns.c \
+       $(SRC_DIR)/net/static_ip.c \
+       $(SRC_DIR)/net/nat/veth.c \
+       $(SRC_DIR)/net/nat/filter.c \
+       $(SRC_DIR)/net/route/policy.c \
+       $(SRC_DIR)/net/route/uplink.c \
+       $(SRC_DIR)/net/route/monitor.c \
+       $(SRC_DIR)/net/gateway/wire.c \
+       $(SRC_DIR)/net/gateway/lifecycle.c \
+       $(SRC_DIR)/net/macvlan.c \
+       $(SRC_DIR)/net/guest.c \
+       $(SRC_DIR)/net/cleanup.c \
+       $(SRC_DIR)/android/firmware.c \
+       $(SRC_DIR)/android/spawn.c \
+       $(SRC_DIR)/android/socket.c \
+       $(SRC_DIR)/container/inspect.c \
+       $(SRC_DIR)/container/registry.c \
+       $(SRC_DIR)/container/recovery.c \
+       $(SRC_DIR)/container/lock.c \
+       $(SRC_DIR)/container/command.c \
+       $(SRC_DIR)/container/cleanup.c \
+       $(SRC_DIR)/container/start.c \
+       $(SRC_DIR)/container/stop.c \
+       $(SRC_DIR)/container/exec.c \
+       $(SRC_DIR)/container/info.c \
+       $(SRC_DIR)/container/restart.c \
+       $(SRC_DIR)/android/helpers.c \
+       $(SRC_DIR)/status/collect.c \
+       $(SRC_DIR)/status/show.c \
+       $(SRC_DIR)/cli/options.c \
+       $(SRC_DIR)/cli/usage.c \
        $(SRC_DIR)/android/android.c \
-       $(SRC_DIR)/seccomp.c \
-       $(SRC_DIR)/mount.c \
-       $(SRC_DIR)/cgroup.c \
-       $(SRC_DIR)/net/network.c \
-       $(SRC_DIR)/terminal.c \
-       $(SRC_DIR)/console.c \
-       $(SRC_DIR)/pid.c \
-       $(SRC_DIR)/status.c \
-       $(SRC_DIR)/boot.c \
-       $(SRC_DIR)/config.c \
-       $(SRC_DIR)/container.c \
-       $(SRC_DIR)/monitor.c \
-       $(SRC_DIR)/environment.c \
-       $(SRC_DIR)/documentation.c \
-       $(SRC_DIR)/hardware.c \
-       $(SRC_DIR)/net/iptables.c \
-       $(SRC_DIR)/net/netlink.c \
-       $(SRC_DIR)/net/dhcp.c \
-       $(SRC_DIR)/net/ra.c \
-       $(SRC_DIR)/daemon.c \
-       $(SRC_DIR)/check.c \
+       $(SRC_DIR)/boot/init.c \
+       $(SRC_DIR)/boot/env.c \
+       $(SRC_DIR)/monitor/console.c \
+       $(SRC_DIR)/monitor/monitor.c \
+       $(SRC_DIR)/cli/docs.c \
+       $(SRC_DIR)/daemon/protocol.c \
+       $(SRC_DIR)/daemon/session.c \
+       $(SRC_DIR)/daemon/server.c \
+       $(SRC_DIR)/daemon/client.c \
+       $(SRC_DIR)/cli/check.c \
        $(SRC_DIR)/android/x11.c \
        $(SRC_DIR)/android/virgl.c \
        $(SRC_DIR)/android/pulseaudio.c \
-       $(SRC_DIR)/anland/anland.c \
-       $(SRC_DIR)/anland/display_daemon.c \
        $(SRC_DIR)/android/wayland.c \
-       $(SRC_DIR)/virtualize.c
+       $(SRC_DIR)/android/anland/anland.c \
+       $(SRC_DIR)/android/anland/display_daemon.c
 
 # Hardened warning set, all warnings are errors
 CFLAGS  = -Wall -Wextra -Wpedantic -Werror -O2 -flto=auto -std=gnu99 -I$(SRC_DIR)/include -no-pie -pthread
@@ -120,7 +197,7 @@ help:
 	@echo "  NO_STRIP=1     - Keep symbols"
 	@echo ""
 	@echo "Other:"
-	@echo "  make bump NEW=x.y.z - Set the version (droidspace.h)"
+	@echo "  make bump NEW=x.y.z - Set the version (droidspaces.h)"
 	@echo "  make clean     - Remove build artifacts"
 	@echo "  make debug-hardened - Build with ASan/UBSan/LSan to find bugs"
 	@echo "  make format    - Run clang-format on all .c/.h/.cpp files"
@@ -198,7 +275,7 @@ all-tarball: all-build
 
 bump:
 	@echo "$(NEW)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "Usage: make bump NEW=x.y.z"; exit 1; }
-	@sed -i 's/define DS_VERSION ".*"/define DS_VERSION "$(NEW)"/' $(SRC_DIR)/include/droidspace.h
+	@sed -i 's/define DS_VERSION ".*"/define DS_VERSION "$(NEW)"/' $(SRC_DIR)/include/droidspaces.h
 	@echo "[+] Version $(VERSION) -> $(NEW). Commit it, then tag v$(NEW) to release."
 
 format:
