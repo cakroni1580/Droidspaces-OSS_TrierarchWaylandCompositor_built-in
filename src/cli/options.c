@@ -154,6 +154,7 @@ const struct option long_options[] = {
     {"virgl-flags", required_argument, 0, 272},
     {"pulse-audio", no_argument, 0, 273},
     {"anland", no_argument, 0, 283},
+    {"wayland", no_argument, 0, 285},
     {"gateway", required_argument, 0, 274},
     {"gateway-container", required_argument, 0, 274},
     {"gateway-net", required_argument, 0, 275},
@@ -275,6 +276,9 @@ int ds_apply_cli_overrides(int argc, char **argv, struct ds_config *cfg,
       break;
     case 283:
       cfg->anland = 1;
+      break;
+    case 285:
+      cfg->wayland = 1;
       break;
     case 274:
       safe_strncpy(cfg->gateway_container, optarg,
