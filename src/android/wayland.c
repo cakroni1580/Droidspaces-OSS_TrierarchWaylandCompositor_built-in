@@ -22,8 +22,8 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   if (!is_android())
     return 0;
 
-  /*if (!cfg->wayland)
-    return 0;*/
+  if (!cfg->wayland)
+    return 0;
 
   if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) != 0) {
     ds_warn("[Wayland] compositor socket not found at %s",
