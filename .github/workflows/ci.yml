@@ -37,7 +37,7 @@ jobs:
     steps:
     - uses: actions/checkout@v5
       with:
-        fetch-depth: 0
+        submodules: recursive
 
     # One version, DS_VERSION in droidspaces.h. A tag must match it, so a
     # forgotten `make bump` fails here instead of shipping.

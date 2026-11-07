@@ -104,6 +104,12 @@ class PreferencesManager private constructor(context: Context) {
         }
 
     var isSymlinkEnabled: Boolean by pref(KEY_SYMLINK_ENABLED, false)
+    
+    var isWaylandCompositorEnabled: Boolean
+        get() = prefs.getBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, true)
+        set(value) {
+            prefs.edit().putBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, value).apply()
+        }
 
     /**
      * Reactive stream of the daemon-mode preference, emits the current value and
@@ -347,6 +353,7 @@ class PreferencesManager private constructor(context: Context) {
         private const val KEY_THEME_PALETTE = "theme_palette"
         private const val KEY_DAEMON_MODE_ENABLED = "daemon_mode_enabled"
         private const val KEY_SYMLINK_ENABLED = "symlink_enabled"
+        private const val KEY_WAYLAND_COMPOSITOR_ENABLED = Constants.KEY_WAYLAND_COMPOSITOR_ENABLED
         private const val KEY_TREAT_AS_64BIT = "treat_as_64bit"
         private const val KEY_CHECK_APP_UPDATES = "check_app_updates"
         private const val KEY_CONTAINER_LOG_PREFIX = "container_log_"

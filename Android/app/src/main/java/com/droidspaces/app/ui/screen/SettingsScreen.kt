@@ -53,6 +53,8 @@ import com.droidspaces.app.ui.theme.rememberThemeState
 import com.droidspaces.app.ui.viewmodel.AppStateViewModel
 import com.droidspaces.app.util.PreferencesManager
 import com.droidspaces.app.util.LocaleHelper
+import com.droidspaces.app.util.Constants
+import com.droidspaces.app.wayland.WaylandManager
 import com.droidspaces.app.util.ContributorManager
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -118,6 +120,11 @@ fun SettingsScreen(
         .collectAsStateWithLifecycle(initialValue = prefsManager.isSymlinkEnabled)
     val treatAs64Bit by prefsManager.treatAs64BitFlow
         .collectAsStateWithLifecycle(initialValue = prefsManager.treatAs64Bit)
+   // Wayland compositor preference.
+   // This represents the desired state, not the compositor's runtime state.
+   var isWaylandEnabled by remember {
+       mutableStateOf(prefsManager.isWaylandCompositorEnabled)
+   }
 
     // Listen for locale changes and sync daemon mode from disk
     LaunchedEffect(Unit) {
@@ -187,6 +194,36 @@ fun SettingsScreen(
                         prefsManager.isDaemonModeEnabled = checked
                     }
                 )
+
+                // Wayland Compositor Toggle (ARM64 only)
+                if (Constants.isArm64) {
+                GroupDivider()
+
+                val isWaylandRunning = WaylandManager.isRunning
+
+                SwitchItem(
+                    icon = Icons.Default.DesktopWindows,
+                    title = context.getString(R.string.wayland_compositor),
+                    summary = if (isWaylandRunning) {
+                        WaylandManager.hostSocketPath(context)
+                    } else {
+                        context.getString(R.string.wayland_compositor_stopped)
+                    },
+                    checked = isWaylandEnabled,
+                    enabled = isRootAvailable,
+                    onCheckedChange = { checked ->
+                        // Update desired state immediately so Compose reflects the switch.
+                        isWaylandEnabled = checked
+                        prefsManager.isWaylandCompositorEnabled = checked
+
+                             if (checked) {
+                                 WaylandManager.start(context)
+                             } else {
+                                 WaylandManager.stop(context)
+                             }
+                        }
+                    )
+                }
 
                 GroupDivider()
 
