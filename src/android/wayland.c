@@ -13,7 +13,7 @@
  */
 
 #define _GNU_SOURCE
-#include "droidspace.h"
+#include "droidspaces.h"
 #include <sys/stat.h>
 
 int ds_setup_wayland_socket(struct ds_config *cfg) {
