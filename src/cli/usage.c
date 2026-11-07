@@ -93,6 +93,9 @@ void print_usage(void) {
       "      --pulse-audio         Configure PulseAudio sound server "
       "support\n"
       "      --anland              Embed the anland display daemon "
+      "(Android)\n\n"
+
+      "      --wayland             Bridge Wayland compositor socket into container "
       "(Android)\n\n");
 
   printf(
