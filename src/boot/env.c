@@ -120,6 +120,17 @@ void ds_env_save(const char *path, struct ds_config *cfg) {
     fprintf(f, "export GALLIUM_DRIVER='virpipe'\n");
   if (is_android() && cfg->pulseaudio)
     fprintf(f, "export PULSE_SERVER='unix:" DS_PULSE_SOCKET "'\n");
+  if (is_android() && cfg->wayland) {
+    fprintf(f, "export QT_QPA_PLATFORM='wayland'\n");
+    fprintf(f, "export XDG_SESSION_TYPE='wayland'\n");
+    fprintf(f, "export XDG_RUNTIME_DIR='/run/droidspaces'\n");
+    fprintf(f, "export WAYLAND_DISPLAY='wayland-1'\n");
+    fprintf(f, "export KWIN_COMPOSE='Q'\n");
+    fprintf(f, "export KWIN_OPENGL_INTERFACE='egl'\n");
+    fprintf(f, "export LIBGL_ALWAYS_SOFTWARE='0'\n");
+    fprintf(f, "export WLR_BACKENDS='wayland'\n");
+    fprintf(f, "export WLR_RENDERER='pixman'\n");
+  }
   if (ds_mount_api_shim_wanted(cfg))
     fprintf(f, "export LIBMOUNT_FORCE_MOUNT2='always'\n");
 
