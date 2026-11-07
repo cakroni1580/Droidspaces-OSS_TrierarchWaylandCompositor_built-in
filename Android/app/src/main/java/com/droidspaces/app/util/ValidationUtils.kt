@@ -74,7 +74,7 @@ object ValidationUtils {
 
     /**
      * Key of a `KEY=VALUE` env-file line, null if the backend would skip it.
-     * Mirrors parse_env_file_to_config() in src/environment.c: blank and `#`
+     * Mirrors parse_env_file_to_config() in src/config/parse.c: blank and `#`
      * lines are ignored, an `export ` prefix is tolerated, and the key must be
      * `[A-Za-z_][A-Za-z0-9_]*`.
      */
@@ -87,7 +87,7 @@ object ValidationUtils {
 
     /**
      * Whether the backend will mount over [dest] inside the container. Mirrors
-     * validate_bind_destination() in src/utils.c: absolute, at least one real
+     * validate_bind_destination() in src/config/parse.c: absolute, at least one real
      * path segment (so not "/" or "//", which would cover the rootfs itself),
      * no "." or ".." segments, no control characters, shorter than PATH_MAX.
      * Also no ',' or ':', which the bind_mounts=src:dest[:ro],... line uses
@@ -139,7 +139,7 @@ object ValidationUtils {
      * backend's ds_parse_iface_csv() and the kernel require: a longer name is
      * dropped at start with no error, and a ',' or ':' would split the config
      * line. [wildcards] admits the fnmatch() metacharacters that
-     * resolve_pinned_uplink() in src/net/network.c matches an upstream list by.
+     * resolve_pinned_uplink() in src/net/route/uplink.c matches an upstream list by.
      */
     fun ifaceNameInput(input: String, wildcards: Boolean = false): String =
         input.filter { it.isLetterOrDigit() || it in "_-." || (wildcards && it in "*?") }.take(IFNAME_MAX)
@@ -151,7 +151,7 @@ object ValidationUtils {
     fun effGatewayIface(iface: String): String = iface.ifBlank { "eth1" }
 
     /**
-     * Effective host bridge name. Mirrors gateway_bridge_name() in src/net/network.c:
+     * Effective host bridge name. Mirrors gateway_bridge_name() in src/net/naming.c:
      * explicit bridge wins, else "ds-" + (net filtered to [A-Za-z0-9_-], first 9 chars,
      * or "lan" if empty).
      */

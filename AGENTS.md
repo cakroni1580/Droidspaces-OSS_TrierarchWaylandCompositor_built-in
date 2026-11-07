@@ -24,7 +24,7 @@ make native            # build for the host arch, this is the real build command
 make aarch64           # cross builds: aarch64, x86_64, armhf, x86, riscv64
 make debug-hardened    # ASan, UBSan, LSan
 make all-build         # every arch
-make bump NEW=x.y.z    # set DS_VERSION in droidspace.h
+make bump NEW=x.y.z    # set DS_VERSION in droidspaces.h
 make format            # clang-format over src/
 ```
 
@@ -192,14 +192,29 @@ These are choke points. Bypassing one is a bug, not a shortcut.
   wraps every dynamic value that reaches a root shell.
 - `ContainerInitManager.isSafeServiceName()` allow-lists service names that came from inside a
   container. It fails closed. So does `ValidationUtils`.
-- `ds_peer_authorized()` in `src/utils.c` is the only authorization gate in the tree, and
+- `ds_peer_authorized()` in `src/security/peer_auth.c` is the only authorization gate in the tree, and
   `ds_peer_in_pidns()` backs it. Both must fail closed. A "cannot determine, so allow"
   branch there was a root container escape once already.
-- `src/include/droidspace.h` is the catch-all header and every `.c` file includes only it.
-  Grep it before writing a helper.
+- The host never acts on files a container can write (anything in its root, through
+  `/proc/<pid>/root`): root inside is real root. What a running container booted with, and
+  its init pid, come from its monitor's command socket (`ds_cmd_get_config`,
+  `ds_cmd_get_pid` in `src/container/command.c`), and whether a pid is a container init
+  comes from the host's process tree (`is_valid_container_pid`). The only reads left are for
+  display (`os-release`) or for choices that touch nothing but that container (which signal
+  stops its init).
+- `src/include/droidspaces.h` is the umbrella header. Every `.c` file includes it first, and it
+  pulls in one public header per folder, `src/include/<folder>/<folder>.h`, where each
+  source file's prototypes sit under a `/* file.c */` label. A folder's private helpers are
+  declared in its `internal.h`, which sits next to its sources (`src/net/internal.h`) and only
+  that folder's files include, plus files in its subfolders that have no `internal.h` of their
+  own (`net/route/` includes `"../internal.h"`). Vendored code keeps its upstream header names
+  (`android/anland/`). `src/include/` holds only public headers.
+  A new constant or type goes in the header of the folder that owns it (`net/net.h`,
+  `config/config.h` for `struct ds_config`), even when other folders use it; the umbrella is
+  for project-wide ones. Grep `src/` before writing a helper.
 - Logging is `ds_log`, `ds_warn`, `ds_error`, `ds_die`. Never a bare `fprintf` or `exit`.
-- `run_command`, `run_command_quiet`, `run_command_log` are the only sanctioned way to run
-  an external binary. There is no `system()` in this tree and there must not be one.
+- `run_command_quiet` and `run_command_log` are the only sanctioned way to run an external
+  binary. There is no `system()` in this tree and there must not be one.
 - Workspace paths come from `get_workspace_dir`, `get_pids_dir`, `get_net_dir`,
   `get_logs_dir`. They switch between the Android and Linux roots. Never hardcode either.
 

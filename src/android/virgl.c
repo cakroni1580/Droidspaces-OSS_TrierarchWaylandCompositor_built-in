@@ -9,7 +9,7 @@
  */
 
 #define _GNU_SOURCE
-#include "droidspace.h"
+#include "droidspaces.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +19,8 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "internal.h"
 
 /* daemon child */
 

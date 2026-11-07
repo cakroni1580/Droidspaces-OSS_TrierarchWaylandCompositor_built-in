@@ -101,7 +101,7 @@ make aarch64           # 交叉构建：aarch64、x86_64、armhf、x86、riscv64
 make debug-hardened    # 带 ASan、UBSan、LSan 的构建，用于排查内存问题
 make all-build         # 构建全部架构
 make all-tarball       # all-build 再加上发布用 tarball
-make bump NEW=x.y.z    # 设置 droidspace.h 中的 DS_VERSION
+make bump NEW=x.y.z    # 设置 droidspaces.h 中的 DS_VERSION
 make format            # 用仓库的 .clang-format 对 src/ 执行 clang-format
 make clean
 ```
@@ -121,7 +121,7 @@ make clean
 
 新增 `.c` 文件时必须把它加进 Makefile 的 `SRCS`。这里没有通配符。
 
-版本号从 `src/include/droidspace.h` 中的 `DS_VERSION` 提取。`make bump NEW=x.y.z` 会改写它；
+版本号从 `src/include/droidspaces.h` 中的 `DS_VERSION` 提取。`make bump NEW=x.y.z` 会改写它；
 其他地方都不带版本号。
 
 ### Android App
@@ -172,7 +172,7 @@ count++;
 install_policy_rules(cfg);
 ```
 
-后端有些地方已经做得很好了。`src/include/droidspace.h` 记录了调用顺序约束（
+后端有些地方已经做得很好了。`src/include/security/security.h` 记录了调用顺序约束（
 `ds_ksu_neutralize_root_escape` 必须在 `ds_seccomp_apply_minimal` 之前运行，并写明了
 原因），`ds_bind_mount_socket` 用它所堵住的竞态来解释为什么要用 `O_NOFOLLOW`。这就是标准。
 
@@ -184,13 +184,18 @@ install_policy_rules(cfg);
 ### C 语言约定
 
 - 使用 C89 块注释（`/* ... */`）。`src/` 中没有 `//` 注释。
-- 默认 `static`。只有当函数被加进 `src/include/droidspace.h` 时，才去掉 `static`。
-- 新的跨模块函数使用 `ds_` 前缀。遗留的无前缀名称（`read_file`、`mkdir_p`、`run_command`、
+- 默认 `static`。只有当函数的原型被加进头文件时，才去掉 `static`：`src/include/` 下
+  该目录的公开头文件 `<folder>/<folder>.h`，放在定义它的那个文件的 `/* file.c */` 标签下；
+  如果只有同一目录的文件调用，就放进与源文件同目录的 `internal.h`（`src/<folder>/internal.h`）。
+- 新的常量或类型放进拥有它的那个目录的头文件（`net/net.h`；`struct ds_config` 及其内嵌的
+  类型放在 `config/config.h`），即使其他目录也会用到。
+  `src/include/droidspaces.h` 只放全项目通用的内容。
+- 新的跨模块函数使用 `ds_` 前缀。遗留的无前缀名称（`read_file`、`mkdir_p`、`run_command_quiet`、
   `domount`）保持原样，不要重命名，也不要在新代码中模仿它们。
 - `is_*` 用于判定函数，`check_*` 用于可能打印输出的探测函数，`setup_*` 与 `cleanup_*`
   成对表示生命周期，`print_*` 用于纯输出，`free_*` 用于释放。
 - 常量用 `DS_` 加全大写下划线。结构体用 `struct ds_*`。`_t` 后缀只用于 typedef。
-- 头文件保护宏形如 `#ifndef DROIDSPACE_H`，并以带名字的 `#endif /* DROIDSPACE_H */` 结束。
+- 头文件保护宏形如 `#ifndef DROIDSPACES_H`，并以带名字的 `#endif /* DROIDSPACES_H */` 结束。
   不使用 `#pragma once`。
 - 没有 `xmalloc` 之类的封装。使用普通的 `malloc` 并显式检查 NULL；只要大小有上界，就优先
   使用定长缓冲区。`struct ds_config` 几乎全是定长字段，原因正在于此。
@@ -458,7 +463,7 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 
 | 符号 | 头文件 | 何时使用 |
 | --- | --- | --- |
-| `ds_log(fmt, ...)` | `droidspace.h` | 正常进度输出 |
+| `ds_log(fmt, ...)` | `core/core.h` | 正常进度输出 |
 | `ds_warn(fmt, ...)` | | 可恢复的问题。输出到 stderr，永不被静音 |
 | `ds_error(fmt, ...)` | | 由调用方处理的失败 |
 | `ds_die(fmt, ...)` | | 致命错误。记录后退出。绝不要手写 `fprintf` 加 `exit` |
@@ -467,7 +472,6 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `rotate_log(path, max_size)` | | 按大小轮转日志 |
 | `write_monitor_debug_log(name, fmt, ...)` | | 从分离的 monitor 进程记录日志，只写文件 |
 | `ds_open_container_log` / `ds_close_container_log` | | 把 `ds_log` 输出同时写进容器日志 |
-| `ds_spawn_log_relay(fd, log_file, tag)` | | 给子进程输出打时间戳并写入日志目录 |
 
 调试通道是方括号前缀，不是命令行开关。以 `[DEBUG]`、`[NET]`、`[CGROUP]`、`[SEC]`、`[IPT]`、
 `[VIRT]`、`[GPU]`、`[FW]`、`[DHCP]`、`[X11]`、`[VirGL]`、`[PulseAudio]` 或 `[Anland]` 开头的
@@ -484,7 +488,7 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `ds_format_uptime`、`ds_parse_size`、`ds_format_size` | 运行时长字符串，以及 `1G`、`512M` 这类字节数 |
 | `sanitize_container_name`、`validate_container_name`、`reject_container_name`、`parse_and_validate_names` | 处理用户输入的容器名。`reject_container_name` 是参数解析时的一步到位版本 |
 | `validate_bind_destination` | 拒绝会覆盖容器内部结构的挂载目标 |
-| `ds_shell_metachars`（`src/utils.c`） | 被拒绝元字符集合的唯一来源。引用它，不要重新敲一遍 |
+| `ds_shell_metachars`（`src/core/string.c`） | 被拒绝元字符集合的唯一来源。引用它，不要重新敲一遍 |
 
 ### C 后端：文件与路径
 
@@ -497,6 +501,8 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `is_subpath(parent, child)` | 路径逃逸校验。基于 realpath，用它而不是 `strncmp` |
 | `is_ramfs`、`is_mountpoint` | 文件系统类型与挂载点判断 |
 | `build_proc_root_path(pid, suffix, buf, size)` | 构造 `/proc/<pid>/root/...` 并检查截断 |
+| `ds_open_in_root(pid, path, flags)` | 在容器根目录内逐级打开路径，任何一级是软链接或 `..` 都拒绝。凡是经由 `/proc/<pid>/root` 的主机写入都走它：单靠 `O_NOFOLLOW` 只能保护最后一级 |
+| `proc_ppid(pid)`、`proc_uid(pid)` | 从 `/proc/<pid>` 读取父进程 pid 与真实 uid。请用 `proc_uid`，不要用 `/proc/<pid>` 的 `st_uid`，任何不可 dump 的进程在那里都显示为 0 |
 | `ds_resolve_path_arg`、`ds_resolve_argv_paths` | 在守护进程化改变工作目录之前，把用户传入的相对路径转成绝对路径 |
 | `access(path, F_OK)` | 存在性检查。没有封装，也不需要 |
 
@@ -508,14 +514,14 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 
 | 符号 | 何时使用 |
 | --- | --- |
-| `run_command`、`run_command_quiet`、`run_command_log` | 执行外部程序。这是唯一被认可的方式。本仓库没有 `system()` |
+| `run_command_quiet`、`run_command_log` | 执行外部程序。这是唯一被认可的方式。本仓库没有 `system()` |
 | `ds_spawn_daemon(child_fn, user_data, log_file, tag, label)` | fork 一个长期存活的辅助进程。通过 ready 管道确认 `execv` 成功，并挂上日志中继 |
 | `ds_daemon_child_preamble()` | 在这类子进程里第一个调用，此时还是 root |
 | `ds_oom_protect()` | 尽力而为的 OOM 分数保护 |
 | `ds_thread_create(tid, fn, arg)` | 在通过 signalfd 等待信号的进程中启动辅助线程。线程启动时屏蔽所有信号，因此不会抢走发给主线程的信号。不要在监视器中直接调用 `pthread_create` |
-| `ds_daemon_read_pid` / `write_pid` / `remove_pid`、`ds_resolve_daemon_pid` | pid 文件生命周期。读取时会检查进程是否存活 |
+| `ds_daemon_read_pid` / `write_pid` / `remove_pid` | pid 文件生命周期。读取时会检查进程是否存活 |
 | `ds_global_daemon_stop(...)` | 统一的 SIGTERM、轮询、SIGKILL、回收、删除文件流程 |
-| `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | 等待套接字出现，服务端一死就提前返回。用它代替 sleep 轮询 |
+| `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | 等待套接字出现，服务端一死就提前返回。用它代替 sleep 轮询。仅限 `android/`，声明在它的 `internal.h` 中；其他目录需要时把原型移到 `android.h` |
 | `ds_send_fd` / `ds_recv_fd` | SCM_RIGHTS 文件描述符传递 |
 | `collect_pids`、`read_and_validate_pid` | 快照 `/proc`，以及读取 pid 文件并检查存活 |
 | `ds_container_lock(name, wait)` / `ds_container_unlock(fd)` | 每个容器的生命周期锁，基于 `flock`。**任何**修改容器磁盘状态（pidfile、挂载、cgroup）的操作都必须持有它，监视器也不例外。命令传入 `wait=0` 并在忙时报错；监视器传入 `wait=1`。持锁后根据实际状态决定要做什么 |
@@ -550,8 +556,8 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `ds_config_auto_path`、`apply_reset_config` | 推导默认配置路径，以及重置 |
 | `load_etc_environment`、`ds_env_boot_setup`、`ds_env_save`、`parse_env_file_to_config` | 环境变量文件处理 |
 
-新增配置键必须**同时**加进 `src/config.c` 的 `ds_config_load()` 和
-`ds_config_serialize_known()`。漏掉后者，这个键会被当成未知行原样保留。
+新增配置键必须**同时**加进 `src/config/load.c` 的 `ds_config_load()` 和
+`src/config/save.c` 的 `ds_config_serialize_known()`。漏掉后者，下次保存时这个键的值会丢失。
 
 ### C 后端：挂载、cgroup、工作目录与 seccomp
 
@@ -570,10 +576,11 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `ds_cgroup_v1_setup`、`ds_cgroup_v1_join` | 在 unshare 命名空间之前，为 v1 容器在每个 v1 层级中建立它自己的 cgroup，以及把监视器移入或移出这些 cgroup |
 | `get_workspace_dir`、`get_pids_dir`、`get_net_dir`、`get_logs_dir` | 构造工作目录路径的唯一认可方式。它们会在 Android 与 Linux 根目录之间切换 |
 | `ensure_workspace` | 创建目录树 |
-| `is_container_running`、`find_container_by_name`、`find_container_init_pid`、`is_container_init` | 容器查找 |
+| `is_container_running`、`is_container_init`、`ds_cmd_get_pid` | 容器查找。丢失的 pidfile 依据 monitor 的回答修复，绝不依据客体内部的内容 |
 | `ds_feature_needs(offsetof(struct ds_config, field))` | 通用的特性扫描。新增全局守护进程时在这里加一个两行的封装，而不是另写扫描器 |
 | `ds_seccomp_apply_minimal`、`ds_seccomp_keyring_shim` | seccomp 过滤器 |
 | `ds_ksu_neutralize_root_escape` | KernelSU 加固。必须在 `ds_seccomp_apply_minimal` **之前**运行，否则后者的 magic reboot 拦截会挡掉它需要的那次 reboot 调用 |
+| `ds_seccomp_harden(cfg)` | 为进入容器的进程做加固。按顺序执行上面三项；之后再丢弃 capability |
 | `ds_apply_capability_hardening` | capability 丢弃 |
 
 ### C 后端：网络
@@ -601,18 +608,24 @@ libsu 的全局配置在 `DroidspacesApplication.kt` 中，那是唯一应该设
 | `ds_net_validate_static_ip`、`ds_net_check_ip_collision`、`ds_net_resolve_static_ip` | 静态 NAT IP 处理。调用 resolve 之后必须保存配置才能持久化结果 |
 | `ds_dhcp_server_start`、`ds_dhcp_server_stop` | 单租约 DHCP 服务。拆除 veth 之前先停它，否则接收会阻塞。传入 IPv6 前缀时还会发送路由通告 |
 | `ds_ra_build`、`ds_ra_is_solicit` | DHCP 线程使用的路由通告帧及路由请求判断。有意不携带链路层地址选项 |
-| `ds_get_dns_servers`、`ds_net_disable_tx_checksum` | DNS、校验和卸载 |
+| `ds_get_dns_servers`、`ds_net_prepare_host_veth` | DNS，以及准备新建的宿主机侧 veth（关闭 TX 校验和卸载，设置 RPS） |
 
 ### C 后端：安全守卫
 
 | 符号 | 契约 |
 | --- | --- |
-| `ds_peer_authorized(fd, group_name)` | 全仓库唯一的授权入口。允许 root 或指定组的成员，但前提是对端与我们处于同一 PID 命名空间。每一条失败路径都拒绝。调用方是 `src/daemon.c` |
+| `ds_peer_authorized(fd, group_name)` | 全仓库唯一的授权入口。允许 root 或指定组的成员，但前提是对端与我们处于同一 PID 命名空间。每一条失败路径都拒绝。调用方是 `src/daemon/server.c` 和 `src/container/command.c`，后者检查 monitor 命令套接字的客户端（客户端则在那里用 `server_is_monitor` 验证服务端） |
+| `ds_cmd_get_config(name, cfg, pid)`、`ds_cmd_get_pid(name)`、`ds_cmd_for_each(visit, arg)` | 运行中容器启动时使用的配置及其 init pid，取自它的 monitor 命令套接字 `@droidspaces/<name>/command`。这是两者唯一的来源：主机从不读取客体自己的那份副本 |
 | `ds_peer_in_pidns(peer_pid)` | 必须失败即拒绝。pid 为 0 表示对端无法映射进我们的命名空间，readlink 失败表示我们无法证明其归属，两种情况都拒绝。这里一旦失败即放行，调用方就能复用已死的 pid 逃逸到主机 root |
 | `ds_bind_mount_socket(src, dst, uid, label)` | 向容器可控目录写入时防软链接竞态的标准做法 |
-| `set_selinux_context`、`get_selinux_context`、`ds_selinux_dyntransition`、`ds_selinux_enter_domain`、`ds_drop_privileges`、`ds_resolve_termux_uid` | SELinux 与权限处理 |
+| `set_selinux_context`、`get_selinux_context`、`ds_selinux_dyntransition`、`ds_selinux_enter_domain`、`ds_drop_privileges`、`ds_resolve_termux_uid` | SELinux 与权限处理。`ds_selinux_dyntransition`、`ds_drop_privileges` 和 `ds_resolve_termux_uid` 仅限 `android/`，声明在它的 `internal.h` 中 |
 
 任何安全检查上写着"无法确定，那就放行"的注释都是 Bug。在信任边界上无法证明，就意味着拒绝。
+
+主机从不依据客体能写的东西行事。容器内的 root 就是真正的 root，所以通过 `/proc/<pid>/root`
+读到的它根目录下的任何内容，都是它给出的输入。请改为询问该容器的 monitor（`ds_cmd_*`）、读取主机
+上的配置，或查看主机自己的进程树（`is_valid_container_pid`）。仅用于显示的读取（`os-release`），
+或只影响该容器自身的选择，是仅有的例外。写入容器可控的目录时，必须通过 `ds_open_in_root`。
 
 ## 已知重复：不要再加第三份
 

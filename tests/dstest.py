@@ -64,7 +64,7 @@ def ds_json(*args):
 
 
 def tree_version():
-    header = (REPO / "src/include/droidspace.h").read_text()
+    header = (REPO / "src/include/droidspaces.h").read_text()
     return re.search(r'#define\s+DS_VERSION\s+"([^"]+)"', header).group(1)
 
 
@@ -114,7 +114,7 @@ def cap_mask(dropped=()):
     return f"{mask:016x}"
 
 
-# Caps droidspaces drops from the bounding set (boot.c). SYS_PTRACE stays with --allow-sandboxing.
+# Caps droidspaces drops from the bounding set (security/caps.c). SYS_PTRACE stays with --allow-sandboxing.
 CAPS_DROPPED_ALWAYS = (16,)
 CAPS_DROPPED_NO_HW = (2, 16, 17, 19, 20, 32, 33, 35, 36, 37)
 
@@ -260,8 +260,14 @@ class Container:
         """Folder name the daemon uses for this container: the name with spaces turned into dashes."""
         return self.name.replace(" ", "-")
 
-    def cgroup(self, file):
-        return (Path("/sys/fs/cgroup/droidspaces") / self.dirname / file).read_text().strip()
+    def cgroup(self, file, missing=None):
+        """A file in the container's cgroup2 dir. `missing` is returned instead of raising when the
+        controller behind it is not enabled there, which droidspaces only does once a container
+        sets that limit."""
+        path = Path("/sys/fs/cgroup/droidspaces") / self.dirname / file
+        if missing is not None and not path.exists():
+            return missing
+        return path.read_text().strip()
 
     def log(self):
         return (WORKSPACE / "Logs" / self.dirname / "log").read_text()

@@ -112,7 +112,7 @@ make aarch64           # cross builds: aarch64, x86_64, armhf, x86, riscv64
 make debug-hardened    # ASan, UBSan, LSan build for chasing memory bugs
 make all-build         # every architecture
 make all-tarball       # all-build plus a release tarball
-make bump NEW=x.y.z    # set DS_VERSION in droidspace.h
+make bump NEW=x.y.z    # set DS_VERSION in droidspaces.h
 make format            # clang-format over src/, using the repo .clang-format
 make clean
 ```
@@ -133,7 +133,7 @@ warnings. A warning is a build failure, not a review comment.
 
 Adding a new `.c` file means adding it to `SRCS` in the Makefile. There is no wildcard.
 
-The version string is scraped from `DS_VERSION` in `src/include/droidspace.h`. `make bump
+The version string is scraped from `DS_VERSION` in `src/include/droidspaces.h`. `make bump
 NEW=x.y.z` rewrites it; nothing else carries the version.
 
 ### Android app
@@ -187,7 +187,7 @@ count++;
 install_policy_rules(cfg);
 ```
 
-The backend already does this well in places. `src/include/droidspace.h` documents ordering
+The backend already does this well in places. `src/include/security/security.h` documents ordering
 constraints (`ds_ksu_neutralize_root_escape` must run before `ds_seccomp_apply_minimal`, and
 says why), and `ds_bind_mount_socket` explains the `O_NOFOLLOW` choice in terms of the race
 it closes. That is the bar.
@@ -200,17 +200,22 @@ change in the wrong place is a second bug.
 ### C conventions
 
 - C89 block comments (`/* ... */`). There are no `//` comments in `src/`.
-- `static` by default. A function becomes non-static only when it is added to
-  `src/include/droidspace.h`.
+- `static` by default. A function becomes non-static only when its prototype is added to a
+  header: the folder's public header, `src/include/<folder>/<folder>.h`, under the
+  `/* file.c */` label of the file that defines it, or, when only that folder calls it, the
+  `internal.h` next to the folder's sources (`src/<folder>/internal.h`).
+- A new constant or type goes in the header of the folder that owns it (`net/net.h`,
+  `config/config.h` for `struct ds_config` and the types it embeds), even when other folders
+  use it. `src/include/droidspaces.h` is for project-wide ones.
 - New cross-module functions take the `ds_` prefix. Legacy un-prefixed names (`read_file`,
-  `mkdir_p`, `run_command`, `domount`) stay as they are; do not rename them and do not
+  `mkdir_p`, `run_command_quiet`, `domount`) stay as they are; do not rename them and do not
   imitate them for new work.
 - `is_*` for predicates, `check_*` for probes that may print, `setup_*` and `cleanup_*` for
   paired lifecycle, `print_*` for pure output, `free_*` for teardown.
 - Constants are `DS_` plus SCREAMING_SNAKE. Structs are `struct ds_*`. The `_t` suffix is
   only for typedefs.
-- Header guards are named `#ifndef DROIDSPACE_H` style with a matching
-  `#endif /* DROIDSPACE_H */`. No `#pragma once`.
+- Header guards are named `#ifndef DROIDSPACES_H` style with a matching
+  `#endif /* DROIDSPACES_H */`. No `#pragma once`.
 - There is no `xmalloc` family. Use plain `malloc` with an explicit NULL check, and prefer
   fixed-size buffers wherever the size is bounded. `struct ds_config` is almost entirely
   fixed-size for this reason.
@@ -486,7 +491,7 @@ validation. Prefer the wrappers.
 
 | Symbol | Header line | Use it when |
 | --- | --- | --- |
-| `ds_log(fmt, ...)` | `droidspace.h` | Normal progress output |
+| `ds_log(fmt, ...)` | `core/core.h` | Normal progress output |
 | `ds_warn(fmt, ...)` | | Recoverable problem. Goes to stderr, never silenced |
 | `ds_error(fmt, ...)` | | Failure the caller handles |
 | `ds_die(fmt, ...)` | | Fatal. Logs then exits. Never write `fprintf` plus `exit` by hand |
@@ -495,7 +500,6 @@ validation. Prefer the wrappers.
 | `rotate_log(path, max_size)` | | Size-capped log rotation |
 | `write_monitor_debug_log(name, fmt, ...)` | | Logging from the detached monitor, file only |
 | `ds_open_container_log` / `ds_close_container_log` | | Tee `ds_log` output into the per-container log |
-| `ds_spawn_log_relay(fd, log_file, tag)` | | Timestamping a child's output into the logs directory |
 
 The debug channel is a bracket prefix, not a flag. A message starting with `[DEBUG]`,
 `[NET]`, `[CGROUP]`, `[SEC]`, `[IPT]`, `[VIRT]`, `[GPU]`, `[FW]`, `[DHCP]`, `[X11]`,
@@ -513,7 +517,7 @@ a verbosity flag.
 | `ds_format_uptime`, `ds_parse_size`, `ds_format_size` | Uptime strings, and byte counts like `1G` or `512M` |
 | `sanitize_container_name`, `validate_container_name`, `reject_container_name`, `parse_and_validate_names` | Container names from user input. `reject_container_name` is the one-call form for argument parsing |
 | `validate_bind_destination` | Rejecting bind targets that would clobber container internals |
-| `ds_shell_metachars` (`src/utils.c`) | The single source of truth for the rejected metacharacter set. Reference it, do not retype it |
+| `ds_shell_metachars` (`src/core/string.c`) | The single source of truth for the rejected metacharacter set. Reference it, do not retype it |
 
 ### C backend: files and paths
 
@@ -526,6 +530,8 @@ a verbosity flag.
 | `is_subpath(parent, child)` | Path escape validation. Realpath based, use this instead of `strncmp` |
 | `is_ramfs`, `is_mountpoint` | Filesystem type and mountpoint tests |
 | `build_proc_root_path(pid, suffix, buf, size)` | Building `/proc/<pid>/root/...` with truncation checked |
+| `ds_open_in_root(pid, path, flags)` | Opening a path inside a container's root one step at a time, refusing a symlink at any step and `..`. Every host write through `/proc/<pid>/root` goes through it: `O_NOFOLLOW` alone guards only the last step |
+| `proc_ppid(pid)`, `proc_uid(pid)` | Parent pid and real uid from `/proc/<pid>`. Use `proc_uid`, not `st_uid` of `/proc/<pid>`, which reads 0 for any non-dumpable process |
 | `ds_resolve_path_arg`, `ds_resolve_argv_paths` | Making user-supplied paths absolute before the daemonize boundary changes the working directory |
 | `access(path, F_OK)` | Existence checks. There is no wrapper and none is wanted |
 
@@ -537,14 +543,14 @@ influenced, copy the `ds_bind_mount_socket` pattern: open with `O_NOFOLLOW|O_CLO
 
 | Symbol | Use it when |
 | --- | --- |
-| `run_command`, `run_command_quiet`, `run_command_log` | Running an external binary. These are the only sanctioned way. There is no `system()` in this tree |
+| `run_command_quiet`, `run_command_log` | Running an external binary. These are the only sanctioned way. There is no `system()` in this tree |
 | `ds_spawn_daemon(child_fn, user_data, log_file, tag, label)` | Forking a long-lived helper. Verifies `execv` succeeded through a ready pipe and attaches a log relay |
 | `ds_daemon_child_preamble()` | First call inside such a child, while still root |
 | `ds_oom_protect()` | Best effort OOM score protection |
 | `ds_thread_create(tid, fn, arg)` | Starting a helper thread in a process that waits on a signalfd. The thread starts with every signal blocked, so it cannot take a signal meant for the main thread. Never call `pthread_create` directly in the monitor |
-| `ds_daemon_read_pid` / `write_pid` / `remove_pid`, `ds_resolve_daemon_pid` | Pidfile lifecycle. The read form liveness-checks the pid |
+| `ds_daemon_read_pid` / `write_pid` / `remove_pid` | Pidfile lifecycle. The read form liveness-checks the pid |
 | `ds_global_daemon_stop(...)` | Unified SIGTERM, poll, SIGKILL, reap, unlink teardown |
-| `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | Waiting for a socket to appear. Bails early if the server dies. Use instead of a sleep loop |
+| `wait_for_socket_or_death(pid, path, timeout_ms, interval_us)` | Waiting for a socket to appear. Bails early if the server dies. Use instead of a sleep loop. `android/` only, from its `internal.h`: move the prototype to `android.h` if another folder needs it |
 | `ds_send_fd` / `ds_recv_fd` | SCM_RIGHTS descriptor passing |
 | `collect_pids`, `read_and_validate_pid` | Snapshotting `/proc`, and reading a pidfile with a liveness check |
 | `ds_container_lock(name, wait)` / `ds_container_unlock(fd)` | The per-container lifecycle lock, a `flock`. **Anything** that changes a container's on-disk state (pidfile, mount, cgroup) must hold it, the monitor included. Commands pass `wait=0` and report busy; the monitor passes `wait=1`. Decide what to do from the state you find while holding it |
@@ -579,9 +585,9 @@ whole tree. It is almost entirely fixed-size, with three heap-owned lists.
 | `ds_config_auto_path`, `apply_reset_config` | Deriving the default config path, and resetting |
 | `load_etc_environment`, `ds_env_boot_setup`, `ds_env_save`, `parse_env_file_to_config` | Environment file handling |
 
-A new config key must be added to **both** `ds_config_load()` and
-`ds_config_serialize_known()` in `src/config.c`. Miss the second and the key round-trips as
-an unknown line.
+A new config key must be added to **both** `ds_config_load()` in `src/config/load.c` and
+`ds_config_serialize_known()` in `src/config/save.c`. Miss the second and the next save drops
+its value.
 
 ### C backend: mount, cgroup, workspace, seccomp
 
@@ -600,10 +606,11 @@ an unknown line.
 | `ds_cgroup_v1_setup`, `ds_cgroup_v1_join` | Giving a v1 container its own cgroup in every v1 hierarchy before the namespace is unshared, and moving the monitor in or out of them |
 | `get_workspace_dir`, `get_pids_dir`, `get_net_dir`, `get_logs_dir` | The only sanctioned way to build a workspace path. They switch between the Android and Linux roots |
 | `ensure_workspace` | Creating the tree |
-| `is_container_running`, `find_container_by_name`, `find_container_init_pid`, `is_container_init` | Container lookup |
+| `is_container_running`, `is_container_init`, `ds_cmd_get_pid` | Container lookup. A lost pidfile is healed from the monitor's answer, never from inside a guest |
 | `ds_feature_needs(offsetof(struct ds_config, field))` | The generic feature scanner. A new global daemon adds a two-line wrapper here, not a new scanner |
 | `ds_seccomp_apply_minimal`, `ds_seccomp_keyring_shim` | The seccomp filters |
 | `ds_ksu_neutralize_root_escape` | KernelSU hardening. Must run **before** `ds_seccomp_apply_minimal`, whose magic-reboot block would otherwise deny the reboot it needs |
+| `ds_seccomp_harden(cfg)` | Hardening a process that enters a container. Runs the three above in that order; drop capabilities after it |
 | `ds_apply_capability_hardening` | Capability dropping |
 
 ### C backend: networking
@@ -634,19 +641,27 @@ shell-out on the fast path. The netfilter helpers take an address family (`AF_IN
 | `ds_net_validate_static_ip`, `ds_net_check_ip_collision`, `ds_net_resolve_static_ip` | Static NAT IP handling. After `resolve`, the config must be saved to persist the result |
 | `ds_dhcp_server_start`, `ds_dhcp_server_stop` | The single-lease DHCP server. Stop it before veth teardown so the receive unblocks. Given an IPv6 prefix it also sends Router Advertisements |
 | `ds_ra_build`, `ds_ra_is_solicit` | The Router Advertisement frame and the solicitation test the DHCP thread uses. No link-layer option, on purpose |
-| `ds_get_dns_servers`, `ds_net_disable_tx_checksum` | DNS, checksum offload |
+| `ds_get_dns_servers`, `ds_net_prepare_host_veth` | DNS, and preparing a new host-side veth (TX checksum off, RPS) |
 
 ### C backend: security guards
 
 | Symbol | Contract |
 | --- | --- |
-| `ds_peer_authorized(fd, group_name)` | The only authorization gate in the tree. Allows root or a member of the group, but only when the peer shares our PID namespace. Every failure path denies. The caller is `src/daemon.c` |
+| `ds_peer_authorized(fd, group_name)` | The only authorization gate in the tree. Allows root or a member of the group, but only when the peer shares our PID namespace. Every failure path denies. The callers are `src/daemon/server.c` and `src/container/command.c`, which checks the clients of a monitor's command socket (its clients prove the server with `server_is_monitor` there) |
+| `ds_cmd_get_config(name, cfg, pid)`, `ds_cmd_get_pid(name)`, `ds_cmd_for_each(visit, arg)` | What a running container booted with and its init pid, from its monitor's command socket `@droidspaces/<name>/command`. The only source for either: the host never reads the guest's own copy |
 | `ds_peer_in_pidns(peer_pid)` | Must fail closed. A pid of zero is not translatable into our namespace, and a failed readlink means we cannot prove membership. Both deny. Failing open here let a caller recycle a dead pid and escape to host root |
 | `ds_bind_mount_socket(src, dst, uid, label)` | The symlink-race-safe write pattern for anything landing in a container-controlled directory |
-| `set_selinux_context`, `get_selinux_context`, `ds_selinux_dyntransition`, `ds_selinux_enter_domain`, `ds_drop_privileges`, `ds_resolve_termux_uid` | SELinux and privilege handling |
+| `set_selinux_context`, `get_selinux_context`, `ds_selinux_dyntransition`, `ds_selinux_enter_domain`, `ds_drop_privileges`, `ds_resolve_termux_uid` | SELinux and privilege handling. `ds_selinux_dyntransition`, `ds_drop_privileges` and `ds_resolve_termux_uid` are `android/` only, from its `internal.h` |
 
 Any comment on a security check that reads "cannot determine, so allow" is a bug. Inability
 to prove something at a trust boundary means deny.
+
+The host never acts on what a guest can write. Root inside a container is real root, so
+anything in its root, read through `/proc/<pid>/root`, is input from it. Ask the container's
+monitor (`ds_cmd_*`), read the host config, or look at the host's process tree
+(`is_valid_container_pid`) instead. Reads for display only (`os-release`), or for a choice
+that touches nothing but that container, are the exceptions. A write into a directory the
+container controls goes through `ds_open_in_root`.
 
 ## Known duplicates: do not add a third copy
 
