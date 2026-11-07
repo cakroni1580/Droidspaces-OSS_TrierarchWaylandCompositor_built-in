@@ -345,6 +345,12 @@ int show_info(struct ds_config *cfg, int trust_cfg_pid) {
       feat_count++;
     }
 
+    /* 10. Wayland */
+    if (is_android() && cfg->wayland) {
+      printf("  Wayland: enabled (compositor in app)\n");
+      feat_count++;
+    }
+
     /* 10. SELinux Status */
     if (access("/sys/fs/selinux/enforce", R_OK) == 0) {
       int status = ds_get_selinux_status();
