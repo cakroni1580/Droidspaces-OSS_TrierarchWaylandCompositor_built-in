@@ -343,8 +343,6 @@ int internal_boot(struct ds_config *cfg) {
   /* 16. Custom bind mounts */
   if (!cfg->reboot_cycle && cfg->bind_count > 0)
     ds_log("Setting up %d custom bind mount(s)...", cfg->bind_count);
-  setup_custom_binds(cfg, ".");
-
   /*
  * Context: Stage the Android Wayland socket before root relocation.
  *
@@ -358,6 +356,7 @@ int internal_boot(struct ds_config *cfg) {
   if (ds_setup_wayland_socket(cfg) < 0) {
     ds_warn("[Wayland] early socket staging failed; continuing boot");
   }
+  setup_custom_binds(cfg, ".");
 
   /* 17. pivot_root with MS_MOVE+chroot fallback for ramfs/rootfs environments
    * (e.g. Android recovery) where pivot_root(2) always returns EINVAL because
