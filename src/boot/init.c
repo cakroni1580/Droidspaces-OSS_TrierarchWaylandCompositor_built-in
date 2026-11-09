@@ -355,8 +355,9 @@ int internal_boot(struct ds_config *cfg) {
  * /run is already the container's tmpfs and custom binds have finished.
  * Keep the compositor socket available independently of root relocation.
  */
-if (ds_setup_wayland_socket(cfg) < 0)
-  ds_warn("[Wayland] early socket staging failed; continuing boot");
+  if (ds_setup_wayland_socket(cfg) < 0) {
+    d s_warn("[Wayland] early socket staging failed; continuing boot");
+  }
 
   /* 17. pivot_root with MS_MOVE+chroot fallback for ramfs/rootfs environments
    * (e.g. Android recovery) where pivot_root(2) always returns EINVAL because
