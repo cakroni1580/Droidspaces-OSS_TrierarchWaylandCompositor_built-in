@@ -1,86 +1,94 @@
 /*
- * Droidspaces v6 - Wayland compositor socket bridge
+ * Droidspaces v7 - Wayland compositor socket bridge
  *
- * Stages the host-side compositor socket into /run/droidspaces/wayland-1,
- * which is immune to user-runtime-dir@0 overmounts. The rootfs-side systemd
- * service re-binds it into the correct /run/user/<uid>/ per user after boot.
+ * Stages the Android app-private compositor socket into the container's
+ * /run/droidspaces/wayland-1 before root relocation.
  *
- * Host side:  /.old_root/data/data/com.droidspaces.app/files/usr/tmp/wayland-1
- * Staged at:  /run/droidspaces/wayland-1
+ * Host side:
+ *   /data/data/com.droidspaces.app/files/usr/tmp/wayland-1
+ *
+ * Staged at:
+ *   /run/droidspaces/wayland-1
+ *
+ * Context:
+ *   The host socket must be staged while the original Android root is still
+ *   accessible. After pivot_root(), the host filesystem is under /.old_root.
+ *   With the MS_MOVE + chroot fallback, that old-root path is unavailable.
  *
  * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #define _GNU_SOURCE
-#include "droidspaces.h"
+#include "droidspace.h"
 #include <sys/stat.h>
 
-#include "internal.h"
-
 int ds_setup_wayland_socket(struct ds_config *cfg) {
-  if (!is_android())
-    return 0;
+  struct stat st;
+  const char *host_socket = NULL;
+  const char *target_socket = "run/droidspaces/wayland-1";
 
-  if (!cfg->wayland)
+  if (!is_android() || !cfg->wayland)
     return 0;
 
   /*
-   * Locate the host socket from the current mount namespace.
+   * Context: This function is called both before and after root relocation.
+   * The relative target resolves inside rootfs before relocation (cwd is
+   * rootfs), and inside the container after chdir("/") following relocation.
    *
-   * Do not assume that /.old_root exists: the MS_MOVE + chroot()
-   * path does not preserve the old root under that pathname.
+   * Only treat an actual socket as already staged. A leftover regular file
+   * from a failed bind mount must not suppress a retry.
    */
-  const char *host_socket = NULL;
+  if (lstat(target_socket, &st) == 0 && S_ISSOCK(st.st_mode))
+    goto setup_environment;
 
-  struct stat st;
-
-  if (lstat(DS_WL_HOST_SOCKET_OLDROOT, &st) == 0 &&
-      S_ISSOCK(st.st_mode)) {
-    host_socket = DS_WL_HOST_SOCKET_OLDROOT;
-  } else if (lstat(DS_WL_HOST_SOCKET, &st) == 0 &&
-             S_ISSOCK(st.st_mode)) {
+  /*
+   * Context: Prefer the original Android path before root relocation.
+   * After pivot_root(), retry through /.old_root as a fallback.
+   */
+  if (access(DS_WL_HOST_SOCKET, F_OK) == 0) {
     host_socket = DS_WL_HOST_SOCKET;
+  } else if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) == 0) {
+    host_socket = DS_WL_HOST_SOCKET_OLDROOT;
   }
 
   if (!host_socket) {
-    ds_warn("[Wayland] host socket is not reachable in the current "
-            "mount namespace");
-    ds_warn("[Wayland] checked: %s", DS_WL_HOST_SOCKET_OLDROOT);
-    ds_warn("[Wayland] checked: %s", DS_WL_HOST_SOCKET);
-    return -1;
-  }
-
-  ds_log("[Wayland] host socket found: %s", host_socket);
-
-  /*if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) != 0) {
-    ds_warn("[Wayland] compositor socket not found at %s",
-            DS_WL_HOST_SOCKET_OLDROOT);
+    ds_warn("[Wayland] compositor socket not found");
+    ds_warn("[Wayland] checked: %s and %s",
+            DS_WL_HOST_SOCKET, DS_WL_HOST_SOCKET_OLDROOT);
     ds_warn("[Wayland] Is the Wayland compositor running in the Droidspaces app?");
     return -1;
-  }*/
+  }
 
-  if (mkdir("/run/droidspaces", 0700) < 0 && errno != EEXIST) {
-    ds_warn("[Wayland] failed to create runtime directory: %s",
+  /*
+   * Context: /run is already mounted in the container and custom bind mounts
+   * have completed when this function is called from internal_boot().
+   * Keep the staging target relative so it does not resolve to Android /run
+   * before pivot_root().
+   */
+  if (mkdir("run/droidspaces", 0700) < 0 && errno != EEXIST) {
+    ds_warn("[Wayland] failed to create staging directory: %s",
             strerror(errno));
     return -1;
   }
 
-  if (chmod("/run/droidspaces", 0700) < 0) {
-    ds_warn("[Wayland] failed to set runtime directory permissions: %s",
+  if (chmod("run/droidspaces", 0700) < 0) {
+    ds_warn("[Wayland] failed to set staging directory permissions: %s",
             strerror(errno));
     return -1;
   }
 
-  /* Stage under /run/droidspaces - immune to user-runtime-dir@0 overmounts.
-   * XDG_RUNTIME_DIR and WAYLAND_DISPLAY are set per-user by the rootfs side. */
-  if (ds_bind_mount_socket(host_socket, DS_WL_CONTAINER_SOCKET,
-                           0, "Wayland") < 0)
+  if (ds_bind_mount_socket(host_socket, target_socket, 0, "Wayland") < 0)
     return -1;
-  
-  ds_log("[Wayland] socket staged: %s -> %s", host_socket,
-         DS_WL_CONTAINER_SOCKET);
 
+  ds_log("[Wayland] socket staged: %s -> %s",
+         host_socket, target_socket);
+
+setup_environment:
+  /*
+   * Context: Keep environment setup here so the post-relocation invocation
+   * can restore these variables after the early staging invocation.
+   */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
   setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
@@ -91,8 +99,8 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   setenv("WLR_BACKENDS", "wayland", 1);
   setenv("WLR_RENDERER", "pixman", 1);
 
-  ds_log("[Wayland]   XDG_RUNTIME_DIR=/run/droidspaces");
-  ds_log("[Wayland]   WAYLAND_DISPLAY=wayland-1");
+  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
+  ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
 
   return 0;
 }
