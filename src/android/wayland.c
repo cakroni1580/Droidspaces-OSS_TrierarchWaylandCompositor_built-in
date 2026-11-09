@@ -69,7 +69,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
                            0, "Wayland") < 0)
     return -1;
   
-  ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET_OLDROOT,
+  ds_log("[Wayland] socket staged: %s -> %s", host_socket,
          DS_WL_CONTAINER_SOCKET);
 
   setenv("QT_QPA_PLATFORM", "wayland", 1);
