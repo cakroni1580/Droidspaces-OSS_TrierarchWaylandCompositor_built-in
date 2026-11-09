@@ -345,6 +345,19 @@ int internal_boot(struct ds_config *cfg) {
     ds_log("Setting up %d custom bind mount(s)...", cfg->bind_count);
   setup_custom_binds(cfg, ".");
 
+  /*
+ * Context: Stage the Android Wayland socket before root relocation.
+ *
+ * The Android app-private socket is accessible from the original
+ * Android filesystem, but may become unreachable after pivot_root()
+ * or MS_MOVE + chroot().
+ *
+ * /run is already the container's tmpfs and custom binds have finished.
+ * Keep the compositor socket available independently of root relocation.
+ */
+if (ds_setup_wayland_socket(cfg) < 0)
+  ds_warn("[Wayland] early socket staging failed; continuing boot");
+
   /* 17. pivot_root with MS_MOVE+chroot fallback for ramfs/rootfs environments
    * (e.g. Android recovery) where pivot_root(2) always returns EINVAL because
    * the kernel refuses to pivot when new_root is on the same underlying fs as
