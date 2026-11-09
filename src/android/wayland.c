@@ -26,29 +26,32 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
     return 0;
 
   /*
-   * Resolve host socket according to root relocation method.
+   * Locate the host socket from the current mount namespace.
    *
-   * pivot_root(): original Android filesystem is under /.old_root.
-   * MS_MOVE + chroot(): original socket remains at /data/data/...
+   * Do not assume that /.old_root exists: the MS_MOVE + chroot()
+   * path does not preserve the old root under that pathname.
    */
   const char *host_socket = NULL;
 
-  if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) == 0) {
+  struct stat st;
+
+  if (lstat(DS_WL_HOST_SOCKET_OLDROOT, &st) == 0 &&
+      S_ISSOCK(st.st_mode)) {
     host_socket = DS_WL_HOST_SOCKET_OLDROOT;
-  } else if (access(DS_WL_HOST_SOCKET, F_OK) == 0) {
+  } else if (lstat(DS_WL_HOST_SOCKET, &st) == 0 &&
+             S_ISSOCK(st.st_mode)) {
     host_socket = DS_WL_HOST_SOCKET;
   }
 
   if (!host_socket) {
-    ds_warn("[Wayland] compositor socket not found at %s",
-            DS_WL_HOST_SOCKET_OLDROOT);
-    ds_warn("[Wayland] fallback socket path also unavailable: %s",
-            DS_WL_HOST_SOCKET);
-    ds_warn("[Wayland] Is the Wayland compositor running in the Droidspaces app?");
+    ds_warn("[Wayland] host socket is not reachable in the current "
+            "mount namespace");
+    ds_warn("[Wayland] checked: %s", DS_WL_HOST_SOCKET_OLDROOT);
+    ds_warn("[Wayland] checked: %s", DS_WL_HOST_SOCKET);
     return -1;
   }
 
-  ds_log("[Wayland] using host socket: %s", host_socket);
+  ds_log("[Wayland] host socket found: %s", host_socket);
 
   /*if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) != 0) {
     ds_warn("[Wayland] compositor socket not found at %s",
@@ -57,8 +60,14 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
     return -1;
   }*/
 
-  if (mkdir("/run/droidspaces", 0755) < 0 && errno != EEXIST) {
+  if (mkdir("/run/droidspaces", 0700) < 0 && errno != EEXIST) {
     ds_warn("[Wayland] failed to create runtime directory: %s",
+            strerror(errno));
+    return -1;
+  }
+
+  if (chmod("/run/droidspaces", 0700) < 0) {
+    ds_warn("[Wayland] failed to set runtime directory permissions: %s",
             strerror(errno));
     return -1;
   }
