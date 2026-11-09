@@ -25,12 +25,37 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   if (!cfg->wayland)
     return 0;
 
-  if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) != 0) {
+  /*
+   * Resolve host socket according to root relocation method.
+   *
+   * pivot_root(): original Android filesystem is under /.old_root.
+   * MS_MOVE + chroot(): original socket remains at /data/data/...
+   */
+  const char *host_socket = NULL;
+
+  if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) == 0) {
+    host_socket = DS_WL_HOST_SOCKET_OLDROOT;
+  } else if (access(DS_WL_HOST_SOCKET, F_OK) == 0) {
+    host_socket = DS_WL_HOST_SOCKET;
+  }
+
+  if (!host_socket) {
+    ds_warn("[Wayland] compositor socket not found at %s",
+            DS_WL_HOST_SOCKET_OLDROOT);
+    ds_warn("[Wayland] fallback socket path also unavailable: %s",
+            DS_WL_HOST_SOCKET);
+    ds_warn("[Wayland] Is the Wayland compositor running in the Droidspaces app?");
+    return -1;
+  }
+
+  ds_log("[Wayland] using host socket: %s", host_socket);
+
+  /*if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) != 0) {
     ds_warn("[Wayland] compositor socket not found at %s",
             DS_WL_HOST_SOCKET_OLDROOT);
     ds_warn("[Wayland] Is the Wayland compositor running in the Droidspaces app?");
     return -1;
-  }
+  }*/
 
   if (mkdir("/run/droidspaces", 0755) < 0 && errno != EEXIST) {
     ds_warn("[Wayland] failed to create runtime directory: %s",
@@ -40,10 +65,10 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
 
   /* Stage under /run/droidspaces - immune to user-runtime-dir@0 overmounts.
    * XDG_RUNTIME_DIR and WAYLAND_DISPLAY are set per-user by the rootfs side. */
-  if (ds_bind_mount_socket(DS_WL_HOST_SOCKET_OLDROOT, DS_WL_CONTAINER_SOCKET,
+  if (ds_bind_mount_socket(host_socket, DS_WL_CONTAINER_SOCKET,
                            0, "Wayland") < 0)
     return -1;
-
+  
   ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET_OLDROOT,
          DS_WL_CONTAINER_SOCKET);
 
