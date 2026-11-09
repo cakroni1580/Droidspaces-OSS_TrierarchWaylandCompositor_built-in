@@ -23,6 +23,8 @@
 #include "droidspaces.h"
 #include <sys/stat.h>
 
+#include "internal.h"
+
 int ds_setup_wayland_socket(struct ds_config *cfg) {
   struct stat st;
   const char *host_socket = NULL;
