@@ -48,7 +48,7 @@
 #define DS_WL_RUNTIME_OLDROOT  "/.old_root/data/data/com.droidspaces.app/files/usr/tmp"
 #define DS_WL_HOST_SOCKET_OLDROOT "/.old_root/data/data/com.droidspaces.app/files/usr/tmp/wayland-1"
 /* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
-#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland-1"
+#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland/wayland-1"
 
 /* android.c */
 void android_optimizations(int enable);
@@ -69,7 +69,7 @@ void ds_anland_load_sock(struct ds_config *cfg);
  * bridge the socket that the app-side compositor creates into the container.
  * ---------------------------------------------------------------------------*/
 
-int ds_setup_wayland_socket(struct ds_config *cfg);
+int ds_setup_wayland_socket(void);
 int check_wayland_needs(void);
 
 /* firmware.c */
