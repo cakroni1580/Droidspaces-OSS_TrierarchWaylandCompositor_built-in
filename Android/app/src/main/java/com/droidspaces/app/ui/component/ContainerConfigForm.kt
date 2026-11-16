@@ -113,6 +113,9 @@ fun ContainerConfigForm(
     LaunchedEffect(caps, isSeccompDisabled, state.netMode, gpu) {
         var s = caps?.coerce(state) ?: state
         if (isSeccompDisabled && usernsSupported) s = s.copy(allowSandboxing = true)
+        if ((s.enableTermuxX11 || s.enableAnland) && s.enableWayland) {
+            s = s.copy(enableWayland = false)
+        }
         if (s != state) onStateChange(s)
     }
 
@@ -236,12 +239,22 @@ fun ContainerConfigForm(
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enableAnland = it, enableTermuxX11 = state.enableTermuxX11 && !it)) }
         )
         GroupDivider()
+        val waylandAllowed = !state.enableTermuxX11 && !state.enableAnland
+
         SwitchItem(
             icon = Icons.Default.DesktopWindows,
             title = context.getString(R.string.enable_wayland),
-            summary = context.getString(R.string.enable_wayland_description),
+            summary = if (waylandAllowed) {
+                context.getString(R.string.enable_wayland_description)
+            } else {
+                context.getString(R.string.enable_wayland_description)
+            },
             checked = state.enableWayland,
-            onCheckedChange = { clearFocus(); onStateChange(state.copy(enableWayland = it)) },
+            enabled = waylandAllowed,
+            onCheckedChange = {
+                clearFocus()
+                onStateChange(state.copy(enableWayland = it))
+            }
         )
         GroupDivider()
         SwitchItem(
