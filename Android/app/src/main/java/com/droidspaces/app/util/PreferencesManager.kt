@@ -110,6 +110,8 @@ class PreferencesManager private constructor(context: Context) {
         set(value) {
             prefs.edit().putBoolean(KEY_WAYLAND_COMPOSITOR_ENABLED, value).apply()
         }
+    val waylandCompositorEnabledFlow: Flow<Boolean> =
+        booleanPrefFlow(KEY_WAYLAND_COMPOSITOR_ENABLED, true)
 
     /**
      * Reactive stream of the daemon-mode preference, emits the current value and
