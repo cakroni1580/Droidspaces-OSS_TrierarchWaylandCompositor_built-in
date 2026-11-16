@@ -20,7 +20,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   const char *runtime_dst = "run/droidspaces/app-tmp";
   struct stat st;
 
-  if (!is_android() || !cfg->wayland)
+  if (!is_android())
     return 0;
 
   /*
