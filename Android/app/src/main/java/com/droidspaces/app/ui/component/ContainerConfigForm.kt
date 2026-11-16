@@ -69,6 +69,7 @@ import com.droidspaces.app.util.HostCapabilities
 import com.droidspaces.app.util.MacvlanErrors
 import com.droidspaces.app.util.ResourceLimits
 import com.droidspaces.app.util.ValidationUtils
+import com.droidspaces.app.util.PreferencesManager
 
 /**
  * The root of the container config screen: one group per section, switches
@@ -90,6 +91,9 @@ fun ContainerConfigForm(
     collisionContainer: ContainerInfo?,
 ) {
     val context = LocalContext.current
+    val prefsManager = remember { PreferencesManager.getInstance(context) }
+    val waylandCompositorEnabled by prefsManager.waylandCompositorEnabledFlow
+        .collectAsState(initial = prefsManager.isWaylandCompositorEnabled)
     val clearFocus = rememberClearFocus()
     var showHwAccessDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -113,6 +117,9 @@ fun ContainerConfigForm(
     LaunchedEffect(caps, isSeccompDisabled, state.netMode, gpu) {
         var s = caps?.coerce(state) ?: state
         if (isSeccompDisabled && usernsSupported) s = s.copy(allowSandboxing = true)
+        if (!waylandCompositorEnabled && s.enableWayland) {
+            s = s.copy(enableWayland = false)
+        }
         if ((s.enableTermuxX11 || s.enableAnland) && s.enableWayland) {
             s = s.copy(enableWayland = false)
         }
@@ -239,16 +246,14 @@ fun ContainerConfigForm(
             onCheckedChange = { clearFocus(); onStateChange(state.copy(enableAnland = it, enableTermuxX11 = state.enableTermuxX11 && !it)) }
         )
         GroupDivider()
-        val waylandAllowed = !state.enableTermuxX11 && !state.enableAnland
+        val waylandAllowed = waylandCompositorEnabled &&
+            !state.enableTermuxX11 &&
+            !state.enableAnland
 
         SwitchItem(
             icon = Icons.Default.DesktopWindows,
             title = context.getString(R.string.enable_wayland),
-            summary = if (waylandAllowed) {
-                context.getString(R.string.enable_wayland_description)
-            } else {
-                context.getString(R.string.enable_wayland_description)
-            },
+            summary = context.getString(R.string.enable_wayland_description),
             checked = state.enableWayland,
             enabled = waylandAllowed,
             onCheckedChange = {
