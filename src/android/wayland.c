@@ -1,8 +1,12 @@
+
 /*
  * Droidspaces v7 - Wayland compositor socket integration
  *
- * Register the Android compositor socket through the existing custom-bind
- * mechanism. setup_custom_binds() remains the sole bind-mount executor.
+ * Bridges the Android compositor socket directly into the container.
+ * Uses the existing socket bind-mount helper.
+ *
+ * Copyright (C) 2026 ravindu644 <droidcasts@protonmail.com>
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #define _GNU_SOURCE
@@ -12,6 +16,7 @@
 
 int ds_setup_wayland_socket(struct ds_config *cfg) {
   const char *host_socket = NULL;
+  char src[PATH_MAX];
 
   if (!is_android() || !cfg->wayland)
     return 0;
@@ -20,33 +25,33 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
    * Resolve the host compositor socket before pivot_root.
    * The old-root path is retained as a fallback for Android mount layouts.
    */
-  if (access(DS_WL_RUNTIME_DIR, F_OK) == 0) {
-    host_socket = DS_WL_RUNTIME_DIR;
-  } else if (access(DS_WL_RUNTIME_OLDROOT, F_OK) == 0) {
-    host_socket = DS_WL_RUNTIME_OLDROOT;
+  if (access(DS_WL_RUNTIME_DIR "/wayland-1", F_OK) == 0) {
+    host_socket = DS_WL_RUNTIME_DIR "/wayland-1";
+  } else if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) == 0) {
+    host_socket = DS_WL_HOST_SOCKET_OLDROOT;
   }
 
   if (!host_socket) {
     ds_warn("[Wayland] compositor socket not found");
-    ds_warn("[Wayland] checked: %s and %s",
-            DS_WL_RUNTIME_DIR, DS_WL_RUNTIME_OLDROOT);
+    ds_warn("[Wayland] checked: %s/wayland-1 and %s",
+            DS_WL_RUNTIME_DIR, DS_WL_HOST_SOCKET_OLDROOT);
     return -1;
   }
 
   /*
-   * Register an internal bind entry.
-   *
-   * Do not mount here. setup_custom_binds() will create the destination
-   * parent directory and perform the actual bind mount.
+   * Bind the compositor socket directly.
+   * The helper handles destination preparation and mount execution.
    */
-  if (ds_config_add_bind(cfg, host_socket,
-                         DS_WL_CONTAINER_SOCKET, 0) < 0) {
-    ds_warn("[Wayland] failed to register compositor socket bind");
+  snprintf(src, sizeof(src), "%s", host_socket);
+
+  if (ds_bind_mount_socket(src, DS_WL_CONTAINER_SOCKET, 0,
+                           "Wayland") < 0) {
+    ds_warn("[Wayland] failed to bind compositor socket");
     return -1;
   }
 
-  ds_log("[Wayland] registered custom bind: %s -> %s",
-         host_socket, DS_WL_CONTAINER_SOCKET);
+  ds_log("[Wayland] socket bind-mounted: %s -> %s",
+         src, DS_WL_CONTAINER_SOCKET);
 
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
