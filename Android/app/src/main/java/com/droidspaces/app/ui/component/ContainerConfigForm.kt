@@ -253,11 +253,7 @@ fun ContainerConfigForm(
         SwitchItem(
             icon = Icons.Default.DesktopWindows,
             title = context.getString(R.string.enable_wayland),
-            summary = if (waylandAllowed) {
-                context.getString(R.string.enable_wayland_description)
-            } else {
-                context.getString(R.string.enable_wayland_description)
-            },
+            summary = context.getString(R.string.enable_wayland_description),
             checked = state.enableWayland,
             enabled = waylandAllowed,
             onCheckedChange = {
