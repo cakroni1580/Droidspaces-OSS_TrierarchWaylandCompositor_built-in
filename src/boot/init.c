@@ -343,40 +343,19 @@ int internal_boot(struct ds_config *cfg) {
   /* 16. Custom bind mounts */
   if (!cfg->reboot_cycle && cfg->bind_count > 0)
     ds_log("Setting up %d custom bind mount(s)...", cfg->bind_count);
-  /*
- * Context: Stage the Android Wayland socket before root relocation.
- *
- * The Android app-private socket is accessible from the original
- * Android filesystem, but may become unreachable after pivot_root()
- * or MS_MOVE + chroot().
- *
- * /run is already the container's tmpfs and custom binds have finished.
- * Keep the compositor socket available independently of root relocation.
- */
-  if (is_android()) {
-    const char *src =
-        "/data/data/com.droidspaces.app/files/usr/tmp";
-    const char *dst = "run/droidspaces/app-tmp";
-
-    struct stat st;
-
-    if (stat(src, &st) < 0 || !S_ISDIR(st.st_mode)) {
-      ds_warn("[Android] App runtime directory unavailable: %s", src);
-    } else if (mkdir_p(dst, 0700) < 0) {
-      ds_warn("[Android] Failed to create runtime mountpoint %s: %s",
-              dst, strerror(errno));
-    } else if (mount(src, dst, NULL, MS_BIND, NULL) < 0) {
-      ds_warn("[Android] Failed to bind app runtime directory: %s",
-              strerror(errno));
-    } else {
-      ds_log("[Android] App runtime exposed: %s -> /run/droidspaces/app-tmp",
-             src);
-    }
-  }
   
-  if (ds_setup_wayland_socket(cfg) < 0) {
+  /*
+   * Context: Android Wayland integration.
+   *
+   * Exposes the compositor runtime directory and stages its socket
+   * before pivot_root(). All Android Wayland mount handling is owned
+   * by wayland.c.
+   */
+  if (cfg->android_storage)
+    (ds_setup_wayland_socket(cfg) < 0) {
     ds_warn("[Wayland] early socket staging failed; continuing boot");
   }
+  
   setup_custom_binds(cfg, ".");
 
   /* 17. pivot_root with MS_MOVE+chroot fallback for ramfs/rootfs environments
