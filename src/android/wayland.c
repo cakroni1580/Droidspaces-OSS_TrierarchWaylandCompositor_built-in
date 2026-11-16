@@ -15,44 +15,65 @@
 #include "internal.h"
 
 int ds_setup_wayland_socket(struct ds_config *cfg) {
-  const char *host_socket = NULL;
-  char src[PATH_MAX];
+  const char *host_socket;
+  const char *runtime_src = DS_WL_RUNTIME_DIR;
+  const char *runtime_dst = "run/droidspaces/app-tmp";
+  struct stat st;
 
   if (!is_android() || !cfg->wayland)
     return 0;
 
   /*
-   * Resolve the host compositor socket before pivot_root.
-   * The old-root path is retained as a fallback for Android mount layouts.
+   * Context: Expose the complete Android app-private runtime directory.
+   *
+   * This function runs before pivot_root(), while the original Android
+   * root is still accessible.
+   *
+   * The directory bind mount preserves access to all runtime files,
+   * including Wayland socket and lock files, after root relocation.
    */
-  if (access(DS_WL_RUNTIME_DIR "/wayland-1", F_OK) == 0) {
-    host_socket = DS_WL_RUNTIME_DIR "/wayland-1";
-  } else if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) == 0) {
-    host_socket = DS_WL_HOST_SOCKET_OLDROOT;
+  if (stat(runtime_src, &st) < 0 || !S_ISDIR(st.st_mode)) {
+    ds_warn("[Wayland] Android runtime directory unavailable: %s",
+            runtime_src);
+  } else if (mkdir_p(runtime_dst, 0700) < 0) {
+    ds_warn("[Wayland] failed to create runtime mountpoint %s: %s",
+            runtime_dst, strerror(errno));
+  } else if (mount(runtime_src, runtime_dst, NULL, MS_BIND, NULL) < 0) {
+    ds_warn("[Wayland] failed to expose Android runtime directory: %s",
+            strerror(errno));
+  } else {
+    ds_log("[Wayland] runtime directory exposed: %s -> /%s",
+           runtime_src, runtime_dst);
   }
 
-  if (!host_socket) {
-    ds_warn("[Wayland] compositor socket not found");
-    ds_warn("[Wayland] checked: %s/wayland-1 and %s",
-            DS_WL_RUNTIME_DIR, DS_WL_HOST_SOCKET_OLDROOT);
+  /*
+   * Context: Resolve the compositor socket before pivot_root().
+   *
+   * Do not use DS_WL_HOST_SOCKET_OLDROOT here: that path only exists
+   * after pivot_root(), whereas this function runs before root relocation.
+   */
+  host_socket = DS_WL_RUNTIME_DIR "/wayland-1";
+
+  if (access(host_socket, F_OK) < 0) {
+    ds_warn("[Wayland] compositor socket not found: %s", host_socket);
     return -1;
   }
 
   /*
-   * Bind the compositor socket directly.
-   * The helper handles destination preparation and mount execution.
+   * Keep the standard container socket path.
+   * This is intentionally retained alongside the directory bind mount
+   * for compatibility with applications using WAYLAND_DISPLAY=wayland-1.
    */
-  snprintf(src, sizeof(src), "%s", host_socket);
-
-  if (ds_bind_mount_socket(src, DS_WL_CONTAINER_SOCKET, 0,
+  if (ds_bind_mount_socket(host_socket, DS_WL_CONTAINER_SOCKET, 0,
                            "Wayland") < 0) {
     ds_warn("[Wayland] failed to bind compositor socket");
     return -1;
   }
 
   ds_log("[Wayland] socket bind-mounted: %s -> %s",
-         src, DS_WL_CONTAINER_SOCKET);
+         host_socket, DS_WL_CONTAINER_SOCKET);
 
+  /* Wayland environment */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
   setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
