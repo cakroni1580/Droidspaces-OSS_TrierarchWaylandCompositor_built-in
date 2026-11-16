@@ -23,7 +23,7 @@ int wait_for_socket_or_death(pid_t pid, const char *path, int timeout_ms,
 int ds_pulse_daemon_start(struct ds_config *cfg);
 
 /* wayland.c */
-int ds_setup_wayland_socket(struct ds_config *cfg);
+int ds_setup_wayland_socket(void);
 
 /* socket.c */
 /* Bridge a Termux host socket (DS_TERMUX_TMP_OLDROOT/<leaf>) into the container
