@@ -20,16 +20,16 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
    * Resolve the host compositor socket before pivot_root.
    * The old-root path is retained as a fallback for Android mount layouts.
    */
-  if (access(DS_WL_HOST_SOCKET, F_OK) == 0) {
-    host_socket = DS_WL_HOST_SOCKET;
-  } else if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) == 0) {
-    host_socket = DS_WL_HOST_SOCKET_OLDROOT;
+  if (access(DS_WL_RUNTIME_DIR, F_OK) == 0) {
+    host_socket = DS_WL_RUNTIME_DIR;
+  } else if (access(DS_WL_RUNTIME_OLDROOT, F_OK) == 0) {
+    host_socket = DS_WL_RUNTIME_OLDROOT;
   }
 
   if (!host_socket) {
     ds_warn("[Wayland] compositor socket not found");
     ds_warn("[Wayland] checked: %s and %s",
-            DS_WL_HOST_SOCKET, DS_WL_HOST_SOCKET_OLDROOT);
+            DS_WL_RUNTIME_DIR, DS_WL_RUNTIME_OLDROOT);
     return -1;
   }
 
@@ -59,7 +59,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   setenv("WLR_RENDERER", "pixman", 1);
 
   ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
-  ds_log("[Wayland] WAYLAND_DISPLAY=%s", DS_WL_SOCKET_NAME);
+  ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1);
 
   return 0;
 }
