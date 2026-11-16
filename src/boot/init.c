@@ -352,7 +352,7 @@ int internal_boot(struct ds_config *cfg) {
    * by wayland.c.
    */
   
-  if (is_android() && !cfg->x11 && !cfg->adland) {
+  if (is_android() && !cfg->x11 && !cfg->anland) {
     if (ds_setup_wayland_socket() < 0) {
       ds_warn("[Wayland] early socket staging failed; continuing boot");
     }
