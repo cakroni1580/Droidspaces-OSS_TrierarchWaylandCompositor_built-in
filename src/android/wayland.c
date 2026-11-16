@@ -59,7 +59,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   setenv("WLR_RENDERER", "pixman", 1);
 
   ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
-  ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1);
+  ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
 
   return 0;
 }
