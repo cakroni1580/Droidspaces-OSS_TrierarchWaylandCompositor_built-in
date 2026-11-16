@@ -44,15 +44,11 @@
 /* Wayland compositor paths (Android only — compositor runs inside Droidspaces app) */
 /* Host-side socket created by libwayland-compositor.so in the app's data dir.
  * The droidspaces binary bind-mounts it into the container's /run/user/0. */
-#define DS_WL_APP_PKG          "com.droidspaces.app"
-#define DS_WL_APP_DATA_DIR     "/data/data/" DS_WL_APP_PKG
-#define DS_WL_RUNTIME_DIR      DS_WL_APP_DATA_DIR "/files/usr/tmp"
-#define DS_WL_RUNTIME_OLDROOT  "/.old_root" DS_WL_RUNTIME_DIR
-#define DS_WL_SOCKET_NAME      "wayland-1"
-#define DS_WL_HOST_SOCKET      DS_WL_RUNTIME_DIR "/" DS_WL_SOCKET_NAME
-#define DS_WL_HOST_SOCKET_OLDROOT DS_WL_RUNTIME_OLDROOT "/" DS_WL_SOCKET_NAME
+#define DS_WL_RUNTIME_DIR      /data/data/com.droidspaces.app/files/usr/tmp"
+#define DS_WL_RUNTIME_OLDROOT  "/.old_root/data/data/com.droidspaces.app/files/usr/tmp"
+#define DS_WL_HOST_SOCKET_OLDROOT "/.old_root/data/data/com.droidspaces.app/files/usr/tmp/wayland-1"
 /* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
-#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/" DS_WL_SOCKET_NAME
+#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland-1"
 
 /* android.c */
 void android_optimizations(int enable);
