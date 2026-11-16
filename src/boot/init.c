@@ -351,9 +351,11 @@ int internal_boot(struct ds_config *cfg) {
    * before pivot_root(). All Android Wayland mount handling is owned
    * by wayland.c.
    */
-  if (cfg->android_storage)
-    (ds_setup_wayland_socket(cfg) < 0) {
-    ds_warn("[Wayland] early socket staging failed; continuing boot");
+  
+  if (is_android() && cfg->wayland) {
+    if (ds_setup_wayland_socket(cfg) < 0) {
+      ds_warn("[Wayland] early socket staging failed; continuing boot");
+    }
   }
   
   setup_custom_binds(cfg, ".");
