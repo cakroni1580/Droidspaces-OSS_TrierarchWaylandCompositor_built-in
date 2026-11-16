@@ -17,11 +17,8 @@
 int ds_setup_wayland_socket(struct ds_config *cfg) {
   const char *host_socket;
   const char *runtime_src = DS_WL_RUNTIME_DIR;
-  const char *runtime_dst = "run/droidspaces/app-tmp";
+  const char *runtime_dst = "run/droidspaces/wayland";
   struct stat st;
-
-  if (!is_android())
-    return 0;
 
   /*
    * Context: Expose the complete Android app-private runtime directory.
@@ -46,37 +43,10 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
            runtime_src, runtime_dst);
   }
 
-  /*
-   * Context: Resolve the compositor socket before pivot_root().
-   *
-   * Do not use DS_WL_HOST_SOCKET_OLDROOT here: that path only exists
-   * after pivot_root(), whereas this function runs before root relocation.
-   */
-  host_socket = DS_WL_RUNTIME_DIR "/wayland-1";
-
-  if (access(host_socket, F_OK) < 0) {
-    ds_warn("[Wayland] compositor socket not found: %s", host_socket);
-    return -1;
-  }
-
-  /*
-   * Keep the standard container socket path.
-   * This is intentionally retained alongside the directory bind mount
-   * for compatibility with applications using WAYLAND_DISPLAY=wayland-1.
-   */
-  if (ds_bind_mount_socket(host_socket, DS_WL_CONTAINER_SOCKET, 0,
-                           "Wayland") < 0) {
-    ds_warn("[Wayland] failed to bind compositor socket");
-    return -1;
-  }
-
-  ds_log("[Wayland] socket bind-mounted: %s -> %s",
-         host_socket, DS_WL_CONTAINER_SOCKET);
-
   /* Wayland environment */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
-  setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
+  setenv("XDG_RUNTIME_DIR", "/run/droidspaces/wayland", 1);
   setenv("WAYLAND_DISPLAY", "wayland-1", 1);
   setenv("KWIN_COMPOSE", "Q", 1);
   setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
@@ -84,7 +54,7 @@ int ds_setup_wayland_socket(struct ds_config *cfg) {
   setenv("WLR_BACKENDS", "wayland", 1);
   setenv("WLR_RENDERER", "pixman", 1);
 
-  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
+  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces/wayland");
   ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
 
   return 0;
