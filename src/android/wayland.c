@@ -16,7 +16,7 @@
 
 int ds_setup_wayland_socket(void) {
   const char *runtime_src = DS_WL_RUNTIME_DIR;
-  const char *runtime_dst = "/run/droidspaces/wayland";
+  const char *runtime_dst = "run/droidspaces/wayland";
   struct stat st;
 
   /*
