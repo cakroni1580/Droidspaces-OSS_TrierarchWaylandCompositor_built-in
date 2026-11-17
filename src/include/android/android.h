@@ -48,7 +48,7 @@
 #define DS_WL_RUNTIME_OLDROOT  "/run/droidspaces/wayland"
 #define DS_WL_HOST_SOCKET_OLDROOT "/run/droidspaces/wayland/wayland-1"
 /* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
-#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland-1"
+#define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland/wayland-1"
 
 /* android.c */
 void android_optimizations(int enable);
