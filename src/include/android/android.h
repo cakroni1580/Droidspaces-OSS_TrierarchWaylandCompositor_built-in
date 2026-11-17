@@ -45,8 +45,8 @@
 /* Host-side socket created by libwayland-compositor.so in the app's data dir.
  * The droidspaces binary bind-mounts it into the container's /run/user/0. */
 #define DS_WL_RUNTIME_DIR      "/data/data/com.droidspaces.app/files/usr/tmp"
-#define DS_WL_RUNTIME_OLDROOT  "/.old_root/data/data/com.droidspaces.app/files/usr/tmp"
-#define DS_WL_HOST_SOCKET_OLDROOT "/.old_root/data/data/com.droidspaces.app/files/usr/tmp/wayland-1"
+#define DS_WL_RUNTIME_OLDROOT  "/run/droidspaces/tmp"
+#define DS_WL_HOST_SOCKET_OLDROOT "/run/droidspaces/tmp/wayland-1"
 /* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
 #define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland/wayland-1"
 
