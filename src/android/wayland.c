@@ -16,7 +16,7 @@
 
 int ds_setup_wayland_socket(void) {
   const char *runtime_src = DS_WL_RUNTIME_DIR;
-  const char *runtime_dst = DS_WL_RUNTIME_OLDROOT;
+  const char *runtime_dst = "/run/droidspaces/wayland";
   struct stat st;
 
   /*
@@ -42,26 +42,10 @@ int ds_setup_wayland_socket(void) {
            runtime_src, runtime_dst);
   }
 
-  if (access(DS_WL_HOST_SOCKET_OLDROOT, F_OK) != 0) {
-    ds_warn("[Wayland] compositor socket not found at %s",
-            DS_WL_HOST_SOCKET_OLDROOT);
-    ds_warn("[Wayland] Is the Wayland compositor running in the Droidspaces app?");
-    return -1;
-  }
-
-  /* Stage under /run/droidspaces - immune to user-runtime-dir@0 overmounts.
-   * XDG_RUNTIME_DIR and WAYLAND_DISPLAY are set per-user by the rootfs side. */
-  if (ds_bind_mount_socket(DS_WL_HOST_SOCKET_OLDROOT, DS_WL_CONTAINER_SOCKET,
-                           0, "Wayland") < 0)
-    return -1;
-
-  ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET_OLDROOT,
-         DS_WL_CONTAINER_SOCKET);
-
   /* Wayland environment */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
-  setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
+  setenv("XDG_RUNTIME_DIR", "/run/droidspaces/wayland", 1);
   setenv("WAYLAND_DISPLAY", "wayland-1", 1);
   setenv("KWIN_COMPOSE", "Q", 1);
   setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
@@ -69,7 +53,7 @@ int ds_setup_wayland_socket(void) {
   setenv("WLR_BACKENDS", "wayland", 1);
   setenv("WLR_RENDERER", "pixman", 1);
 
-  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
+  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces/wayland");
   ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
 
   return 0;
