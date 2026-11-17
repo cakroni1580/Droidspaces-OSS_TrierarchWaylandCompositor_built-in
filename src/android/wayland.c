@@ -16,7 +16,7 @@
 
 int ds_setup_wayland_socket(void) {
   const char *runtime_src = DS_WL_APP_SRC;
-  const char *runtime_dst = DS_WL_APP_DST";
+  const char *runtime_dst = DS_WL_APP_DST;
   struct stat st;
 
   /*
