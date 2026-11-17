@@ -61,7 +61,7 @@ int ds_setup_wayland_socket(void) {
   /* Wayland environment */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
-  setenv("XDG_RUNTIME_DIR", "/run/droidspaces/wayland", 1);
+  setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
   setenv("WAYLAND_DISPLAY", "wayland-1", 1);
   setenv("KWIN_COMPOSE", "Q", 1);
   setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
@@ -69,7 +69,7 @@ int ds_setup_wayland_socket(void) {
   setenv("WLR_BACKENDS", "wayland", 1);
   setenv("WLR_RENDERER", "pixman", 1);
 
-  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces/wayland");
+  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
   ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
 
   return 0;
