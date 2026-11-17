@@ -343,6 +343,20 @@ int internal_boot(struct ds_config *cfg) {
   /* 16. Custom bind mounts */
   if (!cfg->reboot_cycle && cfg->bind_count > 0)
     ds_log("Setting up %d custom bind mount(s)...", cfg->bind_count);
+
+  /*
+   * Context: Android Wayland integration.
+   *
+   * Exposes the compositor runtime directory and stages its socket
+   * before pivot_root(). All Android Wayland mount handling is owned
+   * by wayland.c.
+   */
+  
+  if (is_android() && !cfg->x11 && !cfg->anland) {
+    if (ds_setup_wayland_socket() < 0) {
+      ds_warn("[Wayland] early socket staging failed; continuing boot");
+    }
+  }
   
   setup_custom_binds(cfg, ".");
 
