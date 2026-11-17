@@ -44,9 +44,10 @@
 /* Wayland compositor paths (Android only — compositor runs inside Droidspaces app) */
 /* Host-side socket created by libwayland-compositor.so in the app's data dir.
  * The droidspaces binary bind-mounts it into the container's /run/user/0. */
-#define DS_WL_RUNTIME_DIR      "/data/data/com.droidspaces.app/files/usr/tmp"
-#define DS_WL_RUNTIME_OLDROOT  "/run/droidspaces/wayland"
-#define DS_WL_HOST_SOCKET_OLDROOT "/run/droidspaces/wayland/wayland-1"
+#define DS_WL_APP_SRC      "/data/data/com.droidspaces.app/files/usr/tmp"
+#define DS_WL_APP_DST  "run/droidspaces/wayland"
+#define DS_WL_RUNTIME  "/run/droidspaces/wayland"
+#define DS_WL_HOST_SOCKET "/run/droidspaces/wayland/wayland-1"
 /* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
 #define DS_WL_CONTAINER_SOCKET  "/run/droidspaces/wayland/wayland-1"
 
