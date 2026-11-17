@@ -42,20 +42,20 @@ int ds_setup_wayland_socket(void) {
            runtime_src, runtime_dst);
   }
 
-  if (access(DS_WL_HOST_SOCKET, F_OK) != 0) {
+  if (access(DS_WL_SRC_SOCKET, F_OK) != 0) {
     ds_warn("[Wayland] compositor socket not found at %s",
-            DS_WL_HOST_SOCKET);
+            DS_WL_SRC_SOCKET);
     ds_warn("[Wayland] Is the Wayland compositor running in the Droidspaces app?");
     return -1;
   }
 
   /* Stage under /run/droidspaces - immune to user-runtime-dir@0 overmounts.
    * XDG_RUNTIME_DIR and WAYLAND_DISPLAY are set per-user by the rootfs side. */
-  if (ds_bind_mount_socket(DS_WL_HOST_SOCKET, DS_WL_CONTAINER_SOCKET,
+  if (ds_bind_mount_socket(DS_WL_SRC_SOCKET, DS_WL_CONTAINER_SOCKET,
                            0, "Wayland") < 0)
     return -1;
 
-  ds_log("[Wayland] socket staged: %s -> %s", DS_WL_HOST_SOCKET,
+  ds_log("[Wayland] socket staged: %s -> %s", DS_WL_SRC_SOCKET,
          DS_WL_CONTAINER_SOCKET);
 
   /* Wayland environment */
