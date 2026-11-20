@@ -62,7 +62,7 @@ int ds_setup_wayland_socket(void) {
   /* Wayland environment */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
-  setenv("XDG_RUNTIME_DIR", "/run/droidspaces/wayland", 1);
+  setenv("XDG_RUNTIME_DIR", "/run/droidspaces", 1);
   setenv("WAYLAND_DISPLAY", "wayland-1", 1);
   setenv("KWIN_COMPOSE", "Q", 1);
   setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
@@ -70,37 +70,7 @@ int ds_setup_wayland_socket(void) {
   setenv("WLR_BACKENDS", "wayland", 1);
   setenv("WLR_RENDERER", "pixman", 1);
 
-  /*
-   * Context: Detect KDE Plasma before starting its D-Bus session.
-   * Plasma is launched only when startplasma-wayland is executable.
-   */
-  const char *plasma_bin = "/usr/bin/startplasma-wayland";
-
-  if (access(plasma_bin, X_OK) == 0) {
-    ds_log("[Wayland] KDE Plasma detected: %s", plasma_bin);
-
-    pid_t pid = fork();
-
-    if (pid < 0) {
-      ds_warn("[Wayland] failed to fork Plasma launcher: %s",
-              strerror(errno));
-    } else if (pid == 0) {
-      execlp("dbus-launch", "dbus-launch",
-             "--exit-with-session",
-             plasma_bin,
-             (char *)NULL);
-
-      ds_warn("[Wayland] failed to execute dbus-launch: %s",
-            strerror(errno));
-      _exit(EXIT_FAILURE);
-    } else {
-      ds_log("[Wayland] Plasma launcher started (pid=%d)", pid);
-    }
-  } else {
-    ds_log("[Wayland] KDE Plasma not installed, skipping launch");
-  }
-
-  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces/wayland");
+  ds_log("[Wayland] XDG_RUNTIME_DIR=/run/droidspaces");
   ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
 
   return 0;
