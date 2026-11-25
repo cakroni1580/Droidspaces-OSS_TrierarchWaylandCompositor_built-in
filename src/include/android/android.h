@@ -45,10 +45,10 @@
 /* Host-side socket created by libwayland-compositor.so in the app's data dir.
  * The droidspaces binary bind-mounts it into the container's /run/user/0. */
 #define DS_WL_APP_SRC      "/data/data/com.droidspaces.app/files/usr/tmp"
-#define DS_WL_APP_DST  "run/droidspaces/wayland"
+#define DS_WL_APP_DST  "run/wayland/socket"
 #define DS_WL_SRC_SOCKET DS_WL_APP_SRC "/wayland-1"
 /* Staged under /run/droidspaces - immune to user-runtime-dir@0 overmounts */
-#define DS_WL_CONTAINER_SOCKET  "run/droidspaces/wayland-1"
+#define DS_WL_CONTAINER_SOCKET  "run/wayland/wayland-1"
 
 /* android.c */
 void android_optimizations(int enable);
