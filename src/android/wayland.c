@@ -96,7 +96,7 @@ int ds_setup_wayland_socket(void) {
   }
 
   /* Wayland environment 
-   * Use absulut path "/run/wayland/wayland-1" */
+   * Use absolute path "/run/wayland/wayland-1" */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
   setenv("WAYLAND_DISPLAY", "/run/wayland/wayland-1", 1);
