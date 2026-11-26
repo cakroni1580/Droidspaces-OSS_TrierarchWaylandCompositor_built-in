@@ -123,7 +123,6 @@ void ds_env_save(const char *path, struct ds_config *cfg) {
   if (is_android() && !cfg->x11 && !cfg->anland) {
     fprintf(f, "export QT_QPA_PLATFORM='wayland'\n");
     fprintf(f, "export XDG_SESSION_TYPE='wayland'\n");
-    /*fprintf(f, "export XDG_RUNTIME_DIR='/run/wayland'\n");*/
     fprintf(f, "export WAYLAND_DISPLAY='/run/wayland/wayland-1'\n");
     fprintf(f, "export KWIN_COMPOSE='Q'\n");
     fprintf(f, "export KWIN_OPENGL_INTERFACE='egl'\n");
