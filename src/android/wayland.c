@@ -79,7 +79,7 @@ int ds_setup_wayland_socket(void) {
 
   /*
    * Context note:
-   * /run/droidspaces is shared by root and regular container users.
+   * /run/wayland is shared by root and regular container users.
    * Allow traversal and file creation for both UID 0 and UID 1000.
    */
   if (chmod("run/wayland", 0777) < 0) {
@@ -87,7 +87,7 @@ int ds_setup_wayland_socket(void) {
             strerror(errno));
   } else {
     struct stat runtime_st;
-    if (stat("run/droidspaces", &runtime_st) == 0) {
+    if (stat("run/wayland", &runtime_st) == 0) {
       ds_log("[Wayland] runtime directory permissions: %04o uid=%d gid=%d",
              runtime_st.st_mode & 07777,
              (int)runtime_st.st_uid,
