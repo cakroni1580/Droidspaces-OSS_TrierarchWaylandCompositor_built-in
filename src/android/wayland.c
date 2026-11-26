@@ -88,17 +88,17 @@ int ds_setup_wayland_socket(void) {
   } else {
     struct stat runtime_st;
     if (stat("run/wayland", &runtime_st) == 0) {
-      ds_log("[Wayland] runtime directory permissions: %04o uid=%d gid=%d",
+      ds_log("[Wayland] socket directory permissions: %04o uid=%d gid=%d",
              runtime_st.st_mode & 07777,
              (int)runtime_st.st_uid,
              (int)runtime_st.st_gid);
     }
   }
 
-  /* Wayland environment */
+  /* Wayland environment 
+   * Use absulut path "/run/wayland/wayland-1" */
   setenv("QT_QPA_PLATFORM", "wayland", 1);
   setenv("XDG_SESSION_TYPE", "wayland", 1);
-  /*setenv("XDG_RUNTIME_DIR", "/run/wayland", 1);*/
   setenv("WAYLAND_DISPLAY", "/run/wayland/wayland-1", 1);
   setenv("KWIN_COMPOSE", "Q", 1);
   setenv("KWIN_OPENGL_INTERFACE", "egl", 1);
@@ -106,8 +106,7 @@ int ds_setup_wayland_socket(void) {
   setenv("WLR_BACKENDS", "wayland", 1);
   setenv("WLR_RENDERER", "pixman", 1);
 
-  /*ds_log("[Wayland] XDG_RUNTIME_DIR=/run/wayland");*/
-  ds_log("[Wayland] WAYLAND_DISPLAY=wayland-1");
+  ds_log("[Wayland] WAYLAND_DISPLAY=/run/wayland/wayland-1");
 
   return 0;
 }
